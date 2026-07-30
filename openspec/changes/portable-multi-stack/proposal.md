@@ -135,10 +135,10 @@ The skill is copy-a-folder: revert the tracker merge, or restore the previous `s
 - [ ] `open_decisions.scripts-runtime` closed in `openspec/config.yaml`.
 - [ ] No overlay can launch against a base-stack store with `isolation.mechanism: "none"` without a recorded `acceptedRisks` entry.
 
-## Proposal question round
+## Proposal question round — RESOLVED
 
-Sub-agent cannot prompt directly. These are open and do **not** re-litigate the locked decisions; they need user review before `sdd-spec`.
+All three confirmed by the user on 2026-07-30. Each assumption held; these are now binding on `sdd-spec` and `sdd-design`.
 
-1. **Escape-hatch lifetime.** Does an `acceptedRisks` entry stay valid until the service's fingerprint drifts, until the manifest is rediscovered, or forever until manually cleared? Assumed: **invalidated when that service's source fingerprint drifts** — acceptance was granted for code that no longer exists.
-2. **Chain visibility.** Should the tracker branch stay unmerged until all three child PRs land (assumed: yes, per D2), or is an intermediate release of PR 1 alone acceptable given README says "Early"?
-3. **Predecessor skill.** `~/.claude/skills/worktree-overlay/` carries every defect fixed here and is still indexed in `.atl/skill-registry.md`. Assumed **out of scope**; confirm it should be retired separately rather than named in this change's README.
+1. **Escape-hatch lifetime — RESOLVED: invalidated when that service's source fingerprint drifts.** An `acceptedRisks` entry does not survive a change to the service it covers, because the acceptance was granted for code that no longer exists. It is not tied to full-manifest rediscovery, and it is never permanent.
+2. **Chain visibility — RESOLVED: the tracker stays unmerged until all three child PRs land.** No intermediate release of PR 1 alone. `main` sees exactly one `schemaVersion` transition, and it never sees a state carrying schema 2 without the shared-state gate that makes it safe.
+3. **Predecessor skill — RESOLVED: out of scope.** `~/.claude/skills/worktree-overlay/` is retired separately as a local installation task, not named in this repository's README. It was never distributed from here, so its removal is machine cleanup rather than a documented migration.

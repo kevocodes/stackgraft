@@ -16,13 +16,12 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 
 ## Hard Rules
 
-- Start only services whose files the worktree changed. Point every unchanged dependency at the base stack already running.
-- A port free in `lsof` is not a port that is available. Honor `portPolicy.reserved` and ask before taking a port outside the overlay range.
-- Never kill a process you did not start. Confirm ownership with `lsof -a -p <pid> -d cwd -Fn` first.
-- Never place a worktree under `/tmp` or `/var/tmp`. Each worktree needs its own `.codegraph/`; never reuse another checkout's index.
-- A `200` on `/health` is not proof. Verify a real request carrying the overlay's `Origin`/host and read the response headers back.
-- Never act on a manifest entry whose source fingerprint drifted. Refresh it first.
-- Treat the manifest as a cache, never as truth. On any conflict, the repo wins and the manifest gets rewritten.
+- Start only services the worktree changed; point unchanged dependencies at the base stack.
+- Port probes are a heuristic, never proof: bind with strict-port and honor `portPolicy.reserved`.
+- Never kill a process you did not start.
+- Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
+- `/health` returning 200 is not proof; verify a real request and read its headers.
+- The manifest is a cache, never truth: refresh drifted entries; on conflict the repo wins and the entry is rewritten.
 
 ## Decision Gates
 
@@ -40,12 +39,12 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 
 1. Resolve `repoRoot`: `git rev-parse --path-format=absolute --git-common-dir` minus `/.git`.
 2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `git hash-object --stdin` over that common dir, truncated to 8. Discard on `schemaVersion`/`repoRoot` mismatch; when unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `scripts/fingerprint.sh`.
-3. Discover or refresh per the Decision Gates — follow `references/discovery.md`.
-4. Diff the worktree against its base branch and map changed paths to services via each entry's `paths` globs.
-5. Confirm the base stack is up and healthy; start only what is missing.
-6. Allocate ports from `portPolicy`.
-7. Launch the mapped services with env overrides so every unchanged dependency resolves to the base stack.
-8. Verify each overlay with a real request, record it in `verifiedOverlays`, and write the manifest back.
+3. Discover or refresh per the Decision Gates (`references/discovery.md`).
+4. Diff the worktree against its base branch; map changed paths through `paths` globs.
+5. Confirm the base stack is healthy; start what is missing.
+6. Feed `reserved`, known `basePort`s, and ports taken this run to `scripts/pick-port.sh`, then bind strictly.
+7. Launch each mapped service, rewiring unchanged dependencies to the base stack.
+8. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
 
 ## Output Contract
 
@@ -59,8 +58,8 @@ Return:
 
 ## References
 
-- `assets/manifest.schema.json` — manifest field contract.
-- `assets/manifest.example.json` — filled multi-service example.
-- `references/discovery.md` — discovery and slice-refresh procedure per stack type.
-- `references/traps.md` — verified failure modes to check every run.
+- `assets/manifest.schema.json` — field contract.
+- `assets/manifest.example.json` — filled example.
+- `references/discovery.md` — discovery procedure.
+- `references/traps.md` — failure modes.
 - `scripts/fingerprint.sh`, `scripts/pick-port.sh` — POSIX helpers.

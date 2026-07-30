@@ -3,8 +3,6 @@
   "repoRoot": "/Users/example/Workspaces/bookshop",
   "discoveredAt": "2026-07-30T12:00:00Z",
 
-  "_comment": "Illustrative example: a 33-service compose backend plus a non-dockerized Vite frontend. Only three services are shown; a real manifest lists every runnable unit. Values here are examples, not facts about any repo — always discover against the real files.",
-
   "sources": [
     {
       "path": "docker-compose.yml",

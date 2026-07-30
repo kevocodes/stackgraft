@@ -218,9 +218,13 @@ statement: *an all-`[]` manifest with `method: user-asserted` is the shape of a 
 
 **Alternative rejected**: hashing every tracked file — hundreds of `git hash-object` spawns per
 service. **Alternative rejected**: `git rev-parse HEAD:<dir>` — misses uncommitted work, which is
-exactly the state an overlay runs. *Unverified on this machine*: only
-`git hash-object --no-filters` was verified by the orchestrator; this three-part composition must be
-checked during PR 3 verification.
+exactly the state an overlay runs. **Verified 2026-07-30** against the fixture this design specifies:
+in a scratch repository, a staged-only edit, an unstaged-only edit, a new untracked file, and an
+unstaged binary edit each moved the fingerprint, and reverting every mutation returned it to the exact
+base value — so the composition is sensitive to all four states and deterministic, with no false
+positives. Untracked files are hashed with `git hash-object --no-filters` over the paths listed by
+`git ls-files --others --exclude-standard`. This removes the risk of first exercising the recipe in
+the chain's final task.
 
 ### Discovery
 

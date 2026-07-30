@@ -1,17 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "repoRoot": "/Users/example/Workspaces/bookshop",
   "discoveredAt": "2026-07-30T12:00:00Z",
+  "fingerprintTool": "git-hash-object-no-filters",
 
   "sources": [
     {
       "path": "docker-compose.yml",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fingerprint": "0000000000000000000000000000000000000000",
       "covers": ["services", "baseStack", "constraints"]
     },
     {
       "path": "frontend/package.json",
-      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "fingerprint": "1111111111111111111111111111111111111111",
       "covers": ["services.frontend"]
     }
   ],

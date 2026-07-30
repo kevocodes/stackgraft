@@ -60,7 +60,13 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "enum": ["docker-compose", "node-dev-server", "process", "static"]
+            "type": "string",
+            "examples": ["docker-compose", "node-dev-server", "process"],
+            "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing."
+          },
+          "portGroup": {
+            "type": "string",
+            "description": "Key into portPolicy.ranges. Independent of kind on purpose, so several kinds can share one range and one kind can split across two. A portGroup with no matching ranges key means stop and ask, never guess a range."
           },
           "basePort": {
             "type": "integer",
@@ -122,7 +128,7 @@
         },
         "ranges": {
           "type": "object",
-          "description": "Allowed overlay ranges per service kind.",
+          "description": "Allowed overlay ranges, keyed by services[].portGroup. Never keyed by kind: a new stack type must not silently mis-key onto a range that was never sized for it.",
           "additionalProperties": {
             "type": "array",
             "items": { "type": "integer" },

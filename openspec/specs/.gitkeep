@@ -1,0 +1,2 @@
+# Source-of-truth specs live here, one folder per domain: specs/{domain}/spec.md
+# sdd-archive merges accepted delta specs from changes/{change-name}/specs/ into this tree.

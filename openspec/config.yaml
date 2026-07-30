@@ -1,0 +1,98 @@
+# openspec/config.yaml
+schema: spec-driven
+
+project: stackgraft
+
+context: |
+  Product: a portable Agent Skill (agentskills.io standard) that starts only the
+  services a git worktree changed, on alternate ports, re-wiring unchanged
+  dependencies to the already-running base stack.
+  Stack: no programming language committed. Repo is Markdown + JSON only.
+  Deliverable shape: skills/stackgraft/{SKILL.md, assets/, references/, scripts/}.
+  Portability: must work for ~40 agents; no single-agent paths or conventions.
+  Testing: no test runner in repo. Verification is manual review + JSON parse.
+  Artifacts language: English.
+
+artifact_store: openspec
+execution_mode: interactive
+delivery_strategy: ask-on-risk
+review_budget_lines: 400
+
+testing:
+  strict_tdd: false
+  strict_tdd_reason: >-
+    No test runner, no language runtime, and no CI are committed to this repo.
+    Declaring strict TDD would assert a capability that does not exist.
+  test_runner: ""
+  test_command: ""
+  layers:
+    unit: false
+    integration: false
+    e2e: false
+  coverage:
+    available: false
+    command: ""
+  quality:
+    linter: ""
+    type_checker: ""
+    formatter: ""
+  available_verification:
+    - "Human/agent review of SKILL.md against the LLM-first skill style guide."
+    - "JSON well-formedness and JSON Schema validity of assets/*.json."
+    - "Cross-file consistency: every field named in SKILL.md and references/ exists in assets/manifest.schema.json."
+    - "Portability grep: no agent-specific path or tool name in shipped files."
+
+rules:
+  proposal:
+    - "State which agentskills.io contract surface the change touches (SKILL.md body, assets/, references/, scripts/)."
+    - "Include a rollback plan. The skill is copy-a-folder, so rollback is reverting the folder; state any manifest-schema migration explicitly."
+  specs:
+    - "Use Given/When/Then for scenarios."
+    - "Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)."
+    - "Requirements about the skill body MUST be observable by reading the shipped files, not by running an agent."
+  design:
+    - "Justify any new file against the agentskills.io folder contract."
+    - "Document portability impact for non-Claude agents explicitly."
+    - "Record the chosen scripts/ runtime and why it needs no install step."
+  tasks:
+    - "Group by phase, use hierarchical numbering."
+    - "Keep tasks completable in one session."
+    - "Keep SKILL.md body edits in their own task; the body has a token budget."
+  apply:
+    guidelines:
+      - "Follow the LLM-first skill style guide section order: frontmatter, Activation Contract, Hard Rules, Decision Gates, Execution Steps, Output Contract, References."
+      - "Keep SKILL.md body within 180-450 tokens; recommended max 700, hard max 1000. Move detail to references/ or assets/."
+      - "description MUST be one physical quoted line, trigger words first, at most 250 chars."
+      - "Ship no path, env var, or tool name that only one agent provides."
+      - "All artifacts, docs, comments, and identifiers in English."
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+    manual_checks:
+      - "Every references/ and assets/ link in SKILL.md resolves relative to the skill directory."
+      - "assets/manifest.example.json validates against assets/manifest.schema.json."
+      - "No agent-specific coupling introduced in shipped files."
+  archive:
+    - "Warn before merging destructive deltas."
+    - "Merge delta specs into openspec/specs/ before moving the change folder."
+
+open_decisions:
+  - id: scripts-runtime
+    status: open
+    do_not_decide_in: ["sdd-init"]
+    question: >-
+      Which language implements the deterministic helper under
+      skills/stackgraft/scripts/?
+    constraint: >-
+      It MUST run with no install step on both macOS and Linux, because
+      adopting the skill has to stay "copy a folder". No package manager
+      step, no build step, no runtime the user must add.
+    notes: >-
+      This constrains the choice hard. Any runtime the helper needs must
+      already be present on a stock macOS and a stock Linux box. Evaluate
+      candidates against that, and against what the helper actually has to
+      do: hash files, parse and write JSON, and match changed paths
+      against globs.

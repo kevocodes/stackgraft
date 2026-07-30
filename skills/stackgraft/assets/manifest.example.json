@@ -47,11 +47,11 @@
     },
 
     "backend-shared": {
-      "kind": "static",
+      "runnable": false,
       "paths": ["packages/contracts/**"],
       "consumers": ["catalog-api", "search-indexer", "search-indexer"],
       "notes": [
-        "Not runnable. Present so a shared-tree edit fans out to every service whose build context includes it.",
+        "Present so a shared-tree edit fans out to every service whose build context includes it.",
         "Services building from their own directory are deliberately absent from consumers."
       ]
     },

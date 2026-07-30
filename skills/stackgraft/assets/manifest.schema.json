@@ -53,16 +53,39 @@
 
     "services": {
       "type": "object",
-      "description": "One entry per runnable unit, keyed by the name the orchestrator uses.",
+      "description": "One entry per unit, keyed by the name the orchestrator uses. Runnable entries are launched; runnable: false entries only fan a change out to their consumers.",
       "additionalProperties": {
         "type": "object",
-        "required": ["kind", "paths"],
+        "required": ["paths"],
         "additionalProperties": false,
+        "if": {
+          "properties": { "runnable": { "const": false } },
+          "required": ["runnable"]
+        },
+        "then": {
+          "required": ["paths", "consumers"],
+          "properties": {
+            "basePort": false,
+            "portGroup": false,
+            "overlayCommand": false,
+            "verifyRequest": false,
+            "peerEnv": false
+          }
+        },
+        "else": { "required": ["portGroup"] },
         "properties": {
           "kind": {
             "type": "string",
+            "not": { "const": "static" },
             "examples": ["docker-compose", "node-dev-server", "process"],
-            "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing."
+            "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing. The retired \"static\" value is rejected — a non-launchable tree is runnable: false.",
+            "$comment": "kind is no longer required: a runnable: false entry has no stack type to describe."
+          },
+          "runnable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Absent means true. False marks a tree that is never launched and never gets a port — shared code, generated assets — so the entry exists only to fan a change under paths out to consumers.",
+            "$comment": "default is an annotation, so the conditional above treats absent and true alike."
           },
           "portGroup": {
             "type": "string",

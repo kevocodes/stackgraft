@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "stackgraft topology manifest",
+  "description": "Per-repository cache of the local run topology. Keyed by the main repo root; shared by all its worktrees. Every field is a cache of something re-derivable from the repo, so a drifted fingerprint always beats a stored value.",
+  "type": "object",
+  "required": ["schemaVersion", "repoRoot", "sources", "services", "portPolicy"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "repoRoot": {
+      "type": "string",
+      "description": "Absolute path of the MAIN worktree, not the checkout in use."
+    },
+    "discoveredAt": { "type": "string", "format": "date-time" },
+
+    "sources": {
+      "type": "array",
+      "description": "Files that define the topology. Their hashes drive invalidation.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "covers"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "description": "Relative to repoRoot." },
+          "sha256": { "type": "string" },
+          "covers": {
+            "type": "array",
+            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest.",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "baseStack": {
+      "type": "object",
+      "description": "How the shared, unmodified stack is started and proven healthy.",
+      "additionalProperties": false,
+      "properties": {
+        "startCommand": { "type": "string" },
+        "statusCommand": { "type": "string" },
+        "teardownCommand": { "type": "string" },
+        "bindsTo": { "type": "string", "description": "e.g. 127.0.0.1" }
+      }
+    },
+
+    "services": {
+      "type": "object",
+      "description": "One entry per runnable unit, keyed by the name the orchestrator uses.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["kind", "paths"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": ["docker-compose", "node-dev-server", "process", "static"]
+          },
+          "basePort": {
+            "type": "integer",
+            "description": "Host port in the base stack. The overlay MUST NOT reuse it."
+          },
+          "paths": {
+            "type": "array",
+            "description": "Globs that mean this service changed. Order matters only for readability.",
+            "items": { "type": "string" }
+          },
+          "buildContext": { "type": "string" },
+          "dockerfile": { "type": "string" },
+          "sharedDirsIncluded": {
+            "type": "boolean",
+            "description": "False when the build context excludes the shared/ tree, so edits there do NOT reach this service."
+          },
+          "dependsOn": {
+            "type": "array",
+            "description": "Services this one calls. Unchanged ones get redirected to the base stack.",
+            "items": { "type": "string" }
+          },
+          "consumers": {
+            "type": "array",
+            "description": "Services that break when this one changes. Required on shared/common entries.",
+            "items": { "type": "string" }
+          },
+          "peerEnv": {
+            "type": "object",
+            "description": "Env var -> URL used to reach each peer. The overlay rewrites these to base-stack host ports.",
+            "additionalProperties": { "type": "string" }
+          },
+          "healthPath": { "type": "string" },
+          "verifyRequest": {
+            "type": "string",
+            "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced."
+          },
+          "overlayCommand": {
+            "type": "string",
+            "description": "Templated launch command. Use {{port}} and {{worktree}} placeholders."
+          },
+          "prepareCommand": {
+            "type": "string",
+            "description": "One-time setup inside the worktree, e.g. cloning node_modules."
+          },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
+    "portPolicy": {
+      "type": "object",
+      "required": ["reserved"],
+      "additionalProperties": false,
+      "properties": {
+        "reserved": {
+          "type": "array",
+          "description": "Ports that belong to the user. Never bind these, even when lsof reads them free.",
+          "items": { "type": "integer" }
+        },
+        "ranges": {
+          "type": "object",
+          "description": "Allowed overlay ranges per service kind.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+
+    "constraints": {
+      "type": "array",
+      "description": "Repo-wide rules that silently break an overlay. Check every run.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "where", "effect"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "type": "string" },
+          "where": { "type": "string" },
+          "effect": { "type": "string" },
+          "remedy": { "type": "string" }
+        }
+      }
+    },
+
+    "verifiedOverlays": {
+      "type": "array",
+      "description": "Append-only log of overlays that actually worked. Evidence the entry is still correct.",
+      "items": {
+        "type": "object",
+        "required": ["service", "port", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "service": { "type": "string" },
+          "port": { "type": "integer" },
+          "at": { "type": "string", "format": "date-time" },
+          "worktree": { "type": "string" },
+          "result": { "type": "string" }
+        }
+      }
+    }
+  }
+}

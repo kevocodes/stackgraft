@@ -110,8 +110,8 @@ On an ISOLATE verdict the skill MUST apply `backingStores[].isolation` inside th
 
 ### Requirement: Per-service acceptance, invalidated by fingerprint drift
 
-The only bypass MUST be an `acceptedRisks` entry keyed by `(service, store)`. Each entry MUST record the accepting timestamp and the service's source fingerprint at acceptance time, and MUST be kept latest-only per key. An entry MUST be treated as absent once that service's source fingerprint drifts. No global bypass MAY exist.
-(Verify: schema validation — `acceptedRisks` requires `service`, `store`, `at`, and `fingerprint`.)
+The only bypass MUST be an `acceptedRisks` entry keyed by `"<service>::<store>"`. Each entry MUST record the accepting timestamp and the service's source fingerprint at acceptance time. Latest-only per key is structural: `acceptedRisks` is an object, so a key cannot repeat. An entry MUST be treated as absent once that service's source fingerprint drifts. No global bypass MAY exist.
+(Verify: schema validation — `acceptedRisks` is an object whose keys match `^[^:]+::[^:]+$` and whose entries require `at` and `serviceFingerprint`. Service and store are carried by the key and MUST NOT be duplicated as fields, so the key and the entry body cannot disagree.)
 
 #### Scenario: Explicit acceptance recorded
 

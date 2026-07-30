@@ -1,6 +1,7 @@
 ---
 name: stackgraft
 description: "Trigger: git worktree, run only the changed service on another port, test branches in parallel. Overlay modified services onto an already-running base stack."
+compatibility: "POSIX systems only: macOS, Linux, WSL. Windows-native is out of scope. git and a POSIX shell with awk are required unconditionally and ship with a stock macOS and a minimal Linux image. Container tooling such as docker compose is required only for container-based repositories."
 license: Apache-2.0
 metadata:
   author: kevocodes
@@ -37,8 +38,8 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 
 ## Execution Steps
 
-1. Resolve the main repo root with `git rev-parse --path-format=absolute --git-common-dir`, then strip `/.git`. All worktrees of a repo share one manifest.
-2. Load `~/.claude/stackgraft/<slugified-repo-root>.json`. Hash every `sources[].path` and compare.
+1. Resolve `repoRoot`: `git rev-parse --path-format=absolute --git-common-dir` minus `/.git`.
+2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `git hash-object --stdin` over that common dir, truncated to 8. Discard on `schemaVersion`/`repoRoot` mismatch; when unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `scripts/fingerprint.sh`.
 3. Discover or refresh per the Decision Gates — follow `references/discovery.md`.
 4. Diff the worktree against its base branch and map changed paths to services via each entry's `paths` globs.
 5. Confirm the base stack is up and healthy; start only what is missing.
@@ -62,3 +63,4 @@ Return:
 - `assets/manifest.example.json` — filled multi-service example.
 - `references/discovery.md` — discovery and slice-refresh procedure per stack type.
 - `references/traps.md` — verified failure modes to check every run.
+- `scripts/fingerprint.sh`, `scripts/pick-port.sh` — POSIX helpers.

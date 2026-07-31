@@ -51,6 +51,70 @@
       }
     },
 
+    "backingStores": {
+      "type": "object",
+      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["substrate", "isolation"],
+        "additionalProperties": false,
+        "properties": {
+          "substrate": {
+            "type": "string",
+            "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
+            "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies."
+          },
+          "isolation": {
+            "type": "object",
+            "required": ["mechanism"],
+            "additionalProperties": false,
+            "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",
+            "properties": {
+              "mechanism": {
+                "type": "string",
+                "examples": ["database", "schema", "vhost", "keyspace", "topic-prefix", "consumer-group", "bucket", "index-prefix", "file-copy", "none"],
+                "description": "\"none\" is legal and meaningful, not a gap: it records that this substrate offers no in-instance isolation — Redis pub/sub channels and externally visible side effects are real examples. A store with mechanism \"none\" resolves to REFUSE or to a dedicated instance; it never resolves to reuse."
+              },
+              "applyVia": {
+                "type": "string",
+                "examples": ["compose-exec", "host-client", "manual"],
+                "description": "How the command reaches the store. compose-exec borrows the client from inside the running container, which is why no client binary has to exist on the host."
+              },
+              "command": {
+                "type": "string",
+                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. Placeholders are {{isolationName}}, {{store}}, and {{worktree}}. It must invoke one program: shell metacharacters are rejected, so a pipeline belongs in a task target the repo already defines."
+              },
+              "teardownCommand": { "type": "string" },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Env overrides that point the overlay at the isolated namespace instead of the shared one."
+              },
+              "discoveredFrom": {
+                "type": "string",
+                "description": "The file the command came from. Drift here invalidates any approval recorded against it."
+              },
+              "confidence": {
+                "type": "string",
+                "enum": ["resolved", "inferred", "user"],
+                "description": "Only \"resolved\" may satisfy the shared-state gate. A degraded discovery path must not launder a guess into a safety verdict."
+              },
+              "approval": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["at"],
+                "properties": {
+                  "at": { "type": "string", "format": "date-time" },
+                  "by": { "type": "string" }
+                }
+              }
+            }
+          },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
     "services": {
       "type": "object",
       "description": "One entry per unit, keyed by the name the orchestrator uses. Runnable entries are launched; runnable: false entries only fan a change out to their consumers.",

@@ -325,6 +325,13 @@
               "type": "object",
               "required": ["store", "identity"],
               "additionalProperties": false,
+              "allOf": [
+                {
+                  "$comment": "A recorded identity that never reaches the launched process changes nothing about what the overlay attaches under, and step 2 of references/shared-state.md clears X only for a value actually applied. overlayCommand's placeholders are closed to three and isolation.env belongs to the store — every service paired with it shares those overrides — so without this field there is no channel at all. Recording the value therefore obliges recording the channel, the same way a create command obliges its teardown.",
+                  "if": { "required": ["overlayIdentity"] },
+                  "then": { "required": ["overlayIdentityEnv"] }
+                }
+              ],
               "properties": {
                 "store": { "type": "string" },
                 "identity": {
@@ -336,6 +343,11 @@
                   "type": "string",
                   "description": "The distinct VALUE substituted for that key when the overlay runs, e.g. sg_feat_x_1a2b3c4d for a group.id. Step 2 of references/shared-state.md clears X only by supplying one, and without a field to hold it the re-classification could not persist: the pair would return to REFUSE on the next run with nothing recording what was already done. Absent means no distinct identity was supplied, which is the competing case. It is a value the overlay applies, not a claim about the repository, so it does not on its own make X no: step 2 clears X only for a value VERIFIED DISTINCT — different from what the base attaches under, actually applied to the launched process, and on a substrate where a distinct identity ends the competition at all. Unverified, X stays undetermined and the pair refuses at step 1.",
                   "examples": ["sg_feat_x_1a2b3c4d"]
+                },
+                "overlayIdentityEnv": {
+                  "type": "string",
+                  "description": "The env var the overlay's launch sets to overlayIdentity — the channel that carries the distinct identity into the process it must configure. It is per service, which is what the store's isolation.env cannot be: that map is shared by every service paired with the store, so one overlay's group.id would be handed to all of them. DISCOVERED FROM THE SERVICE's own configuration — the variable it already reads that identity key from — never invented, because a variable the service does not read applies nothing while looking like it did. Required whenever overlayIdentity is present; step 2 of references/shared-state.md then treats the pair as undetermined, and refuses it, when the value was recorded but the launch did not apply it.",
+                  "examples": ["KAFKA_GROUP_ID"]
                 }
               }
             }

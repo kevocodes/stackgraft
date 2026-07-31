@@ -67,6 +67,7 @@
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
+        "serviceFingerprint": "e60378b0e52df7e42905d2fc7cf94beb995e5f6a",
         "notes": "Applies pending migrations on startup, so every launch writes schema to whichever database it points at."
       },
       "peerEnv": {
@@ -93,6 +94,7 @@
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
+        "serviceFingerprint": "408e713c4c5c942ca0b02ebf60c6e8d348544681",
         "notes": "Reads only, but subscribes to the shared channel, so an overlay would take deliveries away from the base indexer."
       },
       "verifyRequest": "curl -sS -i 'http://localhost:{{port}}/search?q=test'",
@@ -124,6 +126,7 @@
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
+        "serviceFingerprint": "113264c22300bf1bc3cc55af3c4c86324a7533a6",
         "notes": "Browser client only: it reaches services over HTTP and holds no store credentials, so both lists are checked-empty rather than unknown."
       },
       "peerEnv": {},

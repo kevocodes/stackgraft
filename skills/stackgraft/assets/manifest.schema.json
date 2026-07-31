@@ -264,11 +264,16 @@
           },
           "stateReview": {
             "type": "object",
-            "required": ["at", "method"],
+            "required": ["at", "method", "serviceFingerprint"],
             "additionalProperties": false,
             "description": "Evidence of HOW the classification above was reached. Required whenever writes, competesOn, or migrates is present. Without it an all-empty classification is indistinguishable from a lazy pass that disarmed the gate everywhere — see references/traps.md.",
             "properties": {
               "at": { "type": "string", "format": "date-time" },
+              "serviceFingerprint": {
+                "type": "string",
+                "description": "The service's own source fingerprint when the classification was made, the same value acceptedRisks.serviceFingerprint uses and computed by the same recipe at the end of references/shared-state.md. Required because at and method alone give the cached classification no baseline: sources[] fingerprints cover topology files, and a service's own source tree is not a topology source, so on this skill's primary case — a worktree whose service code changed — the gate would read a classification derived from different code. A service discovered read-only and then given an INSERT would still present writes: [] and resolve to reuse. Once this stops matching the service's current source the classification is UNDETERMINED, not valid, which refuses at step 1 until it is re-derived.",
+                "$comment": "Deliberately not required to equal acceptedRisks.serviceFingerprint: the two are taken at different moments and drift independently."
+              },
               "method": {
                 "type": "string",
                 "enum": ["code-scan", "user-asserted", "resolver-declared"],

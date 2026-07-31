@@ -3,8 +3,18 @@
   "title": "stackgraft topology manifest",
   "description": "Per-repository cache of the local run topology. Keyed by the main repo root; shared by all its worktrees. Every field is a cache of something re-derivable from the repo, so a drifted fingerprint always beats a stored value.",
   "type": "object",
-  "required": ["schemaVersion", "repoRoot", "fingerprintTool", "sources", "services", "portPolicy"],
+  "required": ["schemaVersion", "repoRoot", "fingerprintTool", "sources", "services", "backingStores", "portPolicy"],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "The gate in references/shared-state.md runs once per (service, store) pair, so an empty backingStores runs it zero times and every interlock inside that loop is skipped wholesale. backingStores is therefore REQUIRED — an absent map and a map discovery never populated are the same bytes — and an EMPTY one is a claim that has to be evidenced exactly like writes: [] is: the manifest must carry a root stateReview recording that discovery looked for stateful dependencies and found none. Unevidenced emptiness is undetermined, not safe, and refuses.",
+      "if": {
+        "required": ["backingStores"],
+        "properties": { "backingStores": { "maxProperties": 0 } }
+      },
+      "then": { "required": ["stateReview"] }
+    }
+  ],
   "properties": {
     "schemaVersion": { "const": 2 },
     "repoRoot": {
@@ -74,7 +84,7 @@
 
     "backingStores": {
       "type": "object",
-      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
+      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. REQUIRED, and it is the gate's pair set: every runnable service is paired with every entry here, so a missing map means zero pairs, zero verdicts and an ungated launch. It MAY be empty, but only alongside the root stateReview that evidences the emptiness — see the conditional at the top of this schema. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
       "propertyNames": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
         "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps substitution from re-opening the deny-list in references/shared-state.md. It still accepts the names real orchestrators use — uppercase, dots and digits are all legal compose service names, and a store that could not be recorded under its real name would resolve to neither map and refuse forever with no remedy."
@@ -162,6 +172,22 @@
           },
           "notes": { "type": "array", "items": { "type": "string" } }
         }
+      }
+    },
+
+    "stateReview": {
+      "type": "object",
+      "required": ["at", "method"],
+      "additionalProperties": false,
+      "description": "Manifest-level evidence that discovery LOOKED for stateful dependencies. REQUIRED when backingStores has no members, and the one verdict recorded per manifest rather than per (service, store) pair: it is what makes \"this repository runs no shared store\" a falsifiable claim instead of an omission. It has to exist because the degraded path is reachable — references/discovery.md section 1 has a resolver that was unavailable and a static parse standing in for it — and a map that pass never filled is byte-identical to a map a repository never needed. Same fields and same method scale as services[].stateReview, minus serviceFingerprint: there is no service to fingerprint. Legal and harmless when backingStores is non-empty, where it says nothing about any individual pair; those still need their own verdicts.",
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "method": {
+          "type": "string",
+          "enum": ["code-scan", "user-asserted", "resolver-declared"],
+          "description": "How the absence was established, same scale as services[].stateReview.method. user-asserted is the weakest here too: a human saying a repository has no database is the claim most worth spot-checking, because it disarms the gate for every service at once."
+        },
+        "notes": { "type": "string" }
       }
     },
 

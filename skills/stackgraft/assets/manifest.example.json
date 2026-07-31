@@ -59,7 +59,7 @@
       "basePort": 8080,
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
-      "dependsOn": ["postgres", "events"],
+      "dependsOn": ["postgres", "events", "search-indexer"],
       "writes": ["postgres", "events"],
       "competesOn": [],
       "migrates": true,

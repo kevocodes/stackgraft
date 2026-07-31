@@ -2,6 +2,7 @@
 # pick-port.sh - deterministic overlay port CANDIDATE for stackgraft.
 #
 # usage:  sh scripts/pick-port.sh <lo> <hi> <worktree-path> [excluded-port...]
+#         Every port argument is decimal and within 1-65535.
 # stdout: exactly one integer - a CANDIDATE, never a verified-free port.
 #         Availability is not portably checkable and any reading is stale at
 #         once, so the authoritative test is the launcher's strict-port bind
@@ -25,18 +26,36 @@ usage() {
     exit 2
 }
 
-case ${1:-} in '' | *[!0-9]*) usage ;; esac
-case ${2:-} in '' | *[!0-9]*) usage ;; esac
-[ "$1" -le "$2" ] || usage
+# Validates one port argument into port_val: decimal, 1-65535, leading zeros
+# stripped so arithmetic expansion cannot read "08" as a bad octal constant.
+# Sets a global instead of printing, because usage() has to end the script and
+# an exit inside a command substitution would only leave the subshell.
+port_arg() {
+    case ${1:-} in '' | *[!0-9]*) usage ;; esac
+    port_val=$1
+    while [ "${port_val#0}" != "$port_val" ]; do port_val=${port_val#0}; done
+    [ -n "$port_val" ] && [ "${#port_val}" -le 5 ] && [ "$port_val" -le 65535 ] || usage
+}
+
+port_arg "${1:-}"; lo=$port_val
+port_arg "${2:-}"; hi=$port_val
+[ "$lo" -le "$hi" ] || usage
 [ "$#" -ge 3 ] && [ -n "$3" ] || usage
 case $3 in *[!0-9]*) ;; *) usage ;; esac
 
-lo=$1
-span=$(($2 - $1 + 1))
+span=$((hi - lo + 1))
 
 worktree=$3
 shift 3
-excluded=" $* "
+
+# Exclusions are normalised too: "018099" must exclude 18099, not slip past a
+# string comparison against the emitted form.
+excluded=' '
+for arg in "$@"; do
+    [ -n "$arg" ] || continue
+    port_arg "$arg"
+    excluded="$excluded$port_val "
+done
 
 digest=$(printf '%s' "$worktree" | git hash-object --stdin) || exit 2
 offset=$(printf '%s' "$digest" | awk -v s="$span" '{n = 0; for (i = 1; i <= 8; i++) n = (n * 16 + index("0123456789abcdef", substr($0, i, 1)) - 1) % s; print n}')

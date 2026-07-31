@@ -2,7 +2,7 @@
 
 This file is the **only** source of a shared-state verdict. The skill body states that a verdict is required and refuses without one; it deliberately contains no fragment of the rule below, so an agent that never opens this file can only refuse.
 
-Produce exactly one verdict per `(service, store)` pair before any overlay launches.
+Produce exactly one verdict per `(service, store)` pair before any overlay launches — and, when a repository has no stores at all, the single manifest-level verdict described below, which is the only verdict that is not per pair.
 
 **The pair set is not read off `dependsOn`.** For every runnable service being overlaid, pair it with *every* entry in `backingStores`, plus any name in that service's own `dependsOn` that resolves to a store. `dependsOn` may only **add** pairs, never remove one: a store a service forgot to declare is exactly the store the gate exists to catch, and a set the manifest narrows is a set the manifest can empty.
 

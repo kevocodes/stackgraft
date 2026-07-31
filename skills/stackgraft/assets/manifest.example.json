@@ -35,7 +35,6 @@
       "peerEnv": {
         "SEARCH_URL": "http://search-indexer:8090"
       },
-      "healthPath": "/health",
       "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/auth/login -H 'Origin: http://localhost:5174' -H 'Content-Type: application/json' -d '{\"email\":\"...\",\"password\":\"...\"}'",
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
@@ -89,13 +88,12 @@
     }
   ],
 
-  "verifiedOverlays": [
-    {
-      "service": "frontend",
+  "verifiedOverlays": {
+    "frontend": {
       "port": 5174,
       "at": "2026-07-27T19:00:00Z",
       "worktree": "/Users/example/Workspaces/bookshop-worktrees/feat-x",
       "result": "login POST returned 200 with access-control-allow-origin echoed back"
     }
-  ]
+  }
 }

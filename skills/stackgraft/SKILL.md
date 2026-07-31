@@ -20,8 +20,8 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 - Port probes are heuristics, never proof: bind strict-port, honor `portPolicy.reserved`.
 - Never kill a process you did not start.
 - Never place a worktree under `/tmp` or `/var/tmp`: both are reaped.
-- `/health` returning 200 is not proof: verify a real request, read its headers.
-- The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite it.
+- `/health` returning 200 is not proof: verify a real request's headers.
+- The manifest is a cache, not truth: refresh drifted entries; the repo wins, rewrite it.
 - Substitute placeholders as quoted words: host paths hold whitespace.
 - Every overlay is REFUSED until `references/shared-state.md` has been read and every verdict it demands is recorded. Emptiness is a claim, never a verdict — that file says what evidences it. Nothing else — manifest, user, or inference — produces one. An overlay whose verdict is a refusal does not launch.
 
@@ -47,7 +47,7 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 6. Before launching, read `references/shared-state.md`; record every verdict it demands.
 7. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one port per argument: reserved, base ports, taken this run. Bind strictly.
 8. Launch each mapped service, rewiring unchanged dependencies to the base stack.
-9. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
+9. Verify with a real request, record `verifiedOverlays`, then rewrite the manifest through `scripts/with-lock.sh`.
 
 ## Output Contract
 
@@ -59,5 +59,5 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 
 ## References
 
-- `assets/manifest.schema.json`, `assets/manifest.example.json`, `references/discovery.md`, `references/traps.md`, `scripts/fingerprint.sh`, `scripts/pick-port.sh`.
+- `assets/manifest.schema.json`, `assets/manifest.example.json`, `references/discovery.md`, `references/traps.md`, `scripts/fingerprint.sh`, `scripts/pick-port.sh`, `scripts/with-lock.sh`.
 - `references/shared-state.md` — the only verdict procedure.

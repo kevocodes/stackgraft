@@ -27,11 +27,10 @@
   "services": {
     "catalog-api": {
       "kind": "docker-compose",
+      "portGroup": "compose",
       "basePort": 8080,
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
-      "dockerfile": "Dockerfile",
-      "sharedDirsIncluded": false,
       "dependsOn": ["postgres"],
       "peerEnv": {
         "SEARCH_URL": "http://localhost:8090"
@@ -46,17 +45,18 @@
     },
 
     "backend-shared": {
-      "kind": "static",
+      "runnable": false,
       "paths": ["packages/contracts/**"],
       "consumers": ["catalog-api", "search-indexer", "search-indexer"],
       "notes": [
-        "Not runnable. Present so a shared-tree edit fans out to every service whose build context includes it.",
+        "Present so a shared-tree edit fans out to every service whose build context includes it.",
         "Services building from their own directory are deliberately absent from consumers."
       ]
     },
 
     "frontend": {
       "kind": "node-dev-server",
+      "portGroup": "node-dev",
       "basePort": 5173,
       "paths": ["frontend/**"],
       "dependsOn": ["catalog-api", "search-indexer"],
@@ -74,8 +74,8 @@
   "portPolicy": {
     "reserved": [3000, 5173],
     "ranges": {
-      "node-dev-server": [5174, 5199],
-      "docker-compose": [18000, 18999]
+      "node-dev": [5174, 5199],
+      "compose": [18000, 18999]
     }
   },
 

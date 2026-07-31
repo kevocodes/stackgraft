@@ -28,11 +28,14 @@ This is an [Agent Skill](https://agentskills.io) — one folder, read by ~40 age
 
 Copy `skills/stackgraft/` into your agent's skills directory (`~/.claude/skills/`, `~/.copilot/skills/`, …).
 
-Claude Code users can install it as a plugin instead:
+Claude Code users can install it as a plugin instead, which puts the skill on disk and keeps it updated:
 
 ```
 /plugin marketplace add kevocodes/stackgraft
+/plugin install stackgraft@stackgraft
 ```
+
+The plugin is the same folder — `skills/stackgraft/` is discovered automatically — so nothing about the skill is Claude-specific. The plugin only exists to save other Claude Code users a manual copy.
 
 ## License
 

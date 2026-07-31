@@ -90,7 +90,7 @@ This is where overlays fail silently, and the correct answer depends on where th
 1. Fingerprint each `sources[].path` with `scripts/fingerprint.sh`. Collect the drifted ones.
 2. Union the drifted entries' `covers`, then **remove any token that is a strict descendant of another token already in the set**. `covers` values are dot-delimited key paths: `services`, `services.<name>`, `backingStores`, `baseStack`, `portPolicy`, `constraints`.
 3. **Coarse wins.** Refreshing `services` re-derives the whole object from every source covering any part of it, including sources that did not themselves drift — and every one of those sources is **re-fingerprinted in the same pass**. Otherwise a fine source keeps a stored fingerprint asserting ownership of a value the coarse pass just overwrote. Over-refresh is cheap; under-refresh is silent staleness.
-4. **Fine stays fine.** A drift in `services.frontend` re-derives that key alone. It may create, update, or delete that one key — never another.
+4. **Fine stays fine.** A drift in `services.storefront` re-derives that key alone. It may create, update, or delete that one key — never another.
 5. Update the drifted fingerprints and `discoveredAt`. Leave every untouched entry alone.
 6. If a source file disappeared, drop it and re-discover its `covers` from scratch.
 7. Discard and fully rediscover any manifest whose `schemaVersion` you do not recognize. There is no migration path, and there does not need to be — everything here is re-derivable.

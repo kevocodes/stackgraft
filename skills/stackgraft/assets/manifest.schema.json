@@ -335,11 +335,11 @@
           },
           "overlayCommand": {
             "type": "string",
-            "description": "Templated launch command for this one unit. Every value substituted into it is quoted as one shell word, or placed in its own argv element — see references/discovery.md section 6; a worktree path containing a space otherwise splits into two operands."
+            "description": "Templated launch command for this one unit. The placeholder set is closed and is exactly three: {{port}} (the port picked this run), {{worktree}} (the overlay's checkout), {{repoRoot}} (this manifest's repoRoot). references/discovery.md section 3 states the same three for this field and for prepareCommand. A token shaped {{.Something}} is the orchestrator's own Go template — docker compose --format writes them — and is passed through verbatim, never substituted; any OTHER {{...}} has no defined source, which means the line was not taken from the repository's own single-unit run form: re-derive it or ask, never guess a value. Every value substituted in is quoted as one shell word, or placed in its own argv element — see references/discovery.md section 6; a worktree path containing a space otherwise splits into two operands."
           },
           "prepareCommand": {
             "type": "string",
-            "description": "One-time setup inside the worktree, e.g. cloning node_modules. Same substitution and quoting rule as overlayCommand."
+            "description": "One-time setup inside the worktree, e.g. cloning node_modules. Same closed placeholder set as overlayCommand — {{port}}, {{worktree}}, {{repoRoot}} — and the same passthrough, substitution and quoting rules."
           },
           "notes": { "type": "array", "items": { "type": "string" } }
         }

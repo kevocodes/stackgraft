@@ -39,6 +39,11 @@ merges every file and expands short notation into canonical form. `--no-interpol
 
 Record as `sources[]` every file that defines topology, with the manifest keys it `covers`.
 
+**`sources` may never be empty, including when the user supplied the topology.** An empty array makes the reuse gate vacuously true forever, and the manifest stops being a cache. A user-answered topology has no file of its own, so record it as one entry anyway, `confidence: "user"`, with `resolverStatus` saying why nothing resolved it:
+
+- If the answer is *about* a real file — an unparseable Tiltfile, a compose file whose resolver refused — point `path` at that file and fingerprint it. Editing the file then re-asks the question, which is the behaviour you want.
+- If there is genuinely no file behind it, the entry has nothing that drifts, so it MUST carry `revalidate: "always"`. It is then re-derived — re-confirmed with the user — every run, which is the only honest reading of an answer no fingerprint can defend. Never record a user answer as `revalidate: "fingerprint"` against a path that does not exist: `scripts/fingerprint.sh` returns `-` for it, and `-` compared to a stored `-` reads as unchanged.
+
 **Tier 1 — statically resolvable, answers both (a) and (b). Use these first.**
 
 | Source | Gives |

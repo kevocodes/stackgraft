@@ -74,6 +74,10 @@
     "backingStores": {
       "type": "object",
       "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+        "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps substitution from re-opening the deny-list in references/shared-state.md."
+      },
       "additionalProperties": {
         "type": "object",
         "required": ["substrate", "isolation"],

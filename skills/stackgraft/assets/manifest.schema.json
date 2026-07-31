@@ -98,6 +98,16 @@
                 "$comment": "An approval is a baseline against one specific discovered source. Without discoveredFrom there is no file to re-fingerprint, so the drift rule could never fire and the approval would never expire.",
                 "if": { "required": ["approval"] },
                 "then": { "required": ["discoveredFrom"] }
+              },
+              {
+                "$comment": "A mechanism is a claim that this store CAN be isolated, and N in references/shared-state.md reads it as one. {\"mechanism\": \"database\"} alone satisfies N and reaches an ISOLATE verdict while carrying nothing that could create or point at the isolated namespace. A mechanism with no way to apply it is \"none\": either a command creates the namespace or an env points the overlay at one, and neither is optional.",
+                "if": {
+                  "required": ["mechanism"],
+                  "properties": { "mechanism": { "not": { "const": "none" } } }
+                },
+                "then": {
+                  "anyOf": [{ "required": ["command"] }, { "required": ["env"] }]
+                }
               }
             ],
             "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",

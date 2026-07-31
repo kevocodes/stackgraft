@@ -19,7 +19,7 @@ For each pair, evaluate three booleans against the manifest:
 
 - **W** — does the service mutate the store? (`writes` names it)
 - **X** — is attaching competitive or exclusive? (`competesOn` names it)
-- **N** — does isolation exist inside the running instance? (`backingStores[store].isolation.mechanism` is not `none`)
+- **N** — does isolation exist inside the running instance? (`backingStores[store].isolation.mechanism` is not `none`, **and** the record carries a `command` that creates the namespace or an `env` that points the overlay at one). A mechanism with no way to apply it *is* `none`: `{"mechanism": "database"}` on its own names a capability and supplies nothing that could exercise it, so reading it as N=yes reaches ISOLATE with nothing to isolate with.
 
 Take the steps in order and stop at the first one that matches. **X is evaluated before W and independently of it**: writing is not the only way to break the base stack, so a decided W must never absorb the X question. A Kafka store with `mechanism: "topic-prefix"` satisfies N while `group.id` stays shared — isolate the topics and the overlay still steals partitions from a service nobody modified.
 

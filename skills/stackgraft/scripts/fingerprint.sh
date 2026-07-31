@@ -1,3 +1,4 @@
+#!/bin/sh
 # fingerprint.sh - content fingerprints for stackgraft manifest sources.
 #
 # usage:  sh scripts/fingerprint.sh [-C repoRoot] <path>...

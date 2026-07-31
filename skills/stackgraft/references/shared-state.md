@@ -73,7 +73,7 @@ A discovered template is repository data, so it is treated as untrusted input.
 | One program | The template invokes one program with arguments. No pipelines, chains, or redirection — a repo needing them wraps them in its own task target, which is rung 1. |
 | Name generation | `{{isolationName}}` is generated here, never read from the repo: `sg_<branch-slug>_<hash8>`, matching `^[a-z][a-z0-9_]{0,39}$`. |
 | Destructive verbs | Reject `DROP DATABASE`/`DROP SCHEMA` of a name not derived from `{{isolationName}}`, plus `FLUSHALL`, `FLUSHDB`, `compose down`, `-v`, `--volumes`, `rm -rf`. |
-| Approval | Show the substituted command and its target store before the first run per repo and store. Record `isolation.approval`. Re-prompt when `discoveredFrom` drifts. |
+| Approval | Show the substituted command and its target store before the first run per repo and store. Record `isolation.approval` with `at` and `sourceFingerprint`, the fingerprint of `discoveredFrom` at approval time — that stored baseline is the only thing a drift can be compared against. The approval is treated as **absent** once it stops matching, the way `acceptedRisks.serviceFingerprint` works, so a rewritten template is shown again instead of inheriting the old consent. |
 
 Rejected examples, one per rule: `psql -c 'CREATE DATABASE {{dbName}}'` (unknown placeholder) · `createdb {{isolationName}} && echo ok` (`&`) · ``createdb `whoami` `` (backtick) · `createdb $DB` (`$`) · `createdb a; dropdb b` (`;`) · `createdb x | tee log` (`|`) · `createdb x > out` (`>`) · `pg_dump < in` (`<`) · `createdb {{repoDbName}}` (repo-supplied name) · `dropdb production` (destructive verb on a name not derived from `{{isolationName}}`) · `redis-cli FLUSHALL` (destructive verb).
 

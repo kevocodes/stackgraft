@@ -116,7 +116,6 @@
             "description": "Env var -> URL used to reach each peer. The overlay rewrites these to base-stack host ports.",
             "additionalProperties": { "type": "string" }
           },
-          "healthPath": { "type": "string" },
           "verifyRequest": {
             "type": "string",
             "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced."
@@ -174,14 +173,13 @@
     },
 
     "verifiedOverlays": {
-      "type": "array",
-      "description": "Append-only log of overlays that actually worked. Evidence the entry is still correct.",
-      "items": {
+      "type": "object",
+      "description": "Latest successful overlay per service, keyed by service name. Not a log: only the newest record is evidence that an entry still works, and keying bounds growth at one record per service with no trim policy and no tie-break to get wrong. This file is a cache, so an unbounded append-only history in it would grow forever and prove nothing extra.",
+      "additionalProperties": {
         "type": "object",
-        "required": ["service", "port", "at"],
+        "required": ["port", "at"],
         "additionalProperties": false,
         "properties": {
-          "service": { "type": "string" },
           "port": { "type": "integer" },
           "at": { "type": "string", "format": "date-time" },
           "worktree": { "type": "string" },

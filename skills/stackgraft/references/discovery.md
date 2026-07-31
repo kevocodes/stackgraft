@@ -74,6 +74,9 @@ Resolve from the source files, never from assumption:
 - **`basePort`** — the port published on the host, not the container port.
 - **`peerEnv`** — the env vars holding peer URLs. See §4; the right value depends on where the overlay runs.
 - **`verifyRequest`** — a real endpoint with real headers. If any gating exists (CORS, tenant, auth), it belongs in this command.
+- **`dependsOn`** — every dependency the unit reaches. Each name must resolve to a `services` or a `backingStores` entry; a name in neither is unknown and fails closed.
+- **`backingStores`** — one entry per stateful dependency the base stack runs (database, broker, cache, object store, scheduler), keyed by the exact name `dependsOn` uses. Record `substrate` and `isolation` for each, with `mechanism: "none"` when nothing is discoverable. **Never leave a stateful dependency out of this map.** The shared-state gate fires on the dependency, so an unmapped store is a dependency the gate must refuse rather than one it can classify.
+- **`writes`, `competesOn`, `migrates`, `stateReview`** — classify each unit against every store it depends on, in the same pass. Emit `[]` only for a list you actually checked; leave the field absent when nobody looked, and record how you looked in `stateReview.method`. The verdict procedure is `references/shared-state.md`; discovery only supplies its inputs.
 
 ## 4. Reaching the base stack from an overlay
 

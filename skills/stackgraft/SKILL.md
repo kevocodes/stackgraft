@@ -22,7 +22,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 - Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
 - `/health` returning 200 is not proof; verify a real request and read its headers.
 - The manifest is a cache, never truth: refresh drifted entries; on conflict the repo wins and the entry is rewritten.
-- An overlay that touches a `backingStores` entry is REFUSED until `references/shared-state.md` has been read and a verdict is recorded for every `(service, store)` pair. No verdict, no launch. Nothing else — not the manifest, not the user, not inference — produces a verdict.
+- An overlay with any base-stack dependency is REFUSED until `references/shared-state.md` has been read and a verdict is recorded for every `(service, store)` pair. No verdict, no launch. Nothing else — not the manifest, not the user, not inference — produces a verdict.
 
 ## Decision Gates
 
@@ -35,7 +35,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 | Change touches a shared/common dir | Overlay every service listed in that entry's `consumers` |
 | Only the client/frontend changed | Overlay the dev server on a candidate port; reuse all backends |
 | Overlay needs a port outside the range | Stop and ask before binding |
-| Overlay service touches a backing store | Gate it — `references/shared-state.md` |
+| Overlay service has a base-stack dependency | Gate it — `references/shared-state.md` |
 
 ## Execution Steps
 

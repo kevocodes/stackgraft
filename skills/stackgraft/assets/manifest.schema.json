@@ -3,26 +3,33 @@
   "title": "stackgraft topology manifest",
   "description": "Per-repository cache of the local run topology. Keyed by the main repo root; shared by all its worktrees. Every field is a cache of something re-derivable from the repo, so a drifted fingerprint always beats a stored value.",
   "type": "object",
-  "required": ["schemaVersion", "repoRoot", "sources", "services", "portPolicy"],
+  "required": ["schemaVersion", "repoRoot", "fingerprintTool", "sources", "services", "portPolicy"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "repoRoot": {
       "type": "string",
       "description": "Absolute path of the MAIN worktree, not the checkout in use."
     },
     "discoveredAt": { "type": "string", "format": "date-time" },
+    "fingerprintTool": {
+      "type": "string",
+      "description": "The one tool that produced every sources[].fingerprint, e.g. git-hash-object-no-filters. A value other than the tool in use marks EVERY source drifted, i.e. full rediscovery — the same fail-safe direction as an unrecognized schemaVersion."
+    },
 
     "sources": {
       "type": "array",
       "description": "Files that define the topology. Their hashes drive invalidation.",
       "items": {
         "type": "object",
-        "required": ["path", "sha256", "covers"],
+        "required": ["path", "fingerprint", "covers"],
         "additionalProperties": false,
         "properties": {
           "path": { "type": "string", "description": "Relative to repoRoot." },
-          "sha256": { "type": "string" },
+          "fingerprint": {
+            "type": "string",
+            "description": "Opaque value from fingerprintTool, compared only for equality. Deliberately unconstrained: a repo using a non-default object format yields a different length, and a pattern would reject it."
+          },
           "covers": {
             "type": "array",
             "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest.",

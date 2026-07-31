@@ -1,19 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "repoRoot": "/Users/example/Workspaces/bookshop",
   "discoveredAt": "2026-07-30T12:00:00Z",
-
-  "_comment": "Illustrative example: a 33-service compose backend plus a non-dockerized Vite frontend. Only three services are shown; a real manifest lists every runnable unit. Values here are examples, not facts about any repo — always discover against the real files.",
+  "fingerprintTool": "git-hash-object-no-filters",
 
   "sources": [
     {
       "path": "docker-compose.yml",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fingerprint": "0000000000000000000000000000000000000000",
       "covers": ["services", "baseStack", "constraints"]
     },
     {
       "path": "frontend/package.json",
-      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "fingerprint": "1111111111111111111111111111111111111111",
       "covers": ["services.frontend"]
     }
   ],
@@ -35,14 +34,14 @@
       "sharedDirsIncluded": false,
       "dependsOn": ["postgres"],
       "peerEnv": {
-        "SEARCH_URL": "http://search-indexer:8090"
+        "SEARCH_URL": "http://localhost:8090"
       },
       "healthPath": "/health",
       "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/auth/login -H 'Origin: http://localhost:5174' -H 'Content-Type: application/json' -d '{\"email\":\"...\",\"password\":\"...\"}'",
-      "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --service-ports --publish {{port}}:8080 catalog-api",
+      "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
         "Builds from its own directory, so packages/contracts/** edits do NOT reach it — do not map shared paths here.",
-        "Peers are reached by compose DNS names inside the network; from the host use the published port instead."
+        "The overlay runs in its own compose project, so base-stack DNS names do not resolve for it; peers point at the base stack's published port instead."
       ]
     },
 

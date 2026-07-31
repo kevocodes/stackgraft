@@ -22,8 +22,8 @@ Each of these has been hit for real. Check them every run — they fail silently
 
 ## Environment
 
-- **Each worktree needs its own `.codegraph/`.** Never copy, symlink, or reuse another checkout's index — the roots differ and the answers will be wrong.
-- **Never place a worktree in `/tmp` or `/var/tmp`.** Use `<repo-parent>/<repo-name>-worktrees/<name>` or a path inside the repo's ignored area.
+- **Never place a worktree in `/tmp` or `/var/tmp`.** Both trees are reaped on a schedule no run controls, so a worktree can vanish mid-session and take uncommitted work with it. Use `<repo-parent>/<repo-name>-worktrees/<name>` or a path inside the repo's ignored area.
 - **Clone dependency trees instead of reinstalling.** On APFS, `cp -Rc <base>/node_modules <worktree>/node_modules` is a clonefile: near-instant, near-zero real disk, and each server keeps its own pre-bundle cache. Symlinking breaks that cache; reinstalling wastes minutes.
 - **zsh does not word-split unquoted variables.** `for s in "auth 8080"; do set -- $s` leaves `$2` empty and produces a URL like `localhost:/health`, which reads as a service failure. Use arrays or literals.
+- **`assets/manifest.example.json` is illustrative, not factual.** It shows three services of a large compose backend plus a non-dockerized dev server; a real manifest lists every runnable unit. Its ports, paths, and commands are examples — discover them against the real files instead of copying them, or the manifest lies from the first run.
 - **Commands that dump merged config or `.env` are correctly permission-blocked** — they would print every secret. Ask the user to edit the file and verify by observable effect instead.

@@ -457,3 +457,17 @@ schema 2 without the gate.
       PR 3 verification shows discovery cannot populate it, the fallback is
       `method: "user-asserted"` with an explicit trap entry — not dropping the field, which would
       make `[]` unfalsifiable.
+
+---
+
+## Amendments after review
+
+The decisions above are the design as it stood before implementation. Adversarial review changed four of them. The shipped contract is `skills/stackgraft/assets/manifest.schema.json`; this section records where the design and the shipped schema diverge, so a reader is not misled by either.
+
+**`stateReview` gained a fingerprint.** DS15 specified `{at, method}`. Shipped is `{at, method, serviceFingerprint}`, all three required. Review found that a classification with no baseline survives the code it describes: a service discovered read-only, later given an INSERT, still read `writes: []` and resolved to reuse. The fingerprint makes a stale classification undetermined rather than valid.
+
+**A second `stateReview` exists at the manifest root.** Not in the design at all. It evidences the claim that a repository has *no* stateful dependencies. Without it, an absent or empty `backingStores` produced an empty pair set, and a procedure that runs per pair does nothing when there are no pairs — the gate was satisfiable by declaring nothing. `backingStores` is now required, an empty map obliges the root record, and that record requires `confidence` plus a source covering `backingStores` so it can expire.
+
+**`competesOn` gained `overlayIdentity` and `overlayIdentityEnv`.** The design said a distinct consumer identity re-opens the verdict but gave the value nowhere to live and no route to the launched process, so the remedy was inert. The pair is now undetermined when an identity is recorded but not applied.
+
+**The post-substitution deny-list was replaced, twice.** DS5 re-applied the character deny-list to the substituted command, which rejected any checkout under a path containing `&` and forced `mechanism: "none"` for every store on that host. The structural rule that replaced it — each value occupies one argv element — then admitted `sh -c '… {{repoRoot}} …'`, where the value becomes shell grammar again inside a nested interpreter. Shipped is both: the deny-list scoped to the template's own grammar, the structural check after substitution, and a rejection of any program that re-parses an argument as code.

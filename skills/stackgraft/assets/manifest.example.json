@@ -24,6 +24,34 @@
     "bindsTo": "127.0.0.1"
   },
 
+  "backingStores": {
+    "postgres": {
+      "substrate": "postgres",
+      "isolation": {
+        "mechanism": "database",
+        "applyVia": "compose-exec",
+        "command": "docker compose --project-directory {{repoRoot}} exec -T postgres createdb -U bookshop -T bookshop {{isolationName}}",
+        "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T postgres dropdb -U bookshop --if-exists {{isolationName}}",
+        "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
+        "discoveredFrom": "docker-compose.yml",
+        "confidence": "resolved"
+      },
+      "notes": [
+        "createdb runs inside the running container, so no psql has to exist on the host.",
+        "Templating from the base database requires no active connections to it; when that fails the verdict falls back to REFUSE rather than writing to the shared database."
+      ]
+    },
+
+    "redis-pubsub": {
+      "substrate": "redis",
+      "isolation": { "mechanism": "none", "confidence": "resolved" },
+      "notes": [
+        "Deliberately mechanism none. SELECT isolates the keyspace but NOT pub/sub: a message published on database 10 reaches a subscriber on database 1, so channel names collide across every logical database.",
+        "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly."
+      ]
+    }
+  },
+
   "services": {
     "catalog-api": {
       "kind": "docker-compose",

@@ -31,8 +31,6 @@
       "basePort": 8080,
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
-      "dockerfile": "Dockerfile",
-      "sharedDirsIncluded": false,
       "dependsOn": ["postgres"],
       "peerEnv": {
         "SEARCH_URL": "http://localhost:8090"

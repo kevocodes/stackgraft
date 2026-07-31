@@ -19,8 +19,15 @@
 #
 # Needs git and POSIX awk. Probes nothing, writes no file. The start offset is
 # derived from the worktree path - required, because it is the only thing that
-# makes the offset per-worktree - so two worktrees of one repo do not collide,
-# while one worktree keeps the same port across runs however its path was
+# makes the offset per-worktree - so two worktrees of one repo are unlikely to
+# start on the same port. Unlikely, not impossible: the offset is digest mod
+# span, so over the 26-port range the shipped example uses, two paths share a
+# start about one time in 26 (measured 3.8% over 10000 random pairs). What
+# makes that safe is the launcher's strict-port bind failing loudly, not the
+# arithmetic; re-run with the taken port excluded. The offset's job is to keep
+# collisions incidental rather than systematic, which starting every worktree
+# at <lo> would not.
+# One worktree keeps the same port across runs however its path was
 # spelled: the path is normalised to an absolute physical one (cd + pwd -P)
 # before hashing, so "/path/wt", "/path/wt/", a relative form, and /tmp versus
 # /private/tmp all land on the same port. An all-digit third

@@ -1,0 +1,53 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify the skill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install check dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dash
+          python3 -m pip install --quiet jsonschema
+
+      - name: Run the verification suite
+        run: sh .github/scripts/verify.sh
+
+  portability:
+    name: scripts run on a minimal image
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    steps:
+      - name: Install the skill's actual dependencies, and nothing else
+        run: apk add --no-cache git dash
+
+      - uses: actions/checkout@v4
+
+      - name: The helpers must work with only git, sh and awk
+        run: |
+          set -eu
+          cd skills/stackgraft/scripts
+          dash -n pick-port.sh
+          dash -n fingerprint.sh
+
+          wt=$(mktemp -d)
+          port=$(sh pick-port.sh 18000 18999 "$wt")
+          case $port in 1[89][0-9][0-9][0-9]) ;; *) echo "bad port: $port"; exit 1 ;; esac
+          echo "candidate port: $port"
+
+          # busybox awk, busybox sh, no coreutils, no bash - the point of the job
+          printf 'pick-port.sh\nfingerprint.sh' | sh fingerprint.sh -
+
+          echo "helpers run on alpine with git, dash and busybox awk only"

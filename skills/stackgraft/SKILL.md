@@ -42,7 +42,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 3. Discover or refresh per the Decision Gates (`references/discovery.md`).
 4. Diff the worktree against its base branch; map changed paths through `paths` globs.
 5. Confirm the base stack is healthy; start what is missing.
-6. Feed `reserved`, known `basePort`s, and ports taken this run to `scripts/pick-port.sh`, then bind strictly.
+6. Pass `reserved`, `basePort`s, and ports taken this run as arguments to `scripts/pick-port.sh`; bind strictly.
 7. Launch each mapped service, rewiring unchanged dependencies to the base stack.
 8. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
 

@@ -53,14 +53,43 @@
 
     "services": {
       "type": "object",
-      "description": "One entry per runnable unit, keyed by the name the orchestrator uses.",
+      "description": "One entry per unit, keyed by the name the orchestrator uses. Runnable entries are launched; runnable: false entries only fan a change out to their consumers.",
       "additionalProperties": {
         "type": "object",
-        "required": ["kind", "paths"],
+        "required": ["paths"],
         "additionalProperties": false,
+        "if": {
+          "properties": { "runnable": { "const": false } },
+          "required": ["runnable"]
+        },
+        "then": {
+          "required": ["paths", "consumers"],
+          "properties": {
+            "basePort": false,
+            "portGroup": false,
+            "overlayCommand": false,
+            "verifyRequest": false,
+            "peerEnv": false
+          }
+        },
+        "else": { "required": ["portGroup"] },
         "properties": {
           "kind": {
-            "enum": ["docker-compose", "node-dev-server", "process", "static"]
+            "type": "string",
+            "not": { "const": "static" },
+            "examples": ["docker-compose", "node-dev-server", "process"],
+            "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing. The retired \"static\" value is rejected — a non-launchable tree is runnable: false.",
+            "$comment": "kind is no longer required: a runnable: false entry has no stack type to describe."
+          },
+          "runnable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Absent means true. False marks a tree that is never launched and never gets a port — shared code, generated assets — so the entry exists only to fan a change under paths out to consumers.",
+            "$comment": "default is an annotation, so the conditional above treats absent and true alike."
+          },
+          "portGroup": {
+            "type": "string",
+            "description": "Key into portPolicy.ranges. Independent of kind on purpose, so several kinds can share one range and one kind can split across two. A portGroup with no matching ranges key means stop and ask, never guess a range."
           },
           "basePort": {
             "type": "integer",
@@ -72,11 +101,6 @@
             "items": { "type": "string" }
           },
           "buildContext": { "type": "string" },
-          "dockerfile": { "type": "string" },
-          "sharedDirsIncluded": {
-            "type": "boolean",
-            "description": "False when the build context excludes the shared/ tree, so edits there do NOT reach this service."
-          },
           "dependsOn": {
             "type": "array",
             "description": "Services this one calls. Unchanged ones get redirected to the base stack.",
@@ -84,7 +108,7 @@
           },
           "consumers": {
             "type": "array",
-            "description": "Services that break when this one changes. Required on shared/common entries.",
+            "description": "The single direction of truth for shared-tree reach: every service whose build context includes this entry's paths. Required on a runnable: false entry. A service absent here is not reached, and no field on that service records the inverse — one fact, one place, so nothing can fall out of sync with it.",
             "items": { "type": "string" }
           },
           "peerEnv": {
@@ -122,7 +146,7 @@
         },
         "ranges": {
           "type": "object",
-          "description": "Allowed overlay ranges per service kind.",
+          "description": "Allowed overlay ranges, keyed by services[].portGroup. Never keyed by kind: a new stack type must not silently mis-key onto a range that was never sized for it.",
           "additionalProperties": {
             "type": "array",
             "items": { "type": "integer" },

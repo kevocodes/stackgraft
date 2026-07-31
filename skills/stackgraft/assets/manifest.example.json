@@ -97,7 +97,8 @@
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
         "This overlay runs in a container, so localhost would resolve to the container itself. The worktree compose file declares the base stack's network external, which keeps the base DNS names working unchanged. See references/discovery.md section 4.",
-        "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port."
+        "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port.",
+        "Both isolated pairs launch through that same worktree compose file: DATABASE_URL and KAFKA_TOPIC_PREFIX are named under this service's environment: there, because an exported variable stops at the docker compose CLI and never enters the container. See references/discovery.md section 6."
       ]
     },
 

@@ -288,6 +288,92 @@ else
 fi
 rm -rf "$lockdir"
 
+# --- W1  every path left beside the destination must be one the run named ----
+# The carve-out permits exactly three paths and all three are transient, so the
+# destination's directory is ENUMERATED before and after rather than probed for
+# names guessed in advance - a leak nobody predicted is exactly the one a
+# targeted check misses.
+#
+# The invariant is stronger than "exit 0": every surviving path must be one the
+# run itself named in its output. An exit code cannot express the failure this
+# catches, because that failure IS an exit 0 - the run reports "reclaimed an
+# abandoned lock", returns success, and says nothing at all about the aside it
+# renamed the lock directory to and could not delete.
+inventory() { ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort | tr '\n' ' ' ); }
+
+# Only what the SCRIPT said counts as the run naming something. Its own
+# diagnostics all carry its name; rm's incidental stderr does not. A leak the
+# caller learns about solely from a subcommand's noise is still a leak the run
+# itself claimed nothing about, and folding the two together would let the row
+# pass on exactly the output the defect already produces.
+lock_said() { printf '%s\n' "$1" | grep "^${LOCK##*/}:"; }
+
+# Prints one line per path in $1 that is neither expected ($2, space-separated
+# basenames) nor named anywhere in what the run said ($3).
+unreported_debris() {
+    ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort ) | while read -r _p; do
+        _n=${_p#./}
+        case " $2 " in *" $_n "*) continue ;; esac
+        printf '%s' "$3" | grep -qF "$_n" || printf '%s\n' "$_n"
+    done
+}
+
+w1=$(mktemp -d)
+d="$w1/w1.json"
+printf 'w1\n' > "$d"
+printf 'w1-new\n' > "$w1/payload"
+fp=$(git hash-object --stdin < "$d")
+mkdir "$d.lock"
+printf '%s\nWed Jul 30 12:00:00 2026\n%s\n' "$(sh -c 'echo $$')" "$(uname -n)" > "$d.lock/owner"
+w1_before=$(inventory "$w1")
+w1_msg=$(sh "$LOCK" "$d" "$w1/payload" "$fp" 2>&1)
+rc=$?
+w1_after=$(inventory "$w1")
+w1_left=$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")
+if [ "$rc" -eq 0 ] && [ -z "$w1_left" ] && grep -q 'w1-new' "$d"; then
+    ok "an ordinary reclaim leaves nothing but the destination ($w1_before-> $w1_after)"
+else
+    fail "reclaim debris: exit $rc, before '$w1_before' after '$w1_after', unreported '$w1_left'"
+fi
+
+# ...and the enumeration can see a fourth path appear. Named after the one that
+# really leaked, so a detector that stopped looking is caught by the same shape.
+: > "$w1/w1.json.lock.stale.999"
+[ -n "$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")" ] \
+    && ok "rejected: an aside left beside the destination and named nowhere" \
+    || fail "the debris enumeration cannot notice a fourth path"
+rm -rf "$w1"
+
+# A reclaim whose deletion cannot complete: the aside survives, and reporting
+# success over it is the worse half of the leak. Made deterministic with a
+# subdirectory rm cannot empty - root ignores those permissions, so the row
+# stands down loudly there instead of passing for the wrong reason.
+if [ "$(id -u)" -ne 0 ]; then
+    w1b=$(mktemp -d)
+    d="$w1b/w1b.json"
+    printf 'w1b\n' > "$d"
+    printf 'w1b-new\n' > "$w1b/payload"
+    fp=$(git hash-object --stdin < "$d")
+    before=$(git hash-object --stdin < "$d")
+    mkdir -p "$d.lock/stuck"
+    printf 'x\n' > "$d.lock/stuck/file"
+    printf '%s\nWed Jul 30 12:00:00 2026\n%s\n' "$(sh -c 'echo $$')" "$(uname -n)" > "$d.lock/owner"
+    chmod 500 "$d.lock/stuck"
+    msg=$(sh "$LOCK" "$d" "$w1b/payload" "$fp" 2>&1)
+    rc=$?
+    after=$(git hash-object --stdin < "$d")
+    left=$(unreported_debris "$w1b" 'w1b.json payload' "$(lock_said "$msg")")
+    chmod -R 700 "$w1b" 2>/dev/null
+    if [ "$rc" -ne 0 ] && [ -z "$left" ] && [ "$before" = "$after" ]; then
+        ok "a reclaim that cannot delete its aside fails loudly (exit $rc) and names what it left"
+    else
+        fail "unremovable aside: exit $rc, bytes $before -> $after, unreported '$left'"
+    fi
+    rm -rf "$w1b"
+else
+    printf '  skip  the unremovable-aside row (running as root, which ignores the mode)\n'
+fi
+
 # ---------------------------------------------------------------- body ------
 section "skill body"
 

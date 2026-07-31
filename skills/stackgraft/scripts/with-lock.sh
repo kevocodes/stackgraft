@@ -12,7 +12,8 @@
 # exit:   0 committed
 #         2 usage error
 #         3 lock not acquired - destination untouched
-#         4 environment failure: cache directory, copy, or rename
+#         4 environment failure: cache directory, copy, rename, or a reclaimed
+#           lock that would not delete
 #         5 destination changed since <expected> - re-read, re-merge and retry,
 #           at most 3 attempts, then ask the user
 #
@@ -43,7 +44,12 @@
 # Writes exactly three things and nothing else:
 #   1. the lock directory <destination>.lock, with its owner and tmp files
 #      inside it. Reclaiming renames that directory aside to a unique name and
-#      deletes it, which is how it is removed rather than a fourth write.
+#      deletes it, which is how it is removed rather than a fourth write. That
+#      deletion is VERIFIED rather than assumed: an aside that survives its own
+#      removal is a fourth path, so the run says so by name and fails with 4
+#      instead of committing and reporting a successful reclaim over it. Debris
+#      plus a success exit is the worse half - the caller is told the write
+#      landed and learns nothing about what is now sitting in the cache.
 #   2. one empty staleness reference <destination>.wait.<pid>, the file the wait
 #      bound is measured against. It cannot live inside the lock directory,
 #      because that directory belongs to whoever holds it.
@@ -116,13 +122,18 @@ fi
 
 lock="$destination.lock"
 waitref=
+aside=
 held=0
 holder_state=unknown
 holder_pid=
 
+# $aside is set only for the window between renaming a stale lock directory
+# aside and deleting it, so a signal landing inside that window still takes the
+# path away with it. Outside the window it is empty and nothing is removed.
 cleanup() {
     [ "$held" -eq 1 ] && rm -rf "$lock"
     [ -n "$waitref" ] && rm -f "$waitref"
+    [ -n "$aside" ] && rm -rf "$aside"
     return 0
 }
 
@@ -185,10 +196,27 @@ read_holder() {
 # instead of racing through a half-deleted directory. Reclaiming is reported,
 # because a lock that vanished without a word is indistinguishable from one
 # that was never there.
+#
+# The aside is the fourth path this script could leave behind, so its deletion
+# is checked rather than assumed. `rm -rf` reports nothing usable here - it
+# exits non-zero on some of the ways it can fail and the directory is what the
+# answer is about - so the question asked is whether the path is still there.
+# One that is gets named and ends the run at 4, with the destination untouched,
+# because the alternative is committing and reporting a reclaim while a
+# directory nobody mentioned stays in the cache forever.
 reclaim() {
-    _aside="$lock.stale.$$"
-    mv "$lock" "$_aside" 2>/dev/null || return 1
-    rm -rf "$_aside"
+    aside="$lock.stale.$$"
+    if ! mv "$lock" "$aside" 2>/dev/null; then
+        aside=
+        return 1
+    fi
+    rm -rf "$aside"
+    if [ -e "$aside" ]; then
+        printf '%s: reclaimed the lock at %s but could not delete %s; %s untouched\n' \
+            "$me" "$lock" "$aside" "$destination" >&2
+        exit 4
+    fi
+    aside=
     printf '%s: reclaimed an abandoned lock at %s\n' "$me" "$lock" >&2
     return 0
 }

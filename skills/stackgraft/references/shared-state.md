@@ -4,6 +4,8 @@ This file is the **only** source of a shared-state verdict. The skill body state
 
 Produce exactly one verdict per `(service, store)` pair before any overlay launches.
 
+**The pair set is not read off `dependsOn`.** For every runnable service being overlaid, pair it with *every* entry in `backingStores`, plus any name in that service's own `dependsOn` that resolves to a store. `dependsOn` may only **add** pairs, never remove one: a store a service forgot to declare is exactly the store the gate exists to catch, and a set the manifest narrows is a set the manifest can empty. An empty `backingStores` is therefore the only empty pair set, and it is safe by construction — no shared state exists to damage.
+
 ## Two hazards, not one
 
 - **Contamination** — the overlay *writes* state the base stack reads. Migrations, inserts, deletes, cache writes. Damage lands on the base stack's **data**.
@@ -35,7 +37,7 @@ Take the steps in order and stop at the first one that matches. **X is evaluated
 
 - `confidence` other than `declared` on `isolation`, or classification without `stateReview`. A degraded discovery path must not launder a guess into a safety verdict.
 - A dependency name found in neither `services` nor `backingStores`. Unknown fails closed.
-- **An empty pair set on a runnable service.** A service that enumerates no dependencies has not passed the gate — it has skipped it, because a procedure that runs per pair does nothing when there are no pairs. Treat a missing `dependsOn` as one undetermined pair against every backing store and refuse. Without this, saying *less* would gate *less* than saying something, and the laziest manifest would be the least refused.
+- **A pair set narrowed by the service's own declaration.** `dependsOn: []` is the reachable case, and the schema blesses it as checked-and-none — so it must remove nothing. Every entry in `backingStores` still yields a pair, and each of those pairs is undetermined until W, X and N are answered for it, which refuses at step 1. Without this, saying *less* would gate *less* than saying something, and the laziest manifest would be the least refused. A procedure that runs per pair does nothing when there are no pairs, so the only pair set allowed to be empty is the one an empty `backingStores` produces.
 - The user's assertion, the manifest's claim, or your own inference *in place of* this procedure. They are inputs to W, X, and N — never a substitute for the verdict.
 
 ### Escalations that override any recorded claim

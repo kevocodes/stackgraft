@@ -360,8 +360,11 @@
 
     "acceptedRisks": {
       "type": "object",
-      "description": "The ONLY bypass of the shared-state gate, and there is no global one. Keyed \"<service>::<store>\" so latest-only is structural rather than procedural: a JSON object cannot hold a duplicate key, so re-accepting replaces instead of appending. Service and store live in the key alone and are never repeated as fields, so the key and the body cannot disagree. (The specification describes this as keyed by service and store with a recorded fingerprint; those are exactly this key and serviceFingerprint.)",
-      "propertyNames": { "pattern": "^[^:]+::[^:]+$" },
+      "description": "The ONLY bypass of the shared-state gate, and there is no global one. Keyed \"<service>::<store>\" so latest-only is structural rather than procedural: a JSON object cannot hold a duplicate key, so re-accepting replaces instead of appending. Service and store live in the key alone and are never repeated as fields, so the key and the body cannot disagree. (The specification describes this as keyed by service and store with a recorded fingerprint; those are exactly this key and serviceFingerprint.) SPLIT AT THE LAST \"::\": everything before it is the services key, everything after is the backingStores key.",
+      "propertyNames": {
+        "pattern": "^.+::[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+        "description": "Only the store half is constrained, to the same pattern backingStores property names use — which admits no colon. That is what keeps the last \"::\" unambiguous as the separator no matter what the service half contains, so the service half is left unconstrained exactly as the services keys are. It has to be: services keys are whatever the orchestrator calls a unit, and references/discovery.md names Gradle and Bazel as path-to-unit sources, whose unit names are literally \":core:data\" and \"//pkg:target\". A pattern rejecting every colon made the gate's only bypass unrecordable for those units, and an unrecordable bypass fails the whole manifest's validation, which discards it."
+      },
       "additionalProperties": {
         "type": "object",
         "required": ["at", "serviceFingerprint"],

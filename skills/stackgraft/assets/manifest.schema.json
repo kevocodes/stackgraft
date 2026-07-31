@@ -173,12 +173,13 @@
                 "peerEnv": false
               }
             },
-            "else": { "required": ["portGroup"] }
+            "else": { "required": ["portGroup", "dependsOn"] }
           },
           {
-            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview.",
+            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview. dependsOn is in this list because the gate derives its pair set from it: without this, omitting every classification field would gate LESS than declaring one, since a service with no pairs has nothing to refuse.",
             "if": {
               "anyOf": [
+                { "required": ["dependsOn"] },
                 { "required": ["writes"] },
                 { "required": ["competesOn"] },
                 { "required": ["migrates"] }
@@ -222,7 +223,7 @@
           "buildContext": { "type": "string" },
           "dependsOn": {
             "type": "array",
-            "description": "Services this one calls. Unchanged ones get redirected to the base stack.",
+            "description": "Every dependency this unit reaches — services and backing stores alike. Unchanged ones get redirected to the base stack. REQUIRED on a runnable entry, because the shared-state gate derives its (service, store) pair set from this field: an entry with no pairs has nothing to refuse, so an optional dependsOn would make the gate vacuously satisfiable by saying less. An EMPTY array means checked and none, and like the classification fields it must be accompanied by stateReview so the claim is falsifiable.",
             "items": { "type": "string" }
           },
           "consumers": {

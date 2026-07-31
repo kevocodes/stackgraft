@@ -9,6 +9,9 @@
 #         failure. On that failure re-run with the port appended to the
 #         excluded list; never record a failed port in the manifest.
 # exit:   0 candidate emitted  ·  2 usage error  ·  3 range exhausted
+#         4 environment failure: git could not hash the worktree path. Kept
+#         apart from 2 so a caller can tell a bad invocation from a broken
+#         toolchain - the first is worth retrying differently, the second is not.
 #
 # Reads no stdin, by design. Exclusions arrive as arguments so a caller that
 # forgets a redirect cannot hang: for a tool agents invoke, blocking forever is
@@ -60,7 +63,7 @@ for arg in "$@"; do
     excluded="$excluded$port_val "
 done
 
-digest=$(printf '%s' "$worktree" | git hash-object --stdin) || exit 2
+digest=$(printf '%s' "$worktree" | git hash-object --stdin) || exit 4
 offset=$(printf '%s' "$digest" | awk -v s="$span" '{n = 0; for (i = 1; i <= 8; i++) n = (n * 16 + index("0123456789abcdef", substr($0, i, 1)) - 1) % s; print n}')
 
 i=0

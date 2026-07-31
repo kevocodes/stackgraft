@@ -18,13 +18,4 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
-### Notes on how this arrived
-
-Three adversarial review lineages — six correction rounds and six blind dual re-judgments — closed roughly seventy findings before this release. The ones worth recording:
-
-- **A gate satisfiable by declaring nothing.** The trigger rested on data that could be absent and reopened one level up four times: an optional map, then an optional list, then an empty list, then a second optional map. Each fix was correct for the case in front of it. What closed it was making emptiness cost something at every level rather than moving the trigger again.
-- **A perverse incentive.** With optional classification, declaring one field forced a refusal while declaring none forced nothing — the laziest manifest was the least restricted, the exact inverse of failing closed.
-- **A guard wrong in the safe direction, replaced by one wrong in the unsafe direction.** A deny-list applied after placeholder substitution rejected any host path containing `&`; the structural rule that replaced it silently admitted `sh -c '… {{path}} …'`, where the value becomes shell grammar again inside a nested interpreter.
-- **A verifier that could not fail.** A cross-file check collected field names from the schema and verified them against the schema, so it passed for several rounds while proving nothing. Its replacement is proven by breaking it.
-
 [1.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.0.0

@@ -4,13 +4,12 @@
 # usage:  sh .github/scripts/verify.sh
 # exit:   0 all checks passed  ·  1 at least one failed
 #
-# Two habits this file exists to enforce, both learned the hard way:
-#   - a check that cannot fail is not a check. Every assertion below has a
-#     matching negative fixture that must be REJECTED, so a validator that
-#     silently stopped validating shows up as a failure rather than a pass.
-#   - the minimal instance the schema accepts is the one worth tracing. Most
-#     holes in this project's safety gate were found by building the smallest
-#     legal manifest and asking what the gate did with it.
+# Two rules this file enforces on itself:
+#   - a check that cannot fail is not a check. Every assertion has a matching
+#     negative fixture that must be REJECTED, so a validator that silently
+#     stopped validating shows up as a failure rather than a pass.
+#   - the minimal instance the schema accepts is the one worth tracing. Safety
+#     holes live in the smallest legal input, not the realistic one.
 
 set -u
 SKILL=skills/stackgraft

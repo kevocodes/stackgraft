@@ -538,11 +538,27 @@ fi
 rm -rf "$cf"
 
 body=$(awk 'f; /^---$/{c++; if(c==2) f=1}' "$SKILL/SKILL.md")
-for term in REUSE ISOLATE; do
+for term in REUSE ISOLATE REAP; do
     printf '%s' "$body" | grep -q "$term" \
         && fail "body contains the permitting term $term" \
         || ok "body states no $term"
 done
+
+# ...and the loop can fire on the term this change adds. The body never
+# spelling REAP is what leaves an agent holding only the body able to reach
+# refusal and nothing else, so a loop that had quietly stopped looking would
+# read from here exactly like a body that is clean.
+verdict_hits() {
+    _n=0
+    for _t in REUSE ISOLATE REAP; do
+        printf '%s' "$1" | grep -q "$_t" && _n=$((_n + 1))
+    done
+    printf '%s\n' "$_n"
+}
+[ "$(verdict_hits "$body
+| Overlay outlived its worktree | REAP it |")" -ge 1 ] \
+    && ok "rejected: a body line naming the REAP verdict" \
+    || fail "the verdict-term loop cannot report a term it should catch"
 
 for p in $(grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$SKILL/SKILL.md" | tr -d '`' | sort -u); do
     [ -e "$SKILL/$p" ] && ok "link resolves: $p" || fail "link is broken: $p"
@@ -788,6 +804,497 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     rm -rf "$pp"
 else
     printf '  skip  labelled-launch and minimal-image rows (no docker daemon or alpine/git image)\n'
+fi
+
+# ----------------------------------------------------------------- reap -----
+section "reap surface"
+
+REAP="$SKILL/scripts/reap.sh"
+TAB=$(printf '\t')
+
+# Runs reap.sh capturing stdout and stderr together, so a row can assert what a
+# refusal SAID as well as what it returned. A refusal that named no reason
+# leaves the user with a stop that did not happen and nothing to act on, which
+# is only marginally better than the stop that should not have happened.
+reap_run() {
+    reap_out=$(sh "$REAP" "$@" 2>&1)
+    reap_rc=$?
+}
+
+# --- V6  one probe, two scripts, and a byte is enough to notice --------------
+extract_probe() {
+    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$1" 2>/dev/null
+}
+p_lock=$(extract_probe "$LOCK" | git hash-object --stdin)
+p_reap=$(extract_probe "$REAP" | git hash-object --stdin)
+if [ -n "$(extract_probe "$REAP")" ] && [ "$p_lock" = "$p_reap" ]; then
+    ok "the lstart probe block is byte-identical in with-lock.sh and reap.sh"
+else
+    fail "the lstart probe block is missing from reap.sh or differs from with-lock.sh"
+fi
+
+# One byte, in the first line of the block. If the comparison cannot see this
+# it cannot see a probe that quietly stopped asking about pid 1 either.
+p_mut=$(extract_probe "$REAP" | awk 'NR == 1 { sub(/^#/, "!") } { print }' | git hash-object --stdin)
+[ "$p_mut" != "$p_lock" ] \
+    && ok "rejected: a probe copy with one byte changed" \
+    || fail "the byte-identity comparison cannot notice a changed byte"
+
+# --- V14, V19, V20, V22  the refusal fixtures --------------------------------
+# The refusals come before the positive that proves the actuator can act at
+# all, because what this script is worth is what it declines to do. Each one is
+# a case where acting would stop something that is not ours, or would report a
+# no-op as work done.
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
+    rf=$(mktemp -d)
+    rfp=$(CDPATH= cd -- "$rf" && pwd -P)
+    RH=00c0ffee
+    fixture_ids=''
+
+    # No --rm on any fixture: a stop MUST leave the container and its logs in
+    # place, and --rm would delete exactly the evidence D8 exists to preserve -
+    # so a run with it would report a passing stop for the wrong reason.
+    fixture_container() {
+        _repo=$1; _wt=$2; _svc=$3; _port=$4; _lv=${5:-}; _cmd=${6:-}
+        [ -n "$_lv" ] || _lv=1
+        [ -n "$_cmd" ] || _cmd='sleep 120'
+        if [ -z "$_repo" ]; then
+            cid=$(docker run -d --entrypoint sh alpine/git -c "$_cmd" 2>/dev/null)
+        else
+            cid=$(docker run -d --entrypoint sh \
+                --label "stackgraft.labels=$_lv" --label "stackgraft.repo=$_repo" \
+                --label "stackgraft.worktree=$_wt" --label "stackgraft.service=$_svc" \
+                --label "stackgraft.port=$_port" alpine/git -c "$_cmd" 2>/dev/null)
+        fi
+        [ -n "$cid" ] && fixture_ids="$fixture_ids $cid"
+    }
+
+    repo="$rf/repo"
+    mkdir -p "$repo"
+    ( cd "$repo" \
+      && git init -q . \
+      && git -c user.email=v@example.invalid -c user.name=verify commit -q --allow-empty -m init \
+      && git worktree add -q -b fixture "$rf/wt" ) >/dev/null 2>&1
+    live_wt=$(CDPATH= cd -- "$rf/wt" 2>/dev/null && pwd -P)
+    gone_wt="$rfp/deleted"
+
+    fixture_container "$RH" "$gone_wt" storefront 18101 ; orphan=$cid
+    fixture_container "$RH" "$live_wt" storefront 18102 ; livewt=$cid
+    fixture_container '' '' '' ''                       ; bare=$cid
+    fixture_container "$RH" "$gone_wt" catalog-api 18103 ; handlabelled=$cid
+    fixture_container "$RH" "$gone_wt" storefront 18104 9 ; future=$cid
+    fixture_container "$RH" "$gone_wt" worker 18105 1 'exit 0' ; exited=$cid
+
+    reap_run -C "$repo" -m stop "$RH" "c:$livewt"
+    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'worktree-still-listed'; then
+        ok "rejected: a labelled overlay whose worktree is still listed"
+    else
+        fail "live-worktree target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    reap_run -C "$repo" -m stop "$RH" "c:$bare"
+    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'not-a-labelled-overlay'; then
+        ok "rejected: an unlabelled base-stack-shaped container"
+    else
+        fail "unlabelled target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    reap_run -C "$repo" -m stop "$RH" "c:$future"
+    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
+        ok "rejected: a label contract version this run does not recognise"
+    else
+        fail "unrecognised-version target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$handlabelled"
+    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'base-stack-port'; then
+        ok "rejected: a base-stack container hand-labelled with this repository's hash8"
+    else
+        fail "hand-labelled base-stack target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # The removal flag on its own mutates nothing and says what is missing.
+    # Asserted on a RUNNING orphan, so a mutation would be visible.
+    reap_run -C "$repo" remove "$RH" "c:$orphan"
+    if [ "$reap_rc" -eq 2 ] \
+       && printf '%s' "$reap_out" | grep -q 'mutation-flag-required' \
+       && [ "$(docker inspect --format '{{.State.Status}}' "$orphan" 2>/dev/null)" = running ]; then
+        ok "rejected: the removal flag alone - nothing mutated, the mutation flag named"
+    else
+        fail "removal flag alone: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # Under stop an already-exited container is a no-op, so it is reported and
+    # skipped and MUST NOT be counted as work done: acted stays at zero.
+    reap_run -C "$repo" -m stop "$RH" "c:$exited"
+    if [ "$reap_rc" -eq 0 ] \
+       && printf '%s' "$reap_out" | grep -q 'skipped-not-running' \
+       && printf '%s' "$reap_out" | grep -q "^acted${TAB}0\$"; then
+        ok "an exited container is reported and skipped under stop, and counts as no work"
+    else
+        fail "exited container under stop: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # ...and the exclusion above is the base-stack test, not a blanket refusal:
+    # the same shape without the base-port marker IS a target.
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$orphan"
+    if [ "$reap_rc" -eq 0 ] && printf '%s' "$reap_out" | grep -q "^acted${TAB}1\$"; then
+        ok "a labelled orphan that is no base-stack service is acted on"
+    else
+        fail "orphan target: exit $reap_rc, said '$reap_out'"
+    fi
+    [ "$(docker inspect --format '{{.State.Status}}' "$orphan" 2>/dev/null)" = exited ] \
+        && ok "the stop left the container in place rather than removing it" \
+        || fail "the stopped orphan is not in the exited state"
+    docker logs "$orphan" >/dev/null 2>&1 \
+        && ok "a stopped orphan's logs are still readable" \
+        || fail "the stop destroyed the logs, which are the only account of the orphan"
+
+    # Under remove the same exited container IS a target - D8's corollary is a
+    # filter on the state, not a comment about it.
+    reap_run -C "$repo" -m remove "$RH" "c:$exited"
+    if [ "$reap_rc" -eq 0 ] && ! docker inspect "$exited" >/dev/null 2>&1; then
+        ok "an exited container is a target under remove"
+    else
+        fail "exited container under remove: exit $reap_rc, said '$reap_out'"
+    fi
+
+    reap_run -C "$repo" -m remove "$RH" 'p:1' 'x'
+    if [ "$reap_rc" -eq 2 ] && printf '%s' "$reap_out" | grep -q 'no meaning for a process'; then
+        ok "rejected: remove against a process target, which has no meaning"
+    else
+        fail "remove against a p: target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    for id in $fixture_ids; do docker rm -f "$id" >/dev/null 2>&1; done
+    ( cd "$repo" && git worktree remove --force "$rf/wt" ) >/dev/null 2>&1
+    rm -rf "$rf"
+else
+    printf '  skip  the container refusal fixtures (no docker daemon or alpine/git image)\n'
+fi
+
+# --- V14  the process half: a recycled pid is refused, a proven one is not ---
+if [ "$lstart_here" -eq 1 ]; then
+    # Orphaned deliberately: a child of this shell stays a zombie after it dies
+    # and kill -0 would still succeed on it, so the liveness assertion below
+    # would pass whatever happened.
+    vic=$(sh -c 'sleep 300 >/dev/null 2>&1 & printf "%s\n" "$!"')
+    true_lstart=$(ps -o lstart= -p "$vic" 2>/dev/null | awk 'NF { print; exit }')
+
+    reap_run -m stop 00c0ffee "p:$vic" 'Wed Jan  1 00:00:00 2020'
+    if [ "$reap_rc" -eq 3 ] && kill -0 "$vic" 2>/dev/null \
+       && printf '%s' "$reap_out" | grep -q 'identity-mismatch'; then
+        ok "rejected: a pid whose recorded start time no longer matches (exit 3, still alive)"
+    else
+        fail "wrong-lstart target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # V12 refusal half: a record that never captured a start time is
+    # permanently unproven, and unproven is refused rather than tolerated.
+    reap_run -m stop 00c0ffee "p:$vic" null
+    if [ "$reap_rc" -eq 3 ] && kill -0 "$vic" 2>/dev/null \
+       && printf '%s' "$reap_out" | grep -q 'lstart-unproven'; then
+        ok "rejected: a sidecar record whose start time is null"
+    else
+        fail "null-lstart target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # ...and the true identity IS acted on, which is what makes the two above
+    # proofs rather than a script that refuses everything.
+    reap_run -m stop 00c0ffee "p:$vic" "$true_lstart"
+    n=0
+    while kill -0 "$vic" 2>/dev/null && [ "$n" -lt 10 ]; do sleep 1; n=$((n + 1)); done
+    if [ "$reap_rc" -eq 0 ] && ! kill -0 "$vic" 2>/dev/null; then
+        ok "a pid with its true recorded start time is acted on"
+    else
+        fail "true-lstart target: exit $reap_rc, said '$reap_out'"
+    fi
+    kill -KILL "$vic" 2>/dev/null
+else
+    printf '  skip  the (pid, lstart) target rows (this host has no ps -o lstart=)\n'
+fi
+
+# --- scoping is in the query, not in a filter over its output ----------------
+# This is the check DS28's dropped query 3 would have failed, and A7 is why it
+# stays dropped: an unfiltered listing does not find legacy overlays, it lists
+# everything and cannot say which is which - while reaching a sibling
+# repository's containers, which are not ours to enumerate or to kill.
+#
+# Comment lines and the manual command the legacy record PRINTS are skipped by
+# name: they are text, not invocations. The fixture below proves the detector
+# still fires on a real one.
+unfiltered_ps() {
+    awk '
+        /^[ \t]*#/                   { next }
+        /Inspect them yourself with/ { next }
+        /docker ps/ && !/label=stackgraft\.repo=/ { n++ }
+        END { print n + 0 }
+    ' "$@"
+}
+[ "$(unfiltered_ps "$SKILL"/scripts/*.sh)" -eq 0 ] \
+    && ok "every container listing in a shipped script carries the hash8 label filter" \
+    || fail "$(unfiltered_ps "$SKILL"/scripts/*.sh) unfiltered container listing(s) in shipped scripts"
+
+qf=$(mktemp -d)
+printf '#!/bin/sh\nlegacy=$(docker ps --all --format "{{.ID}}")\n' > "$qf/fixture.sh"
+[ "$(unfiltered_ps "$qf/fixture.sh")" -ge 1 ] \
+    && ok "rejected: a repository-wide container listing, the query A7 keeps dropped" \
+    || fail "the unfiltered-listing detector cannot fire"
+rm -rf "$qf"
+
+# --- V33  A7: the legacy statement IS the deliverable ------------------------
+# A7 accepts a real coverage loss and pays for it by saying so out loud.
+# Nothing else in this change can reject a report that simply left the
+# statement out, so the rule gets a validator and three fixtures rather than a
+# file review: silence reads as "nothing to see", which is the exact defect the
+# loss was accepted to avoid.
+a7_verdict() {
+    grep -q "^legacy${TAB}" "$1"                     || { printf 'no-legacy-record\n'; return 0; }
+    grep -q "^legacy${TAB}.*stackgraft\.labels" "$1" || { printf 'category-unnamed\n'; return 0; }
+    grep -q "^legacy${TAB}.*docker ps" "$1"          || { printf 'no-manual-command\n'; return 0; }
+    grep -q 'by construction' "$1"                   || { printf 'not-stated-structural\n'; return 0; }
+    if grep -q "^legacy${TAB}.*[0-9]" "$1"; then
+        printf 'count-asserted\n'
+        return 0
+    fi
+    if grep -qiE 'is complete|are complete|exhaustive|all overlays|every overlay' "$1"; then
+        printf 'completeness-claimed\n'
+        return 0
+    fi
+    printf 'pass\n'
+}
+
+af=$(mktemp -d)
+sh "$REAP" report 00c0ffee > "$af/report.txt" 2>/dev/null
+rc=$?
+if [ "$rc" -eq 0 ] && [ "$(a7_verdict "$af/report.txt")" = pass ]; then
+    ok "the report names the legacy category, calls it structural, and prints the manual command"
+else
+    fail "the report's legacy statement: exit $rc, verdict $(a7_verdict "$af/report.txt")"
+fi
+
+grep -v "^legacy${TAB}" "$af/report.txt" > "$af/silent.txt"
+[ "$(a7_verdict "$af/silent.txt")" = no-legacy-record ] \
+    && ok "rejected: a report with the legacy statement absent - silence reads as nothing to see" \
+    || fail "ACCEPTED but must be rejected: a report that says nothing about legacy overlays"
+
+awk -v t="$TAB" '
+    $0 ~ "^legacy" t "undetectable" {
+        print "legacy" t "found" t "0 unlabelled containers predating stackgraft.labels; docker ps --all"
+        next
+    }
+    { print }' "$af/report.txt" > "$af/counted.txt"
+[ "$(a7_verdict "$af/counted.txt")" = count-asserted ] \
+    && ok "rejected: a report asserting a legacy count, zero included" \
+    || fail "ACCEPTED but must be rejected: a legacy count no query can produce"
+
+{ cat "$af/report.txt"; printf 'note%sthe overlay list above is complete\n' "$TAB"; } > "$af/claimed.txt"
+[ "$(a7_verdict "$af/claimed.txt")" = completeness-claimed ] \
+    && ok "rejected: a report claiming the overlay list is complete" \
+    || fail "ACCEPTED but must be rejected: a completeness claim the report cannot make"
+rm -rf "$af"
+
+# --- V11  the report takes no lock, waits for none, and creates none ---------
+# The lock is planted on the file the report actually reads, and its owner
+# names a LIVE pid - the state a writer leaves while it works, and the one
+# with-lock.sh refuses to steal from. A report that waited for it would not
+# come back inside this run.
+count_locks() { find "$1" -maxdepth 1 -name '*.lock' 2>/dev/null | wc -l | tr -d ' '; }
+
+lf=$(mktemp -d)
+mkdir -p "$lf/stackgraft"
+sc="$lf/stackgraft/stackgraft-00c0ffee.processes.json"
+printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc"
+mkdir "$sc.lock"
+printf '%s\n-\n%s\n' "$$" "$(uname -n)" > "$sc.lock/owner"
+
+before_locks=$(count_locks "$lf/stackgraft")
+out=$(XDG_CACHE_HOME="$lf" sh "$REAP" report 00c0ffee 2>&1)
+rc=$?
+after_locks=$(count_locks "$lf/stackgraft")
+if [ "$rc" -eq 0 ] && [ "$before_locks" = "$after_locks" ] \
+   && printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none"; then
+    ok "the report completes and reads the registry while a writer holds its lock"
+else
+    fail "report under a held lock: exit $rc, locks $before_locks -> $after_locks"
+fi
+
+mkdir "$lf/stackgraft/fixture.lock"
+[ "$(count_locks "$lf/stackgraft")" != "$after_locks" ] \
+    && ok "rejected: a fixture that leaves a lock directory behind" \
+    || fail "the lock detector cannot notice a lock directory appearing"
+rm -rf "$lf"
+
+# --- V21  checked-and-none and not-checked are different claims --------------
+sf2=$(mktemp -d)
+mkdir -p "$sf2/stackgraft"
+sc2="$sf2/stackgraft/stackgraft-00c0ffee.processes.json"
+
+printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc2"
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none" \
+    && ok "an empty registry reports zero host overlays, checked" \
+    || fail "an empty registry did not report a checked zero"
+if [ "$docker_ready" -eq 1 ]; then
+    if printf '%s' "$out" | grep -q "^held${TAB}incomplete"; then
+        fail "the held-port set reported itself short with every store readable"
+    else
+        ok "rejected: the held-port shortfall line when every store answered"
+    fi
+fi
+
+rm -f "$sc2"
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+if printf '%s' "$out" | grep -q "^host${TAB}unknown${TAB}registry-missing" \
+   && ! printf '%s' "$out" | grep -q "^host${TAB}checked"; then
+    ok "an absent registry reports unknown and names the file, never a zero"
+else
+    fail "an absent registry was rendered as zero host overlays, or did not name the file"
+fi
+printf '%s' "$out" | grep -q "^held${TAB}incomplete" \
+    && ok "an unreadable store makes the held-port set report itself short" \
+    || fail "the held-port set claimed to be whole with a store unread"
+
+printf 'not a registry at all\n' > "$sc2"
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+if printf '%s' "$out" | grep -q "^host${TAB}unknown${TAB}registry-damaged" \
+   && ! printf '%s' "$out" | grep -q "^host${TAB}checked"; then
+    ok "rejected: a damaged registry rendered as a zero - it reports unknown"
+else
+    fail "a damaged registry did not report unknown"
+fi
+rm -rf "$sf2"
+
+# --- V31  a spelling difference decides kill or not --------------------------
+# Driven through the shipped block itself, lifted between its sentinels exactly
+# as the probe is, so the one rule that decides whether something gets stopped
+# is exercised without needing a container runtime for it.
+wf=$(mktemp -d)
+wfp=$(CDPATH= cd -- "$wf" && pwd -P)
+{
+    printf '#!/bin/sh\nset -u\n'
+    awk '/BEGIN worktree liveness/ { on = 1; next } /END worktree liveness/ { on = 0 } on { print }' "$REAP"
+    printf 'idx=$(wt_scan < "$1")\nwt_state "$2" "$idx"\n'
+} > "$wf/wt.sh"
+
+mkdir -p "$wf/real/wt"
+ln -s "$wf/real" "$wf/link"
+printf 'worktree %s/link/wt\n' "$wf" > "$wf/porcelain"
+
+[ "$(sh "$wf/wt.sh" "$wf/porcelain" "$wfp/real/wt")" = live ] \
+    && ok "a worktree reached by a symlinked spelling reads live, not orphaned" \
+    || fail "a symlinked spelling read as orphaned, which is a stop on live work"
+
+# ...and normalising did not blanket-suppress orphan detection along with it.
+[ "$(sh "$wf/wt.sh" "$wf/porcelain" "$wfp/real/gone")" = absent ] \
+    && ok "rejected: a worktree that really is gone - it still reads as an orphan candidate" \
+    || fail "orphan detection was suppressed along with the spelling difference"
+
+# One path git still C-quotes makes every absent answer unproven instead.
+printf 'worktree "%s/real/we\\tird"\n' "$wf" >> "$wf/porcelain"
+[ "$(sh "$wf/wt.sh" "$wf/porcelain" "$wfp/real/gone")" = unresolvable ] \
+    && ok "a path git C-quotes is unresolvable, and unproven is never orphaned" \
+    || fail "a C-quoted path let an absent answer read as an orphan"
+
+printf 'worktree %s/real/wt\nprunable gitdir file points to non-existent location\n' "$wf" > "$wf/prunable"
+[ "$(sh "$wf/wt.sh" "$wf/prunable" "$wf/real/wt")" = prunable ] \
+    && ok "a prunable entry classifies unknown, being proof of neither liveness nor absence" \
+    || fail "a prunable entry did not classify unknown"
+rm -rf "$wf"
+
+# --- V18, V28, V30  scoping, availability, and a real run on a minimal image -
+if [ "$docker_ready" -eq 1 ]; then
+    out=$(sh "$REAP" report 00c0ffee 2>/dev/null)
+    if printf '%s' "$out" | grep -q "^degraded${TAB}docker-unavailable"; then
+        fail "the report claims the runtime is unavailable on a host where it answers"
+    else
+        ok "rejected: the docker-unavailable line on a host that has docker"
+    fi
+    printf '%s' "$out" | grep -q "^container${TAB}checked${TAB}none" \
+        && ok "a runtime that answered and matched nothing reports a checked zero" \
+        || fail "the runtime answered and the report stated no checked zero"
+fi
+
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
+    H1=aaaa1111
+    H2=bbbb2222
+    c1=$(docker run -d --entrypoint sh \
+        --label stackgraft.labels=1 --label "stackgraft.repo=$H1" \
+        --label stackgraft.worktree=/nowhere/one --label stackgraft.service=storefront \
+        --label stackgraft.port=18201 alpine/git -c 'sleep 60' 2>/dev/null)
+    c2=$(docker run -d --entrypoint sh \
+        --label stackgraft.labels=1 --label "stackgraft.repo=$H2" \
+        --label stackgraft.worktree=/nowhere/two --label stackgraft.service=storefront \
+        --label stackgraft.port=18202 alpine/git -c 'sleep 60' 2>/dev/null)
+    if [ -n "$c1" ] && [ -n "$c2" ]; then
+        short1=$(printf '%s' "$c1" | cut -c1-12)
+        short2=$(printf '%s' "$c2" | cut -c1-12)
+        out=$(sh "$REAP" report "$H1" 2>/dev/null)
+        if printf '%s' "$out" | grep -q "$short1" && ! printf '%s' "$out" | grep -q "$short2"; then
+            ok "the hash8-scoped report returns this repository's overlay and not the sibling's"
+        else
+            fail "the hash8-scoped report did not scope to one repository"
+        fi
+        # ...and it is the filter doing that, not the directory the command ran
+        # in: the same listing unfiltered returns both.
+        unfiltered=$(docker ps --all --quiet --no-trunc 2>/dev/null)
+        if printf '%s' "$unfiltered" | grep -q "$c1" && printf '%s' "$unfiltered" | grep -q "$c2"; then
+            ok "rejected: the same listing unfiltered, which returns both repositories' overlays"
+        else
+            fail "the unfiltered listing did not return both, so the comparison proves nothing"
+        fi
+        docker rm -f "$c1" "$c2" >/dev/null 2>&1
+    else
+        fail "could not launch the two-repo scoping fixture"
+    fi
+
+    # The report path's own payoff, end to end and with no mutation flag: a
+    # port a live overlay holds comes back as a held record and is handed to
+    # pick-port.sh as its own argument, which then must not return it.
+    HP=aaaa3333
+    hpwt=$(mktemp -d)
+    hpc=$(docker run -d --entrypoint sh \
+        --label stackgraft.labels=1 --label "stackgraft.repo=$HP" \
+        --label "stackgraft.worktree=$(CDPATH= cd -- "$hpwt" && pwd -P)" \
+        --label stackgraft.service=storefront --label stackgraft.port=18500 \
+        alpine/git -c 'sleep 60' 2>/dev/null)
+    if [ -n "$hpc" ]; then
+        held=$(sh "$REAP" report "$HP" 2>/dev/null | awk -F"$TAB" '$1 == "held" && $2 ~ /^[0-9]+$/ { print $2 }')
+        if [ "$held" = 18500 ]; then
+            ok "the report hands back the port a running overlay holds"
+        else
+            fail "the report reported held ports '$held', not the 18500 the overlay holds"
+        fi
+        # $held is deliberately unquoted: pick-port.sh takes one exclusion per
+        # argument and rejects a joined list by name, so the split is the
+        # contract rather than an accident.
+        cand=$(sh "$SKILL/scripts/pick-port.sh" 18500 18501 "$hpwt" $held 2>/dev/null)
+        [ -n "$cand" ] && [ "$cand" != 18500 ] \
+            && ok "a held port fed to pick-port.sh is excluded from the candidate ($cand)" \
+            || fail "pick-port returned '$cand' with 18500 excluded"
+        docker rm -f "$hpc" >/dev/null 2>&1
+    else
+        fail "could not launch the held-port fixture"
+    fi
+    rm -rf "$hpwt"
+
+    # V30 + V28 + V12's refusal half, on the minimal image: reap.sh RUNS there,
+    # says docker is unavailable rather than zero, still prints the standing
+    # legacy statement, and refuses a mutation because busybox ps has no lstart.
+    alp=$(docker run --rm --entrypoint sh -v "$ROOT":/w -w /w alpine/git -c '
+        t=$(printf "\t")
+        R=skills/stackgraft/scripts/reap.sh
+        out=$(sh "$R" report 00c0ffee) || exit 1
+        printf "%s\n" "$out" | grep -q "^degraded${t}docker-unavailable" || exit 1
+        printf "%s\n" "$out" | grep -q "^legacy${t}undetectable" || exit 1
+        printf "%s\n" "$out" | grep -q "^host${t}checked" && exit 1
+        sh "$R" -m stop 00c0ffee p:1 x 2>/dev/null | grep -q lstart-unsupported || exit 1
+        echo ok' 2>/dev/null | tail -1)
+    [ "$alp" = ok ] \
+        && ok "reap.sh runs on alpine: unavailable is not zero, and an unprovable pid is refused" \
+        || fail "reap.sh did not behave on a minimal Linux image"
+else
+    printf '  skip  the two-repo and minimal-image reap rows (no docker daemon or alpine/git image)\n'
 fi
 
 # ------------------------------------------------------------ portability ---

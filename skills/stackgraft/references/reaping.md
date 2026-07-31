@@ -163,3 +163,140 @@ The manifest and the sidecar are written under one discipline, through one scrip
 Staleness is decided by liveness first and by the clock only where liveness cannot answer. A holder whose pid is gone, or whose recorded start time no longer matches, is provably dead and its lock is reclaimed at once and the reclamation reported. A holder that is provably alive is never stolen from. Only an unprovable holder reaches the time bound, and that asymmetry is the argument: reclaiming from a live holder degrades to last-writer-wins, which the compare-and-swap guard still refuses, while never reclaiming turns one crash into a permanent outage. `SIGKILL` cannot be trapped, which is why a staleness policy is mandatory rather than a refinement.
 
 The script writes exactly three things: its lock directory, one empty staleness reference beside the destination, and the rename of the payload into place. It composes no content and parses no JSON — the agent owns the bytes, and the script owns only the moment they land.
+
+## 8. The two verdicts
+
+Every overlay this run can see resolves to exactly one of two words.
+
+| Verdict | Meaning |
+|---|---|
+| **`REPORT`** | Say what is there and change nothing. The default, and the only verdict any run reaches without an explicit flag from the user. |
+| **`REAP`** | Act on it — stop, or stop and remove. Reachable only for a candidate that cleared §9, §10 and §11, and only under the flags in §12. |
+
+There is no third verdict and no "probably". Everything a run cannot prove is `REPORT`, which is why an unreadable store, an absent start time, a prunable worktree and an unrecognised label version all land in the same place: they are different reasons for the same answer.
+
+## 9. Candidacy is a closed allowlist
+
+A container is a **candidate** only if it carries the full five-label set of §1 with `stackgraft.repo` equal to this repository's `hash8`. That is a positive test, and it is what puts every base-stack container outside the candidate set **by construction** rather than by exclusion: only an overlay launch ever writes `stackgraft.repo`, so a base-stack container was never in the set to be removed from it.
+
+The difference matters because a deny-list has to be complete to be safe and an allowlist does not. A base-stack service this skill has never heard of is outside the set for free.
+
+A second, independent condition covers the repository that writes the label itself — a compose file that hard-codes `stackgraft.repo`, or a hand-labelled container:
+
+- A candidate publishing a port the manifest records as a `basePort` is **never a target under any flag**, and the anomaly is reported. The script parses no JSON, so those ports are read out of the manifest by the run and passed as `-b <port>`, once per port; the decision they drive lives in the actuator.
+- A candidate whose `stackgraft.worktree` is **present** in the worktree list is live, and live is never a target — §10.
+
+Both conditions are re-tested inside `scripts/reap.sh` immediately before it acts, not once at classification time. A run that never opened this file still cannot reach a base-stack service.
+
+## 10. Liveness, decided against the worktree list
+
+The recorded worktree path is compared against `git -c core.quotePath=false worktree list --porcelain`, parsed as `awk '/^worktree /{print substr($0, 10)}'`. `-z` is not used: it postdates the declared git 2.5+ floor.
+
+| Recorded path | Verdict |
+|---|---|
+| listed, and the entry is ordinary | **live** — `REPORT`, and never a target under any flag |
+| absent from the list | **orphan candidate** — the only state §12 can escalate |
+| listed, and the entry is marked prunable | **unknown** — proof of neither liveness nor absence |
+| the list could not be read at all | **unknown**, for every overlay at once |
+| some entry in the list will not resolve | **unknown** — a path nobody can spell might be the one being looked for |
+
+Normalisation is §6's, and it applies to the **porcelain side**. The recorded value was already written physically at launch, so it is compared whole and never re-resolved — an orphan's directory is gone by definition, and re-resolving it would turn the single case this exists for into "unproven". A path git still C-quotes is unresolvable, which makes every `absent` answer in that run unknown instead.
+
+Neither archiving nor sleeping a workspace removes its directory, so both leave the worktree listed and both read as live. Deleting one removes it, and that is the case this file exists for.
+
+## 11. Reconciliation: the runtime wins, and the report writes nothing
+
+| Stored record | Runtime evidence | Verdict |
+|---|---|---|
+| `(pid, lstart)` re-matches | worktree listed | live — keep |
+| `(pid, lstart)` re-matches | worktree absent | **orphan** — the only host-kind target |
+| pid absent from `ps` | — | dead; dropped at the next write |
+| pid live, `lstart` differs | — | **recycled pid** — drop, never act, and say why |
+| `lstart` is `null` | any | unproven; `REPORT`, permanently |
+| no record, container labelled | — | container kind; the label *is* the record |
+| store absent or unparseable | — | `unknown`, plus a damaged-registry line |
+
+**The pid re-read is the run's, not the script's.** `scripts/reap.sh` cannot open the registry, so the run reads it, batches every recorded pid into the single `ps -o pid=,lstart= -p <comma-separated list>` of §5, and hands each proven identity back as a `p:<pid> <recorded-lstart>` target — which the actuator then re-verifies for itself before it signals anything. Two reads of the same fact, and the second one is the one that is allowed to matter.
+
+**The report computes this and persists nothing.** The next legitimate write — a launch registration, or a completed mutation — commits the reconciled set through §7. A pass that rewrote a file on every invocation would need the lock on every invocation, and "the report acquires no lock" would stop being true.
+
+That is safe because every reader re-runs the reconciliation: **a registry that is never rewritten still cannot cause a wrong action**, since a stale row is re-tested against the runtime before it means anything.
+
+## 12. The flags
+
+Two flags, and they are not one flag with two settings.
+
+| Flags | Running orphan | Already-exited orphan |
+|---|---|---|
+| neither | `REPORT` | `REPORT` |
+| mutation | `docker stop`, or `kill` for a host kind | reported and **skipped** — not counted as work done |
+| mutation + removal | `docker rm -f` | `docker rm -f` |
+| removal alone | nothing is mutated, and the run says the mutation flag is required | same |
+
+Three consequences worth stating on their own:
+
+- **A stop leaves the logs readable.** An orphan is evidence of something that went wrong, and its logs are the only account of it. Freeing the port is the urgent part; freeing disk is not, which is the whole reason removal is a second flag.
+- **An exited container is a target only under removal.** Stopping something already stopped is a no-op that would report as work done, and a run that counts no-ops as work is a run whose count means nothing.
+- **Removal has no meaning for a process.** A `p:` target under the removal verb is a usage error, not a fallback to stopping it.
+
+The mutation flag reaches `scripts/reap.sh` as its own token, `-m`, rather than being implied by the verb. An agent that never received the user's flag cannot produce that argument, and the editors this skill exists for pre-fill permission bypasses — so the confirmation cannot live in a prompt.
+
+## 13. What the report cannot see, and why it says so anyway
+
+A container launched before the `stackgraft.labels` contract existed carries no label. **Nothing distinguishes it from any other container on this host** — not its image, not its name, not its ports, none of which this skill wrote or can claim. There is therefore no query that finds legacy overlays: an unfiltered listing does not detect them, it lists everything and cannot say which is which, and widening the query buys noise rather than coverage while reaching a sibling repository's containers, which are not ours to enumerate.
+
+So no query widens, and **the blind spot is stated instead**. Every report carries a standing `legacy` record that:
+
+- names the category — overlays predating the label contract, and overlays whose worktree lives on another host;
+- states that they are invisible **by construction**, not merely absent today;
+- prints the command the user runs themselves, `docker ps --all`, so the check is available even though this run cannot make it;
+- **claims no number, zero included**, because no query can produce one.
+
+It prints whether or not anything was found, because there is nothing to find it with — and because the first run after instrumentation is exactly the run that looks broken without it. A reaper that is quietly partial is worse than one that is loudly partial. This is an accepted coverage loss, stated loudly; it is not a gap awaiting a mechanism.
+
+## 14. Distinguishing checked-and-none from not-checked
+
+Emptiness is a claim that needs evidence, never an omission. Four different sentences, and only two of them are zeros:
+
+| Situation | What the report says |
+|---|---|
+| the runtime answered and matched nothing | container overlays: **zero, checked** |
+| the runtime is absent or did not answer | container overlays: **unknown**, with the reason |
+| the registry exists and its list is empty | host overlays: **zero, checked** |
+| the registry is missing, unreadable, or damaged | host overlays: **unknown**, and the file is named |
+
+**A missing registry is never rendered as zero host overlays.** They are different claims and only one of them is evidence; reporting the second as the first tells the user the port map is complete when nobody looked. The same rule, applied twice.
+
+`scripts/reap.sh` answers whether each store could be **read**; the run answers what is in it, because the script parses no JSON. A registry the run cannot parse is `unknown` by that same rule.
+
+## 15. Refusal cases
+
+Each of these is reported with its reason, and none of them stops the run from proceeding with the candidates that did prove out — re-invoke the actuator with the proven targets only. A refusal inside one invocation refuses that whole invocation, so a run is never half-applied and then stopped.
+
+| Case | Why it refuses |
+|---|---|
+| the worktree is still listed | the overlay is live; archiving and sleeping both leave it listed |
+| the worktree list could not be read | liveness is unestablished, so nothing is an orphan |
+| the recorded path will not resolve, or git C-quotes it | unproven, and unproven is never orphaned |
+| a port the manifest records as a `basePort` | a base-stack service, however it is labelled — the anomaly is reported |
+| fewer than five labels | partial labelling is a launch that went wrong, not ownership |
+| an unrecognised `stackgraft.labels` value | the same fail-safe direction an unrecognised `schemaVersion` takes |
+| the recorded `lstart` is `null` or absent | permanently unproven on this host |
+| `ps` here reports no start time at all | ownership cannot be proven, so nothing may be acted on |
+| the pid's start time no longer matches | the pid was recycled; the refusal names both strings |
+| the container's state field is missing | a mutation decision is never taken on a field that is not there |
+| the runtime is unavailable | a target that cannot be re-verified cannot be acted on |
+
+Ownership is never inferred from port occupancy, container name, image, compose project, or a manifest record. A process this run did not start is never signalled, and the manifest being deleted changes nothing about what is reapable — that is the point of recording ownership on the runtime object.
+
+## 16. Held ports feed port selection, on the report path
+
+The report's `held` records are what makes the stackgraft-held part of the range knowable without probing anything. Pass each one to `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` as **its own argument**, alongside the reserved and base ports already excluded there.
+
+They are about occupancy and not about liveness, so a *running orphan* is held too: it holds its port exactly as firmly as a live overlay does, right up until something stops it, and port selection cares which ports are taken rather than which of them ought to be.
+
+Three constraints on that:
+
+- **It belongs to the report path, with no mutation flag.** The report is what every invocation runs, so this is the benefit that lands whether or not anybody ever reaps anything.
+- **The knowledge is repository-local.** One registry per repository, and every container query scoped to one `hash8`, means a sibling repository's ports stay unknown. They are not excluded, they are not reaped to free them, and a collision on one is caught by the launcher's strict-port bind — which stays authoritative, because the output was always a candidate and still is.
+- **Where a store could not be read, still return a candidate, and say the held-port set is short.** Refusing to pick a port because one store was unreadable trades a real capability for a hypothetical collision the strict bind already catches.

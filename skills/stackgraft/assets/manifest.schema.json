@@ -13,6 +13,21 @@
         "properties": { "backingStores": { "maxProperties": 0 } }
       },
       "then": { "required": ["stateReview"] }
+    },
+    {
+      "$comment": "The root stateReview is evidence, and every other evidence record in this schema expires: a source has its fingerprint, an isolation approval has sourceFingerprint, a classification has serviceFingerprint. This one would have nothing, so a storeless verdict written once could never be re-derived — not even after the repository gained a store. Requiring a sources[] entry that covers backingStores gives it the trigger it was missing: the record is a claim ABOUT that map, so the drift of whatever file the map was read from re-derives the record with it. references/shared-state.md reads a record whose covering source has drifted as stale, and a stale record is not a verdict.",
+      "if": { "required": ["stateReview"] },
+      "then": {
+        "properties": {
+          "sources": {
+            "contains": {
+              "type": "object",
+              "required": ["covers"],
+              "properties": { "covers": { "contains": { "const": "backingStores" } } }
+            }
+          }
+        }
+      }
     }
   ],
   "properties": {
@@ -192,11 +207,17 @@
 
     "stateReview": {
       "type": "object",
-      "required": ["at", "method"],
+      "required": ["at", "method", "confidence"],
       "additionalProperties": false,
-      "description": "Manifest-level evidence that discovery LOOKED for stateful dependencies. REQUIRED when backingStores has no members, and the one verdict recorded per manifest rather than per (service, store) pair: it is what makes \"this repository runs no shared store\" a falsifiable claim instead of an omission. It has to exist because the degraded path is reachable — references/discovery.md section 1 has a resolver that was unavailable and a static parse standing in for it — and a map that pass never filled is byte-identical to a map a repository never needed. Same fields and same method scale as services[].stateReview, minus serviceFingerprint: there is no service to fingerprint. Legal and harmless when backingStores is non-empty, where it says nothing about any individual pair; those still need their own verdicts.",
+      "description": "Manifest-level evidence that discovery LOOKED for stateful dependencies. REQUIRED when backingStores has no members, and the one verdict recorded per manifest rather than per (service, store) pair: it is what makes \"this repository runs no shared store\" a falsifiable claim instead of an omission. It has to exist because the degraded path is reachable — references/discovery.md section 1 has a resolver that was unavailable and a static parse standing in for it — and a map that pass never filled is byte-identical to a map a repository never needed. Same method scale as services[].stateReview, minus serviceFingerprint: there is no service to fingerprint. Its expiry is the covering source instead: the conditional at the top of this schema requires a sources[] entry covering backingStores whenever this record exists, and references/shared-state.md treats the record as stale — not a verdict — once that source drifts. Legal and harmless when backingStores is non-empty, where it says nothing about any individual pair; those still need their own verdicts.",
       "properties": {
         "at": { "type": "string", "format": "date-time" },
+        "confidence": {
+          "type": "string",
+          "enum": ["declared", "inferred", "user"],
+          "description": "How this record was obtained, the same scale sources[].confidence and isolation.confidence use. REQUIRED, unlike those optional siblings, because this is the record that releases the gate for the whole repository: an omission here would be read as trust, and the degraded pass is the one least likely to write the field. Only \"declared\" counts — references/shared-state.md rejects any other value AND any absence, which leaves the pair set undetermined and refuses. The absence case is not dead weight: a manifest-less run has no schema to enforce this, so the read side must reject it on its own.",
+          "$comment": "Required on the record rather than checked only at read time so a manifest that omits it is discarded and rediscovered, which is the same fail-safe direction as an unrecognized schemaVersion."
+        },
         "method": {
           "type": "string",
           "enum": ["code-scan", "user-asserted", "resolver-declared"],

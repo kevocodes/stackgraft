@@ -292,6 +292,26 @@
       }
     },
 
+    "acceptedRisks": {
+      "type": "object",
+      "description": "The ONLY bypass of the shared-state gate, and there is no global one. Keyed \"<service>::<store>\" so latest-only is structural rather than procedural: a JSON object cannot hold a duplicate key, so re-accepting replaces instead of appending. Service and store live in the key alone and are never repeated as fields, so the key and the body cannot disagree. (The specification describes this as keyed by service and store with a recorded fingerprint; those are exactly this key and serviceFingerprint.)",
+      "propertyNames": { "pattern": "^[^:]+::[^:]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["at", "serviceFingerprint"],
+        "additionalProperties": false,
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "serviceFingerprint": {
+            "type": "string",
+            "description": "The service's source fingerprint when the risk was accepted. The entry is treated as ABSENT once this stops matching: acceptance was granted for code that no longer exists, so the original verdict applies again and the overlay is refused until a human accepts anew."
+          },
+          "reason": { "type": "string" },
+          "acceptedBy": { "type": "string" }
+        }
+      }
+    },
+
     "verifiedOverlays": {
       "type": "object",
       "description": "Latest successful overlay per service, keyed by service name. Not a log: only the newest record is evidence that an entry still works, and keying bounds growth at one record per service with no trim policy and no tie-break to get wrong. This file is a cache, so an unbounded append-only history in it would grow forever and prove nothing extra.",

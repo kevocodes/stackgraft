@@ -60,7 +60,7 @@
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
       "dependsOn": ["postgres"],
-      "writes": ["postgres"],
+      "writes": ["postgres", "redis-pubsub"],
       "competesOn": [],
       "migrates": true,
       "stateReview": {
@@ -130,6 +130,15 @@
       "remedy": "Have the user add the port to the gitignored root .env before launching; verify by reading the response headers of a real cross-origin request."
     }
   ],
+
+  "acceptedRisks": {
+    "catalog-api::redis-pubsub": {
+      "at": "2026-07-30T12:05:00Z",
+      "serviceFingerprint": "e60378b0e52df7e42905d2fc7cf94beb995e5f6a",
+      "reason": "Session-invalidation events are published on a shared channel that cannot be isolated. Base-stack subscribers will see this overlay's events; accepted because the base stack is idle during this test.",
+      "acceptedBy": "kevocodes"
+    }
+  },
 
   "verifiedOverlays": {
     "frontend": {

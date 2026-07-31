@@ -19,15 +19,17 @@ For each pair, evaluate three booleans against the manifest:
 - **X** — is attaching competitive or exclusive? (`competesOn` names it)
 - **N** — does isolation exist inside the running instance? (`backingStores[store].isolation.mechanism` is not `none`)
 
-| W | X | N | Verdict |
-|:-:|:-:|:-:|---------|
-| no | no | — | **REUSE** the base store. The only unconditionally safe case. |
-| no | **yes** | — | **REFUSE** a plain attach. Read-only is not enough when the read protocol competes: a consumer joining the base `group.id` takes partitions even if it only logs. Supply a distinct consumer identity, then classify again — the substitution alone never approves. |
-| **yes** | — | yes | **ISOLATE** inside the running instance. Reuse the server process, never the namespace. |
-| **yes** | — | no | **REFUSE**, or run a dedicated store. Never reuse. |
-| unknown | unknown | unknown | Treat as `W=yes, X=yes, N=no` → **REFUSE**. |
+Take the steps in order and stop at the first one that matches. **X is evaluated before W and independently of it**: writing is not the only way to break the base stack, so a decided W must never absorb the X question. A Kafka store with `mechanism: "topic-prefix"` satisfies N while `group.id` stays shared — isolate the topics and the overlay still steals partitions from a service nobody modified.
 
-**Unknown is the load-bearing row.** `writes: []` means checked-and-none; an *absent* `writes` means nobody looked. Silence must resolve to unsafe or the gate is decoration. A pair with no verdict is not a pair that passed.
+| Step | Condition | Verdict |
+|:----:|-----------|---------|
+| 1 | **Any** of W, X, N undetermined | Treat that pair as `W=yes, X=yes, N=no` → **REFUSE**. |
+| 2 | **X = yes**, whatever W and N say | **REFUSE** a plain attach. Read-only is not enough when the read protocol competes: a consumer joining the base `group.id` takes partitions even if it only logs. Supply a distinct consumer identity, then re-enter at step 1 with X evaluated again — the substitution alone never approves. |
+| 3 | X = no, W = no | **REUSE** the base store. The only unconditionally safe case. |
+| 4 | X = no, **W = yes**, N = yes | **ISOLATE** inside the running instance. Reuse the server process, never the namespace. |
+| 5 | X = no, **W = yes**, N = no | **REFUSE**, or run a dedicated store. Never reuse. |
+
+**Step 1 is load-bearing, and it is an `any`, not an `all`.** One undetermined boolean refuses the pair; the other two being known changes nothing. `writes: []` means checked-and-none; an *absent* `writes` means nobody looked. Silence must resolve to unsafe or the gate is decoration. A pair with no verdict is not a pair that passed.
 
 ### Evidence that does not count
 

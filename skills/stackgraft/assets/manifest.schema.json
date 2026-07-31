@@ -75,8 +75,8 @@
       "type": "object",
       "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
       "propertyNames": {
-        "pattern": "^[a-z][a-z0-9_-]{0,39}$",
-        "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps substitution from re-opening the deny-list in references/shared-state.md."
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+        "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps substitution from re-opening the deny-list in references/shared-state.md. It still accepts the names real orchestrators use — uppercase, dots and digits are all legal compose service names, and a store that could not be recorded under its real name would resolve to neither map and refuse forever with no remedy."
       },
       "additionalProperties": {
         "type": "object",
@@ -92,6 +92,13 @@
             "type": "object",
             "required": ["mechanism"],
             "additionalProperties": false,
+            "allOf": [
+              {
+                "$comment": "An approval is a baseline against one specific discovered source. Without discoveredFrom there is no file to re-fingerprint, so the drift rule could never fire and the approval would never expire.",
+                "if": { "required": ["approval"] },
+                "then": { "required": ["discoveredFrom"] }
+              }
+            ],
             "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",
             "properties": {
               "mechanism": {

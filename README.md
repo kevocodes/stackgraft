@@ -90,7 +90,7 @@ skills/stackgraft/
 ## Honest limits
 
 - **The verification is real but young.** Schema negatives, script runs and body budgets are checked in CI; the shared-state gate has never been exercised against a production-shaped repository.
-- **POSIX only.** macOS, Linux and WSL. Windows-native is out of scope.
+- **Needs a POSIX shell.** macOS, Linux, WSL and Git Bash on Windows, each exercised in CI. PowerShell and cmd are out of scope.
 - **`git` is required and is not present in minimal container images** — alpine, debian-slim and distroless ship none.
 
 ## The name

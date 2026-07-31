@@ -6,7 +6,7 @@ stackgraft is a folder. Copying it into the place your agent reads skills from i
 
 | | |
 |---|---|
-| Platform | macOS, Linux, WSL. Windows-native is out of scope. |
+| Platform | macOS, Linux, WSL, and **Git Bash on Windows** — the shell that ships with Git for Windows. PowerShell and cmd are out of scope. |
 | Required | `git` 2.5+, a POSIX shell, POSIX `awk` |
 | Conditional | `docker` / `docker compose`, only for container-based repositories |
 

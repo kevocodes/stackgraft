@@ -60,6 +60,14 @@
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
       "dependsOn": ["postgres"],
+      "writes": ["postgres"],
+      "competesOn": [],
+      "migrates": true,
+      "stateReview": {
+        "at": "2026-07-30T12:00:00Z",
+        "method": "code-scan",
+        "notes": "init_db runs CREATE TABLE on startup, so every launch is a migration against whatever database it points at."
+      },
       "peerEnv": {
         "SEARCH_URL": "http://search-indexer:8090"
       },
@@ -88,6 +96,13 @@
       "basePort": 5173,
       "paths": ["frontend/**"],
       "dependsOn": ["catalog-api", "search-indexer"],
+      "writes": [],
+      "competesOn": [],
+      "stateReview": {
+        "at": "2026-07-30T12:00:00Z",
+        "method": "code-scan",
+        "notes": "Browser client only: it reaches backends over HTTP and holds no store credentials, so both lists are checked-empty rather than unknown."
+      },
       "peerEnv": {},
       "verifyRequest": "curl -sS -i http://localhost:{{port}}/ && open http://localhost:{{port}}",
       "prepareCommand": "cp -Rc {{repoRoot}}/frontend/node_modules {{worktree}}/frontend/node_modules",

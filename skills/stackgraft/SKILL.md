@@ -10,16 +10,16 @@ metadata:
 
 ## Activation Contract
 
-Load when a worktree or second checkout must run locally and duplicating the full stack is not worth it.
+Load when a worktree or second checkout must run locally and duplicating the stack is not worth it.
 
-Skip when the repo has one service, a full `up` is cheap, or the user explicitly wants an isolated full stack.
+Skip when the repo has one service, `up` is cheap, or the user wants an isolated full stack.
 
 ## Hard Rules
 
 - Start only services the worktree changed; point unchanged dependencies at the base stack.
 - Port probes are heuristics, never proof: bind strict-port, honor `portPolicy.reserved`.
 - Never kill a process you did not start.
-- Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
+- Never place a worktree under `/tmp` or `/var/tmp`: both are reaped.
 - `/health` returning 200 is not proof: verify a real request, read its headers.
 - The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite the entry.
 - Substitute placeholders as quoted words: host paths hold whitespace.
@@ -29,10 +29,10 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 
 | Situation | Action |
 |-----------|--------|
-| Manifest missing | Full discovery, then write it |
+| Manifest missing | Discover fully, write it |
 | All fingerprints match | Reuse it; still re-derive every `revalidate: "always"` source |
-| Some source drifted | Re-discover only that slice, rewrite those entries and hashes |
-| Changed paths map to no service | No overlay; run tests only, say so |
+| Some source drifted | Re-discover only that slice; rewrite its entries and hashes |
+| Changed paths map to nothing | No overlay; run tests only, say so |
 | Shared/common dir changed | Overlay every service in that entry's `consumers` |
 | Port needed outside the range | Stop and ask before binding |
 | Any overlay | Gate it — `references/shared-state.md` |
@@ -40,24 +40,22 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 ## Execution Steps
 
 1. At the worktree top, `gitCommonDir` = `CDPATH= cd -- "$(git rev-parse --git-common-dir)" && pwd -P`. Derive `repoRoot` — the **main** worktree, never this checkout — per `references/discovery.md` §0.
-2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `printf '%s' "$gitCommonDir" | git hash-object --stdin`, cut to 8. Discard on validation failure or `repoRoot` mismatch; when unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
+2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `printf '%s' "$gitCommonDir" | git hash-object --stdin`, cut to 8. Discard on validation failure or `repoRoot` mismatch; if unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
 3. Discover or refresh per the Decision Gates (`references/discovery.md`).
 4. Diff the worktree against its base branch; map changed paths through `paths` globs.
 5. Confirm the base stack is healthy; start what is missing.
 6. Before launching, read `references/shared-state.md` and record every verdict it demands.
-7. `sh scripts/pick-port.sh <portGroup range lo> <hi> <worktree> <reserved, basePorts, ports taken this run>`; bind strictly.
+7. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — the `portGroup` range, one port per argument: reserved, base ports, taken this run. Bind strictly.
 8. Launch each mapped service, rewiring unchanged dependencies to the base stack.
 9. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
 
 ## Output Contract
 
-Return:
-
-- Manifest path, and whether it was created, reused, or refreshed — name the refreshed entries.
-- Changed paths and the services they mapped to.
+- Manifest path; created, reused, or refreshed — name refreshed entries.
+- Changed paths and their mapped services.
 - Per overlay: service, port, launch command, verification result.
 - Base-stack services reused, not duplicated.
-- The exact teardown command.
+- The exact teardown command, plus any isolated namespace left behind and how to remove it.
 
 ## References
 

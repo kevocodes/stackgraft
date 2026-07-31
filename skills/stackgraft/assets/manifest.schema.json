@@ -335,11 +335,11 @@
           },
           "overlayCommand": {
             "type": "string",
-            "description": "Templated launch command. Use {{port}} and {{worktree}} placeholders."
+            "description": "Templated launch command for this one unit. Every value substituted into it is quoted as one shell word, or placed in its own argv element — see references/discovery.md section 6; a worktree path containing a space otherwise splits into two operands."
           },
           "prepareCommand": {
             "type": "string",
-            "description": "One-time setup inside the worktree, e.g. cloning node_modules."
+            "description": "One-time setup inside the worktree, e.g. cloning node_modules. Same substitution and quoting rule as overlayCommand."
           },
           "notes": { "type": "array", "items": { "type": "string" } }
         }

@@ -22,6 +22,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 - Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
 - `/health` returning 200 is not proof: verify a real request, read its headers.
 - The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite the entry.
+- Substitute placeholders as quoted words: host paths hold whitespace.
 - Every overlay is REFUSED until `references/shared-state.md` has been read and every verdict it demands is recorded. Emptiness is a claim, never a verdict — that file says what evidences it. Nothing else — manifest, user, or inference — produces one.
 
 ## Decision Gates
@@ -59,9 +60,5 @@ Return:
 
 ## References
 
-- `assets/manifest.schema.json` — field contract.
-- `assets/manifest.example.json` — filled example.
-- `references/discovery.md` — discovery procedure.
-- `references/traps.md` — failure modes.
+- `assets/manifest.schema.json`, `assets/manifest.example.json`, `references/discovery.md`, `references/traps.md`, `scripts/fingerprint.sh`, `scripts/pick-port.sh`.
 - `references/shared-state.md` — the only verdict procedure.
-- `scripts/fingerprint.sh`, `scripts/pick-port.sh` — POSIX helpers.

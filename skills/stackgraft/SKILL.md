@@ -1,7 +1,7 @@
 ---
 name: stackgraft
 description: "Trigger: git worktree, run only the changed service on another port, test branches in parallel. Overlay modified services onto an already-running base stack."
-compatibility: "POSIX only: macOS, Linux, WSL; Windows-native is out of scope. Required unconditionally: git 2.5+ (worktree, --git-common-dir) and a POSIX shell with awk. Stock macOS and mainstream Linux carry both; minimal images do not — alpine, debian-slim and distroless ship no git, and distroless has no shell. Install git where a package manager exists (apk add git); otherwise run from a host or image that has both. Container tooling (docker compose) is needed only for container-based repositories."
+compatibility: "Needs a POSIX shell: macOS, Linux, WSL, and Git Bash on Windows, all CI-tested. PowerShell and cmd are out of scope. Required unconditionally: git 2.5+ (worktree, --git-common-dir) and a POSIX shell with awk. Stock macOS, mainstream Linux and Git for Windows carry both; minimal images do not — alpine, debian-slim and distroless ship no git, distroless no shell. Install git where a package manager exists (apk add git). Container tooling (docker compose) is needed only for container repos."
 license: Apache-2.0
 metadata:
   author: kevocodes

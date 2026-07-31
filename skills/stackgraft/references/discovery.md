@@ -9,6 +9,34 @@ Discovery is expensive; run it once per repo and refresh only what drifted.
 
 Many ecosystem files answer only (a). A build-graph file describes what compiles, never what listens. Treating one as a topology source produces a manifest that is confident and wrong.
 
+## 0. Resolve `repoRoot` — the main worktree, never this checkout
+
+One manifest serves every worktree of a repository, keyed by the main worktree, and `{{repoRoot}}` is substituted into the base-stack commands. Read it as the checkout in use and both halves break at once: the per-repo cache is discarded on every run for a `repoRoot` mismatch, and `docker compose --project-directory {{repoRoot}}` is aimed at the overlay instead of the base stack.
+
+**`git rev-parse --show-toplevel` is not the answer.** It returns the checkout in use, which is the linked worktree exactly when the distinction matters. Derive from `gitCommonDir` instead — take the first branch that applies:
+
+| # | Test | `repoRoot` |
+|---|------|------------|
+| 1 | `gitCommonDir`'s basename is `.git` | its parent directory |
+| 2 | `git config -f "$gitCommonDir/config" --get core.worktree` is set | that value, resolved against `$gitCommonDir` |
+| 3 | `git rev-parse --git-dir` resolves to `gitCommonDir` itself, so this checkout *is* the main worktree | `git rev-parse --show-toplevel` |
+| 4 | none of the above | there is none to derive: **stop and ask** |
+
+Read branch 2 from the common dir's own `config` file rather than through a plain `git config` lookup: with `extensions.worktreeConfig` enabled, `core.worktree` is per-worktree, so an ordinary lookup can answer for *this* checkout. Resolve every path with `CDPATH= cd -- <path> && pwd -P` before comparing or storing it, so branch 3 compares physical paths and one stored `repoRoot` keeps matching across symlinked spellings.
+
+Verified on git 2.50.1, one scratch repository per shape:
+
+| Shape | `gitCommonDir` | Branch | `repoRoot` |
+|-------|----------------|--------|------------|
+| Plain repo, at the top | `<r>/.git` | 1 | `<r>` |
+| Plain repo, from a subdirectory | `<r>/.git`, spelled `../.git` | 1 | `<r>` |
+| Linked worktree | `<r>/.git` | 1 | `<r>`, not the worktree |
+| Submodule, and a linked worktree of one | `<super>/.git/modules/<name>` | 2 | the submodule's own checkout |
+| `--separate-git-dir`, from the main worktree | `<elsewhere>/repo.git` | 3 | the main worktree |
+| `--separate-git-dir` or bare, from a linked worktree | `<elsewhere>/repo.git` | 4 | stop and ask |
+
+The last row is a limit of the repository, not of this rule. `--separate-git-dir` writes a one-way link: the checkout's `.git` file points at the git dir and nothing points back, so from a linked worktree the main worktree is unrecoverable — git itself answers wrongly here, `git worktree list` reporting the *git dir* as the main worktree because it derives that path by stripping a trailing `/.git` from the common dir. A bare repository has no main worktree at all. In both cases ask for `repoRoot`; substituting this checkout is the one answer guaranteed to be wrong.
+
 ## 1. Prefer the ecosystem's resolver over hand-parsing
 
 Compose alone has `-f` chains, `COMPOSE_FILE`, `compose.override.yaml` auto-merge, `extends`, recursive `include`, profiles, and `!reset`/`!override` directives. Hand-parsing that is a losing game.

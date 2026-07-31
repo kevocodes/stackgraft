@@ -126,10 +126,14 @@
               "approval": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["at"],
+                "required": ["at", "sourceFingerprint"],
                 "properties": {
                   "at": { "type": "string", "format": "date-time" },
-                  "by": { "type": "string" }
+                  "by": { "type": "string" },
+                  "sourceFingerprint": {
+                    "type": "string",
+                    "description": "The fingerprint of the discoveredFrom file when the command was approved, produced by fingerprintTool. Without it \"re-prompt when discoveredFrom drifts\" has no baseline to compare against, so an approval outlives the command it approved and a rewritten template runs unprompted. The entry is treated as ABSENT once this stops matching, exactly as acceptedRisks.serviceFingerprint works: the human approved a command that no longer exists, so the substituted command is shown again before the first run."
+                  }
                 }
               }
             }

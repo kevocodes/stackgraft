@@ -30,15 +30,16 @@
       "isolation": {
         "mechanism": "database",
         "applyVia": "compose-exec",
-        "command": "docker compose --project-directory {{repoRoot}} exec -T postgres createdb -U bookshop -T bookshop {{isolationName}}",
-        "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T postgres dropdb -U bookshop --if-exists {{isolationName}}",
+        "command": "make -C {{repoRoot}} db-create DB={{isolationName}}",
+        "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationName}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
-        "discoveredFrom": "compose.yaml",
+        "discoveredFrom": "Makefile",
         "confidence": "declared"
       },
       "notes": [
-        "createdb runs inside the running container, so no psql has to exist on the host.",
-        "Templating from the base database requires no active connections to it; when that fails the verdict falls back to REFUSE rather than writing to the shared database."
+        "Rung 1, which is what earns declared: db-create and db-drop are targets the Makefile already defines, and discoveredFrom names that file rather than the compose file the store itself was read from.",
+        "The targets wrap docker compose exec, so applyVia stays compose-exec and no psql has to exist on the host. Recording the raw exec line instead would be rung 2, which is inferred and does not satisfy the gate on its own — the pair would refuse rather than isolate.",
+        "db-create templates the new database from bookshop, which requires no active connections to it; when that fails the verdict falls back to REFUSE rather than writing to the shared database."
       ]
     },
 
@@ -57,13 +58,14 @@
       "isolation": {
         "mechanism": "topic-prefix",
         "applyVia": "compose-exec",
-        "command": "docker compose --project-directory {{repoRoot}} exec -T kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic {{isolationName}}.book-events",
-        "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic {{isolationName}}.book-events",
+        "command": "make -C {{repoRoot}} topic-create TOPIC={{isolationName}}.book-events",
+        "teardownCommand": "make -C {{repoRoot}} topic-delete TOPIC={{isolationName}}.book-events",
         "env": { "KAFKA_TOPIC_PREFIX": "{{isolationName}}." },
-        "discoveredFrom": "compose.yaml",
+        "discoveredFrom": "Makefile",
         "confidence": "declared"
       },
       "notes": [
+        "Rung 1 for the same reason postgres is: topic-create and topic-delete are Makefile targets wrapping the kafka-topics client inside the running container, so the record is declared and discoveredFrom names the Makefile.",
         "topic-prefix isolates the topics and nothing else. group.id is whatever each consumer configures, so an overlay keeping the base value joins the base group and takes partitions from it — an attachment hazard with no write in sight.",
         "That is why search-indexer records competesOn against this store instead of leaning on this isolation record: N being satisfied says nothing about X."
       ]

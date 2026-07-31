@@ -565,6 +565,76 @@ lf=$(mktemp -d)
     || fail "the link loop cannot report a broken link"
 rm -rf "$lf"
 
+# --- C1  a pointer must resolve to a WHOLE recipe, not merely to a file ------
+# The loop above proves `references/discovery.md` exists. It cannot prove that
+# file answers the question the body sent the reader there with, and a pointer
+# into a recipe that lost a step reads exactly like a pointer into a complete
+# one - which is how the body-budget donor cut for step 2 shipped a `hash8`
+# derivation with no truncation in it and stayed green.
+#
+# So the recipe is FOLLOWED here rather than reviewed: the hashing command is
+# taken out of §0, the cut length is taken out of §0, and the result is what
+# the body's own `<repo-basename>-<hash8>.json` template gets built from. The
+# length is read from the prose instead of hard-coded, because a hard-coded 8
+# would supply the very step whose absence is the defect.
+DISCOVERY="$SKILL/references/discovery.md"
+
+section_zero()  { awk '/^## 0\./ { on = 1; next } /^## / { if (on) exit } on' "$1"; }
+hash8_command() {
+    section_zero "$1" | awk '
+        {
+            s = $0
+            while (match(s, /`[^`]*`/)) {
+                c = substr(s, RSTART + 1, RLENGTH - 2)
+                if (c ~ /git hash-object/) { print c; exit }
+                s = substr(s, RSTART + RLENGTH)
+            }
+        }'
+}
+hash8_cut() {
+    section_zero "$1" | awk '/hash8/ && match($0, /first [0-9]+ characters/) {
+        print substr($0, RSTART + 6, RLENGTH - 17); exit }'
+}
+
+# Follows $1's §0 against the common dir $2 and prints what it yields. A file
+# stating no truncation does not get 8 assumed for it: it gets the recipe as it
+# actually reads, which is the whole digest - precisely what the shipped body
+# produced, and precisely what this row has to be able to see.
+hash8_derive() {
+    _cmd=$(hash8_command "$1")
+    [ -n "$_cmd" ] || return 0
+    _cut=$(hash8_cut "$1")
+    _out=$(gitCommonDir="$2" sh -c "$_cmd" 2>/dev/null)
+    if [ -n "$_cut" ]; then
+        printf '%s\n' "$_out" | cut -c1-"$_cut"
+    else
+        printf '%s\n' "$_out"
+    fi
+}
+
+h8_common=$(CDPATH= cd -- "$(git rev-parse --git-common-dir)" && pwd -P)
+h8=$(hash8_derive "$DISCOVERY" "$h8_common")
+case ${h8:-} in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+        ok "the body's hash8 pointer resolves: §0 yields '$h8', eight lowercase hex" ;;
+    *)
+        fail "SKILL.md plus discovery.md §0 yields '${h8:-nothing}' (${#h8} chars), not eight lowercase hex" ;;
+esac
+
+# ...and the row goes red the moment the recipe loses that step. The fixture is
+# the shipped file with its truncation paragraph deleted - which is the state
+# that shipped, and the state every other check in this file reads as healthy.
+hf=$(mktemp -d)
+awk '!/first 8 characters/' "$DISCOVERY" > "$hf/discovery.md"
+h8bad=$(hash8_derive "$hf/discovery.md" "$h8_common")
+case ${h8bad:-} in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+        fail "ACCEPTED but must be rejected: §0 with no truncation still resolved to eight hex" ;;
+    *)
+        ok "rejected: §0 with the truncation removed - the pointer resolves to ${#h8bad} characters, not 8" ;;
+esac
+rm -rf "$hf"
+
 # ------------------------------------------------- instrumentation ----------
 section "instrumentation"
 

@@ -132,7 +132,9 @@ A `ps` that ignores `-p` — busybox does — answers the first plausibly and th
 
 `null` and absent are separated for the same reason `[]` and a missing file are: *checked, and this host cannot* must not read as *nobody looked*. An empty string is never recorded, because two absences would compare equal to each other and manufacture a proof out of nothing. Nor is the absence worked around with another signal — process name, command line, port, or an approximate start time each admit exactly the mistaken-identity kill the composite proof exists to prevent.
 
-Note the resolution: `lstart` has one-second granularity, so the composite proves *the pid was not recycled since capture*. That is the claim needed, and nothing stronger is claimed for it.
+**Note the resolution, and what it costs.** `lstart` has one-second granularity, so two processes started inside the same second carry a byte-identical string — verified, not inferred: two `sleep`s launched back to back both report `Fri Jul 31 16:52:08 2026`. The composite therefore proves something narrower than *the pid was not recycled since capture*. What it actually proves is that **the pid is not now held by a process that started in a different second from the one recorded** — which refuses every recycle except one.
+
+The residual window is the same-second recycle: the recorded process exits, the pid is reissued, and the new process starts inside the same one-second tick. That case compares equal and is acted on. It is named here rather than papered over, because nothing available closes it. Verbatim equality is what the proof mandates precisely because both strings come from one `ps` on one host, where the format is whatever that `ps` prints; a finer clock would have to be parsed out of it, and parsing is the thing this comparison refuses to do. The window is narrow — a pid must be reissued within the same second on a host whose pid space is large — and every alternative signal considered above is wider by orders of magnitude, which is the argument for this pair rather than a claim that it is exact.
 
 ## 6. Path normalisation
 

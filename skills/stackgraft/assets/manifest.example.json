@@ -131,11 +131,11 @@
       },
       "peerEnv": {},
       "verifyRequest": "curl -sS -i http://localhost:{{port}}/",
-      "prepareCommand": "cp -Rc {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
+      "prepareCommand": "cp -a --reflink=auto {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
       "overlayCommand": "cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}} --strictPort",
       "notes": [
         "Not dockerized. Service URLs fall back to http://localhost:PORT in code, so it reaches the base stack with no config.",
-        "cp -Rc is an APFS clone: near-instant, near-zero disk, and each server keeps its own pre-bundle cache."
+        "prepareCommand clones the dependency tree instead of reinstalling it: near-instant, near-zero disk, and each server keeps its own pre-bundle cache. The clone flag is platform-specific and this repoRoot is a Linux path, so the command uses GNU cp's --reflink=auto, which clones on btrfs or XFS and falls back to a plain copy elsewhere. The macOS equivalent is cp -Rc, an APFS clone; -c is not a GNU cp flag and fails on Linux."
       ]
     }
   },

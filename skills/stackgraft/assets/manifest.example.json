@@ -55,6 +55,7 @@
   "services": {
     "catalog-api": {
       "kind": "docker-compose",
+      "confidence": "declared",
       "portGroup": "compose",
       "basePort": 8080,
       "paths": ["services/catalog/**"],
@@ -81,6 +82,7 @@
 
     "search-indexer": {
       "kind": "docker-compose",
+      "confidence": "declared",
       "portGroup": "compose",
       "basePort": 8090,
       "paths": ["services/search/**"],
@@ -112,6 +114,7 @@
 
     "storefront": {
       "kind": "node-dev-server",
+      "confidence": "declared",
       "portGroup": "node-dev",
       "basePort": 5173,
       "paths": ["apps/storefront/**"],

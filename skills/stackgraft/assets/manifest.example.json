@@ -33,14 +33,15 @@
       "buildContext": "./services/catalog",
       "dependsOn": ["postgres"],
       "peerEnv": {
-        "SEARCH_URL": "http://localhost:8090"
+        "SEARCH_URL": "http://search-indexer:8090"
       },
       "healthPath": "/health",
       "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/auth/login -H 'Origin: http://localhost:5174' -H 'Content-Type: application/json' -d '{\"email\":\"...\",\"password\":\"...\"}'",
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
-        "Builds from its own directory, so packages/contracts/** edits do NOT reach it — do not map shared paths here.",
-        "The overlay runs in its own compose project, so base-stack DNS names do not resolve for it; peers point at the base stack's published port instead."
+        "Builds from its own directory, so packages/contracts/** edits do NOT reach it — this service is deliberately absent from the shared entry's consumers.",
+        "This overlay runs in a container, so localhost would resolve to the container itself. The worktree compose file declares the base stack's network external, which keeps the base DNS names working unchanged. See references/discovery.md section 4.",
+        "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port."
       ]
     },
 

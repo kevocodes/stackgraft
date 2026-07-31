@@ -106,7 +106,7 @@
               },
               "command": {
                 "type": "string",
-                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. Placeholders are {{isolationName}}, {{store}}, and {{worktree}}. It must invoke one program: shell metacharacters are rejected, so a pipeline belongs in a task target the repo already defines."
+                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. The placeholder set is closed and is exactly the one in references/shared-state.md, which is the authority: {{isolationName}}, {{store}}, {{worktree}}, {{repoRoot}}, {{port}}. Every member has a defined source — generated name, backingStores key, overlay checkout, this manifest's repoRoot, and the port picked this run. Any other {{...}} invalidates the template, which makes mechanism \"none\". It must invoke one program: shell metacharacters are rejected in the raw template and again after substitution, so a pipeline belongs in a task target the repo already defines."
               },
               "teardownCommand": { "type": "string" },
               "env": {

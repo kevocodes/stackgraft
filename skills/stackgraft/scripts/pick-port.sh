@@ -17,7 +17,10 @@
 # Needs git and POSIX awk. Probes nothing, writes no file. The start offset is
 # derived from the worktree path - required, because it is the only thing that
 # makes the offset per-worktree - so two worktrees of one repo do not collide,
-# while one worktree keeps the same port across runs. An all-digit third
+# while one worktree keeps the same port across runs however its path was
+# spelled: the path is normalised to an absolute physical one (cd + pwd -P)
+# before hashing, so "/path/wt", "/path/wt/", a relative form, and /tmp versus
+# /private/tmp all land on the same port. An all-digit third
 # argument is refused: it is an exclusion sitting in the worktree slot, and
 # accepting it would silently drop that port from the excluded set.
 
@@ -45,7 +48,7 @@ case $3 in *[!0-9]*) ;; *) usage ;; esac
 
 span=$((hi - lo + 1))
 
-worktree=$3
+worktree=$(CDPATH= cd -- "$3" 2>/dev/null && pwd -P) || usage
 shift 3
 
 # Exclusions are normalised too: "018099" must exclude 18099, not slip past a

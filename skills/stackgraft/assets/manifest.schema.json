@@ -30,10 +30,30 @@
             "type": "string",
             "description": "Opaque value from fingerprintTool, compared only for equality. Deliberately unconstrained: a repo using a non-default object format yields a different length, and a pattern would reject it."
           },
+          "revalidate": {
+            "type": "string",
+            "enum": ["fingerprint", "always"],
+            "default": "fingerprint",
+            "description": "Whether fingerprint equality is accepted as proof of freshness. \"always\" is for a source whose real input set is not enumerable — a compose file using include: or extends:, a Tiltfile that imports arbitrary Starlark — where the stored hash covers only the entry file, so an unchanged hash proves nothing about what it pulled in. Such an entry is re-derived every run regardless of equality.",
+            "$comment": "default is an annotation: an absent value and \"fingerprint\" mean the same thing."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["declared", "inferred", "user"],
+            "description": "How this entry was obtained. \"inferred\" marks a degraded path — a static parse standing in for an unavailable resolver — and must not be trusted for anything that gates safety."
+          },
+          "resolverStatus": {
+            "type": "string",
+            "description": "Why the resolver degraded, when it did, e.g. docker daemon not running, toolchain absent, resolver refused for being non-read-only. Recorded so the next run can tell a genuine absence from an unavailable tool instead of re-deciding blind."
+          },
           "covers": {
             "type": "array",
             "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string",
+              "not": { "pattern": "^(verifiedOverlays|acceptedRisks)" },
+              "description": "A dot-delimited key path. verifiedOverlays and acceptedRisks are rejected on purpose: both are records of something a human or a real request did, not something derivable from the repository, and acceptedRisks is the gate's only bypass. A source that could re-derive them could regrant the bypass from repository data alone."
+            }
           }
         }
       }
@@ -159,6 +179,11 @@
             "examples": ["docker-compose", "node-dev-server", "process"],
             "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing. The retired \"static\" value is rejected — a non-launchable tree is runnable: false.",
             "$comment": "kind is no longer required: a runnable: false entry has no stack type to describe."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["declared", "inferred", "user"],
+            "description": "How this entry was obtained, same scale as sources[].confidence. \"inferred\" is what a Tier-2 or statically-parsed entry gets — a Tiltfile port forward extracted from Starlark, a fallback parse after a resolver was unavailable. It still maps paths to units; it is not trusted for anything that gates safety."
           },
           "runnable": {
             "type": "boolean",

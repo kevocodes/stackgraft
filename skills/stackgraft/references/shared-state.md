@@ -117,10 +117,10 @@ Say so plainly and refuse; do not offer a middle option.
 
 The only bypass is one explicit `acceptedRisks` entry per `(service, store)`, recording the timestamp and the service's fingerprint at acceptance. It is treated as **absent** once that fingerprint drifts — acceptance was granted for code that no longer exists. There is no global bypass.
 
-Compute the fingerprint by piping, in order, into `git hash-object --stdin`:
+Compute the fingerprint by piping, in order, into `git hash-object --stdin`. `<service paths>` is that service's `paths` globs, each **quoted** and passed as a `:(glob)` pathspec — `':(glob)services/catalog/**'` — so git expands them and not the shell. An unquoted glob is expanded by the shell before git sees it, and POSIX shell globbing skips names beginning with a dot: `services/catalog/.env.example` is silently dropped from all three legs, so editing it never moves the value.
 
 1. `git ls-files -s -- <service paths>` — index object ids,
 2. `git diff --no-color --binary -- <service paths>` — unstaged delta; `--binary` matters, or a binary edit reads as "Binary files differ" and never moves the hash,
-3. the untracked files from `git ls-files --others --exclude-standard -- <service paths>`, hashed with `scripts/fingerprint.sh`.
+3. the untracked files from `git -c core.quotePath=false ls-files --others --exclude-standard -- <service paths>`, hashed with `scripts/fingerprint.sh`. `core.quotePath=false` matters as much as `--binary` does: git otherwise C-quotes any path holding a non-ASCII byte and prints `"services/catalog/caf\303\251.txt"`, which `fingerprint.sh` cannot stat — it emits the constant `-` for it, so every later edit to that file leaves the hash exactly where it was.
 
-Verified: a staged-only edit, an unstaged-only edit, a new untracked file, and an unstaged binary edit each move the value, and reverting every mutation returns it to the exact base.
+Verified on a scratch repository: a staged-only edit, an unstaged-only edit, a new untracked file, and an unstaged binary edit each move the value, and reverting every mutation returns it to the exact base. The boundary is deliberate and is not covered: a path `.gitignore` excludes never moves it, because `--exclude-standard` never lists it, and neither does any change outside the service's own `paths`.

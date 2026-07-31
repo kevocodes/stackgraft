@@ -158,7 +158,7 @@ This is where overlays fail silently, and the correct answer depends on where th
 
 - **Running as argv** — a launch command that is one program with arguments, like every isolation command — substitute each value into **its own element**, never into a joined string.
 - **Running through a shell** — anything carrying shell syntax — substitute each value as **one single-quoted word**: wrap it in `'…'` and replace each embedded `'` with `'\''`. Quote the value, not the template around it, so the line reads `cd '{{worktree}}'/apps/storefront && …` and `{{worktree}}` stays one word however it is spelled.
-- **Read the substituted line before running it**, exactly as the isolation contract re-checks after substitution. Quoting stops the word split; it does not vouch for what the repository put in the value.
+- **Read the substituted line before running it** — the isolation contract makes the equivalent check on its argument vector, that each value landed in exactly one element. Quoting stops the word split; it does not vouch for what the repository put in the value.
 
 `{{port}}` is an integer from `portPolicy.ranges` and needs no protection, but quoting it too costs nothing and leaves one rule instead of two.
 

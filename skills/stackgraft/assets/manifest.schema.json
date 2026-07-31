@@ -176,7 +176,7 @@
             "else": { "required": ["portGroup", "dependsOn"] }
           },
           {
-            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview. dependsOn is in this list because the gate derives its pair set from it: without this, omitting every classification field would gate LESS than declaring one, since a service with no pairs has nothing to refuse.",
+            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview. dependsOn is in this list because an empty one is the same kind of claim — checked and none — and must be as falsifiable as the rest; it does not narrow the gate's pair set, which comes from backingStores.",
             "if": {
               "anyOf": [
                 { "required": ["dependsOn"] },
@@ -223,7 +223,7 @@
           "buildContext": { "type": "string" },
           "dependsOn": {
             "type": "array",
-            "description": "Every dependency this unit reaches — services and backing stores alike. Unchanged ones get redirected to the base stack. REQUIRED on a runnable entry, because the shared-state gate derives its (service, store) pair set from this field: an entry with no pairs has nothing to refuse, so an optional dependsOn would make the gate vacuously satisfiable by saying less. An EMPTY array means checked and none, and like the classification fields it must be accompanied by stateReview so the claim is falsifiable.",
+            "description": "Every dependency this unit reaches — services and backing stores alike. Unchanged ones get redirected to the base stack. REQUIRED on a runnable entry so the redirect has a list to work from. It only ADDS to the shared-state gate's pair set and never narrows it: per references/shared-state.md the set is every runnable service against every backingStores entry, plus any dependency of its own that resolves to a store. An EMPTY array means checked and none — it removes no pair — and like the classification fields it must be accompanied by stateReview so the claim is falsifiable.",
             "items": { "type": "string" }
           },
           "consumers": {

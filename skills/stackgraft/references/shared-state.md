@@ -71,6 +71,14 @@ The isolation command is **discovered from the repository**, never embedded here
 
 Rung 2 is recorded `inferred`, so on the interlock above it does not satisfy the gate on its own; a first-use failure downgrades the store to `none`, which refuses. That is the safe direction.
 
+### The namespace has a lifecycle, and it ends somewhere
+
+One namespace per branch accumulates until a human goes looking, so every isolation record answers what becomes of it.
+
+- **A `command` that creates a namespace is recorded with the `teardownCommand` that removes it.** The schema requires the pair, and the approval row below shows both before the first run for the same reason: approving a create without its drop approves half an operation. Discover them together — a rung-1 task target usually defines both, and at rung 2 the drop client sits in the same container as the create. **Where no teardown is discoverable, the record is `mechanism: "none"`**, which refuses; half a lifecycle is not an isolation mechanism, and writing the create alone would trade a correctness problem for a growing pile of databases nobody remembers.
+- **Rung 3 has nothing to remove by command, and its namespace is left behind on purpose.** A Mongo database that appears on first write, a Redis `SELECT n`, an S3 key prefix, a topic prefix: no create command, no drop command. That is legitimate, and it obliges the run to **name the namespace, its store, and how to remove it in the output**, because the only thing that will ever remove it is a person who was told it exists.
+- **The same naming applies whenever a teardown exists but did not run** — the overlay is still up, or the teardown failed. Report the exact substituted command and the exact namespace instead of assuming a later run tidies up: `{{isolationName}}` is derived from the branch, so a run on any other branch generates a different name and never revisits this one.
+
 ### Template contract
 
 A discovered template is repository data, so it is treated as untrusted input.

@@ -122,21 +122,36 @@
         "type": "object",
         "required": ["paths"],
         "additionalProperties": false,
-        "if": {
-          "properties": { "runnable": { "const": false } },
-          "required": ["runnable"]
-        },
-        "then": {
-          "required": ["paths", "consumers"],
-          "properties": {
-            "basePort": false,
-            "portGroup": false,
-            "overlayCommand": false,
-            "verifyRequest": false,
-            "peerEnv": false
+        "allOf": [
+          {
+            "if": {
+              "properties": { "runnable": { "const": false } },
+              "required": ["runnable"]
+            },
+            "then": {
+              "required": ["paths", "consumers"],
+              "properties": {
+                "basePort": false,
+                "portGroup": false,
+                "overlayCommand": false,
+                "verifyRequest": false,
+                "peerEnv": false
+              }
+            },
+            "else": { "required": ["portGroup"] }
+          },
+          {
+            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview.",
+            "if": {
+              "anyOf": [
+                { "required": ["writes"] },
+                { "required": ["competesOn"] },
+                { "required": ["migrates"] }
+              ]
+            },
+            "then": { "required": ["stateReview"] }
           }
-        },
-        "else": { "required": ["portGroup"] },
+        ],
         "properties": {
           "kind": {
             "type": "string",
@@ -179,6 +194,47 @@
             "type": "object",
             "description": "Env var -> URL used to reach each peer. The overlay rewrites these to base-stack host ports.",
             "additionalProperties": { "type": "string" }
+          },
+          "writes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Backing stores this service MUTATES — inserts, updates, DDL, migrations, publishes, uploads. An EMPTY array means checked and none; an ABSENT field means unknown, and unknown fails closed. That distinction is the whole encoding, so never emit [] to mean \"did not look\"."
+          },
+          "competesOn": {
+            "type": "array",
+            "description": "Stores this service attaches to COMPETITIVELY: consumer groups, queue subscribers, advisory or leader locks, replication slots. Evaluated independently of writes, because a read-only service still steals work — a consumer joining the base group.id takes partitions even if it only logs. Empty means checked and none; absent means unknown.",
+            "items": {
+              "type": "object",
+              "required": ["store", "identity"],
+              "additionalProperties": false,
+              "properties": {
+                "store": { "type": "string" },
+                "identity": {
+                  "type": "string",
+                  "description": "The key whose value decides whether attaching competes, e.g. group.id, queue name, durable consumer name, lock name.",
+                  "examples": ["group.id", "queue", "durable", "advisory-lock"]
+                }
+              }
+            }
+          },
+          "migrates": {
+            "type": "boolean",
+            "description": "True when launching this service applies schema migrations. Forces isolate-or-refuse regardless of what the rest of the classification claims: a migration against a shared database damages every other consumer of it, and succeeds silently while doing so."
+          },
+          "stateReview": {
+            "type": "object",
+            "required": ["at", "method"],
+            "additionalProperties": false,
+            "description": "Evidence of HOW the classification above was reached. Required whenever writes, competesOn, or migrates is present. Without it an all-empty classification is indistinguishable from a lazy pass that disarmed the gate everywhere — see references/traps.md.",
+            "properties": {
+              "at": { "type": "string", "format": "date-time" },
+              "method": {
+                "type": "string",
+                "enum": ["code-scan", "user-asserted", "resolver-declared"],
+                "description": "code-scan read the service's source; resolver-declared came from the stack's own resolver; user-asserted is the human's word and is the weakest, so an all-empty classification asserted this way deserves suspicion rather than trust."
+              },
+              "notes": { "type": "string" }
+            }
           },
           "verifyRequest": {
             "type": "string",

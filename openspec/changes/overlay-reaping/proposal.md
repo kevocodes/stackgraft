@@ -186,6 +186,20 @@ Revert the merge. Labels already written to running containers become inert meta
 
 ## Proposal question round
 
+### Amendments after design
+
+Four locked decisions did not survive design contact. Each is corrected here rather than worked around downstream; each correction was verified against the repository, not argued.
+
+**A1 — D9's lock is necessary but not sufficient. `with-lock.sh` needs compare-and-swap.** Serializing the write does not fix last-writer-wins, because the loss happens in the *read-modify-write window*, not in the write. Two agents read the same manifest, both queue on the lock, and the second's write — correctly serialized — still erases the first's `verifiedOverlays` entry. The script therefore takes an expected fingerprint and refuses a stale write, which the caller re-reads and retries. D9 stands; its stated mechanism was half a mechanism.
+
+**A2 — D2's "appending `--label` flags" is wrong, and the counterexample ships in this repository.** `assets/manifest.example.json:98` ends its template at the service operand: `docker compose … run --rm --no-deps --publish {{port}}:8080 catalog-api`. Appending after that makes the label the container's `COMMAND`. Options precede the operand, so the mechanism is anchor insertion. This *shrinks* D2's accepted cost rather than binding it — piped and wrapped templates keep working.
+
+**A3 — T4's "slice 1 net ≤ +0" is insufficient, not merely loose.** The real constraint is `slice1_out + slice2_delta ≤ 500`. Slice 1 landing at 497 leaves slice 2 three words against its own forty-word ceiling — the two stated budgets cannot both hold. Slice 1's target is net **−34**, to 463.
+
+**A4 — D7 mis-slices `references/reaping.md`, and slice 1's CI goes red because of it.** Slice 1's Hard Rule names the file, and `.github/scripts/verify.sh:87-88` resolves every backticked `references/…` link and fails on a dangling one. The file is created in slice 1 with the instrumentation half and extended in slice 2. `references/discovery.md` joins slice 1 for the same structural reason and was missing from the affected-areas table.
+
+**Resolved, not amended:** the design flagged one blocking unknown — whether `docker compose run` accepts `--label`, the premise the whole D2 mechanism rests on. It does: `-l, --label stringArray  Add or override a label`. Verified against the installed binary.
+
 ### Q1 — RESOLVED: stop by default, remove behind a second explicit flag
 
 An orphan is a symptom. The worktree was deleted mid-work, or a background sweep took it — either way the logs are the only account of what the overlay was doing when its worktree vanished, and destroying them is destroying the evidence at the exact moment someone wants to read it. Stopping frees the port, which is the damage; removal frees disk, which is not urgent.

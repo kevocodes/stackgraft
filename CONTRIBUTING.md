@@ -34,10 +34,10 @@ CI runs these on every push and pull request, and you can run them locally:
 
 It checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, and no agent-specific coupling crept in.
 
-Two habits this project learned the hard way:
+Two things worth doing before you trust a green run:
 
-- **Feed a green check something you know is broken** and confirm it goes red. One verifier here passed for several rounds while being structurally incapable of failing — it collected field names *from* the schema and then checked them *against* the schema.
-- **Build the minimal instance your schema accepts** and trace what the gate does with it. That single negative test found every hole in the shared-state gate.
+- **Feed a check something you know is broken** and confirm it goes red. A verifier that cannot fail is not a verifier, and the failure mode is silent.
+- **Build the minimal instance the schema accepts** and trace what the gate does with it. Most safety holes live in the smallest legal input, not the realistic one.
 
 ## Commits and pull requests
 

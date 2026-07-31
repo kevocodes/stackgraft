@@ -17,12 +17,12 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 ## Hard Rules
 
 - Start only services the worktree changed; point unchanged dependencies at the base stack.
-- Port probes are a heuristic, never proof: bind with strict-port and honor `portPolicy.reserved`.
+- Port probes are heuristics, never proof: bind strict-port, honor `portPolicy.reserved`.
 - Never kill a process you did not start.
 - Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
-- `/health` returning 200 is not proof; verify a real request and read its headers.
-- The manifest is a cache, never truth: refresh drifted entries; on conflict the repo wins and the entry is rewritten.
-- Every overlay is REFUSED until `references/shared-state.md` has been read and a verdict is recorded for it. An empty dependency set is not a verdict. Nothing else — not the manifest, not the user, not inference — produces one.
+- `/health` returning 200 is not proof: verify a real request, read its headers.
+- The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite the entry.
+- Every overlay is REFUSED until `references/shared-state.md` has been read and every verdict it demands is recorded. Emptiness is a claim, never a verdict — that file says what evidences it. Nothing else — manifest, user, or inference — produces one.
 
 ## Decision Gates
 

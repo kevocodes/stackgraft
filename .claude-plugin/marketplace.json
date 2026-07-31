@@ -1,21 +1,32 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "stackgraft",
+  "description": "Run only the services your git worktree changed, grafted onto the stack you already have running.",
   "owner": {
-    "name": "kevocodes",
+    "name": "Kevin Escobar",
     "url": "https://github.com/kevocodes"
   },
   "plugins": [
     {
       "name": "stackgraft",
       "source": "./",
-      "description": "Run only the services your git worktree changed, on alternate ports, grafted onto the stack you already have running.",
+      "description": "Starts only the services a worktree changed, on alternate ports, wiring unchanged dependencies back to the running stack — and refuses to launch against shared state without a recorded verdict.",
+      "version": "1.0.0",
       "author": {
-        "name": "kevocodes",
+        "name": "Kevin Escobar",
         "url": "https://github.com/kevocodes"
       },
       "homepage": "https://github.com/kevocodes/stackgraft",
+      "repository": "https://github.com/kevocodes/stackgraft",
       "license": "Apache-2.0",
-      "keywords": ["worktree", "monorepo", "docker-compose", "local-development", "ports"],
+      "keywords": [
+        "worktree",
+        "monorepo",
+        "docker-compose",
+        "local-development",
+        "ports",
+        "parallel-branches"
+      ],
       "category": "development"
     }
   ]

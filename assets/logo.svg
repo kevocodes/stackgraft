@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 340" width="1024" height="340" role="img" aria-label="stackgraft — run only what you changed">
+  <title>stackgraft</title>
+
+  <defs>
+    <style>
+      .rootstock { stroke: #6b7280; }
+      .scion     { stroke: #16a34a; }
+      .wordmark  { fill: #111827; }
+      .accent    { fill: #16a34a; }
+      .tagline   { fill: #6b7280; }
+      @media (prefers-color-scheme: dark) {
+        .rootstock { stroke: #6b7280; }
+        .scion     { stroke: #4ade80; }
+        .wordmark  { fill: #f3f4f6; }
+        .accent    { fill: #4ade80; }
+        .tagline   { fill: #9ca3af; }
+      }
+    </style>
+  </defs>
+
+  <!-- the rootstock: four unchanged services already running, drawn as one continuous trunk -->
+  <g fill="none" stroke-width="10" stroke-linecap="round">
+    <path class="rootstock" d="M150 196 H874" />
+
+    <!-- the base stack's own branches, untouched -->
+    <path class="rootstock" d="M262 196 v-42" opacity="0.55" />
+    <path class="rootstock" d="M374 196 v-42" opacity="0.55" />
+    <path class="rootstock" d="M650 196 v-42" opacity="0.55" />
+    <path class="rootstock" d="M762 196 v-42" opacity="0.55" />
+
+    <!-- the scion: one service, grafted in on its own port -->
+    <path class="scion" d="M512 196 C512 150, 512 128, 560 104" stroke-width="12" />
+  </g>
+
+  <!-- graft union -->
+  <circle class="accent" cx="512" cy="196" r="13" />
+  <circle class="accent" cx="560" cy="104" r="9" />
+
+  <text x="512" y="268" text-anchor="middle"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        font-size="72" font-weight="700" letter-spacing="-2">
+    <tspan class="wordmark">stack</tspan><tspan class="accent">graft</tspan>
+  </text>
+
+  <text x="512" y="308" text-anchor="middle" class="tagline"
+        font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif"
+        font-size="24" letter-spacing="1">
+    run only what you changed
+  </text>
+</svg>

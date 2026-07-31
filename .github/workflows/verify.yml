@@ -51,3 +51,46 @@ jobs:
           printf 'pick-port.sh\nfingerprint.sh' | sh fingerprint.sh -
 
           echo "helpers run on alpine with git, dash and busybox awk only"
+
+  git-bash:
+    name: helpers run under Git Bash on Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Report the environment the scripts actually get
+        run: |
+          uname -a
+          git --version
+          awk --version 2>/dev/null | head -1 || awk -W version 2>&1 | head -1
+
+      - name: The helpers must survive MSYS path translation
+        run: |
+          set -eu
+          cd skills/stackgraft/scripts
+
+          sh -n pick-port.sh
+          sh -n fingerprint.sh
+
+          wt=$(mktemp -d)
+          port=$(sh pick-port.sh 18000 18999 "$wt")
+          case $port in 1[89][0-9][0-9][0-9]) ;; *) echo "bad port: $port"; exit 1 ;; esac
+
+          # MSYS rewrites arguments that look like POSIX paths. If that mangles
+          # the worktree argument, the offset changes and these disagree.
+          a=$(sh pick-port.sh 18000 18999 "$wt")
+          b=$(sh pick-port.sh 18000 18999 "$wt/")
+          [ "$a" = "$b" ] || { echo "path spelling changed the port: $a vs $b"; exit 1; }
+
+          excl=$(sh pick-port.sh 18000 18999 "$wt" "$a")
+          [ "$excl" != "$a" ] || { echo "exclusion ignored"; exit 1; }
+
+          # -C is the argument most exposed to path translation.
+          cd ../../..
+          out=$(sh skills/stackgraft/scripts/fingerprint.sh -C skills/stackgraft SKILL.md)
+          case $out in *"	SKILL.md") ;; *) echo "unexpected: $out"; exit 1 ;; esac
+
+          echo "helpers work under Git Bash: candidate $port, -C resolved, exclusions honoured"

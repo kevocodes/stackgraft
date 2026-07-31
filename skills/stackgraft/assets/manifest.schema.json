@@ -221,7 +221,7 @@
         "method": {
           "type": "string",
           "enum": ["code-scan", "user-asserted", "resolver-declared"],
-          "description": "How the absence was established, same scale as services[].stateReview.method. user-asserted is the weakest here too: a human saying a repository has no database is the claim most worth spot-checking, because it disarms the gate for every service at once."
+          "description": "How the absence was established, same scale as services[].stateReview.method. user-asserted is the weakest here, and at the root it does not count at all: references/shared-state.md reads a user-asserted root record as no verdict whatever its confidence claims, because a human saying a repository has no database disarms the gate for every service against every store at once. It stays legal to record — the value is still the honest description of a pass that only asked — and it is legal beside a populated backingStores, where the record gates nothing; only code-scan or resolver-declared evidences an EMPTY map."
         },
         "notes": { "type": "string" }
       }

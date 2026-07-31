@@ -307,7 +307,7 @@
           },
           "migrates": {
             "type": "boolean",
-            "description": "True when launching this service applies schema migrations. Forces isolate-or-refuse regardless of what the rest of the classification claims: a migration against a shared database damages every other consumer of it, and succeeds silently while doing so."
+            "description": "True when launching this service applies schema migrations. references/shared-state.md reads it as W = yes for EVERY pair of this service, whatever writes lists, which is how it forces isolate-or-refuse regardless of what the rest of the classification claims: a migration against a shared database damages every other consumer of it, and succeeds silently while doing so. It is the escalation the diff cannot supply — a service migrating from its own entrypoint touches no migrations directory in the diff and names no migrate step in its launch command."
           },
           "stateReview": {
             "type": "object",

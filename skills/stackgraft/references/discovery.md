@@ -75,7 +75,7 @@ Resolve from the source files, never from assumption:
 - **`paths`** — the globs whose change means this unit changed. Start from `build.context` for compose services, from the package directory for workspace members.
 - **`runnable`** — `false` for a tree that is never launched and never takes a port (shared code, generated assets). Such an entry exists only to fan a change out to its `consumers`.
 - **`consumers`** — on a non-runnable entry, every unit whose build context includes that tree. This is the single direction of truth for shared-code fan-out; do not restate it as a per-service flag that can drift out of sync.
-- **`portGroup`** — which range in `portPolicy.ranges` this unit draws from. Keep it independent of `kind`, which is descriptive only.
+- **`portGroup`** — which range in `portPolicy.ranges` this unit draws from. Keep it independent of `kind`, which is descriptive only. **A `portGroup` with no matching key in `portPolicy.ranges` means stop and ask.** Never guess a range, never widen another group's range to cover it, and never fall back to "any free port": the user owns this machine's ports, and a range nobody sized for this unit is how an overlay lands on one of theirs. `ranges` is optional, so the minimal manifest reaches this case on its very first overlay — it is the normal path, not an error path.
 - **`basePort`** — the port published on the host, not the container port.
 - **`peerEnv`** — the env vars holding peer URLs. See §4; the right value depends on where the overlay runs.
 - **`verifyRequest`** — a real endpoint with real headers. If any gating exists (CORS, tenant, auth), it belongs in this command.

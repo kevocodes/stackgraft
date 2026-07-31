@@ -35,6 +35,7 @@ Take the steps in order and stop at the first one that matches. **X is evaluated
 
 - `confidence` other than `declared` on `isolation`, or classification without `stateReview`. A degraded discovery path must not launder a guess into a safety verdict.
 - A dependency name found in neither `services` nor `backingStores`. Unknown fails closed.
+- **An empty pair set on a runnable service.** A service that enumerates no dependencies has not passed the gate — it has skipped it, because a procedure that runs per pair does nothing when there are no pairs. Treat a missing `dependsOn` as one undetermined pair against every backing store and refuse. Without this, saying *less* would gate *less* than saying something, and the laziest manifest would be the least refused.
 - The user's assertion, the manifest's claim, or your own inference *in place of* this procedure. They are inputs to W, X, and N — never a substitute for the verdict.
 
 ### Escalations that override any recorded claim

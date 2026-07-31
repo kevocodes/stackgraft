@@ -378,7 +378,7 @@
           },
           "verifyRequest": {
             "type": "string",
-            "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced."
+            "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced. It is substituted like every other templated command, so it has a closed placeholder set too, and that set is exactly one: {{port}}, the port picked this run. {{worktree}} and {{repoRoot}} are deliberately NOT members — a request is made against a listening port, not against a checkout, and a line that needs a path off the filesystem is a script rather than a verification request. A token shaped {{.Something}} is the orchestrator's own Go template and passes through verbatim; any OTHER {{...}} has no defined source, which means the line was not taken from a request that can actually be made: re-derive it or ask, never guess a value, and record no verifiedOverlays entry for a verification that never ran. Substituted per references/discovery.md section 6."
           },
           "overlayCommand": {
             "type": "string",

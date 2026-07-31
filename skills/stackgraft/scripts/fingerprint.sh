@@ -1,3 +1,4 @@
+#!/bin/sh
 # fingerprint.sh - content fingerprints for stackgraft manifest sources.
 #
 # usage:  sh scripts/fingerprint.sh [-C repoRoot] <path>...
@@ -30,13 +31,18 @@ emit() {
 
 if [ "${1:-}" = "-C" ]; then
     [ "$#" -ge 3 ] || usage
-    cd -- "$2" || exit 2
+    # CDPATH= is load-bearing: with CDPATH set, cd echoes the resolved
+    # directory to stdout and would inject a stray line into the stream the
+    # caller parses - and could resolve a relative operand somewhere else.
+    CDPATH= cd -- "$2" || exit 2
     shift 2
 fi
 [ "$#" -ge 1 ] || usage
 
 if [ "$1" = "-" ] && [ "$#" -eq 1 ]; then
-    while IFS= read -r path; do
+    # The || guard keeps a final line with no trailing newline: read returns
+    # non-zero at EOF even when it did assign a partial last field.
+    while IFS= read -r path || [ -n "$path" ]; do
         [ -n "$path" ] || continue
         emit "$path"
     done

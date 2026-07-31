@@ -30,11 +30,11 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 | Situation | Action |
 |-----------|--------|
 | Manifest missing | Full discovery, then write it |
-| All fingerprints match | Reuse manifest, skip discovery — but re-derive every `revalidate: "always"` source |
+| All fingerprints match | Reuse it; still re-derive every `revalidate: "always"` source |
 | Some source drifted | Re-discover only that slice, rewrite those entries and hashes |
-| Changed paths map to no service | No overlay; run tests only and say so |
-| Change touches a shared/common dir | Overlay every service listed in that entry's `consumers` |
-| Overlay needs a port outside the range | Stop and ask before binding |
+| Changed paths map to no service | No overlay; run tests only, say so |
+| Shared/common dir changed | Overlay every service in that entry's `consumers` |
+| Port needed outside the range | Stop and ask before binding |
 | Any overlay | Gate it — `references/shared-state.md` |
 
 ## Execution Steps
@@ -44,9 +44,10 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 3. Discover or refresh per the Decision Gates (`references/discovery.md`).
 4. Diff the worktree against its base branch; map changed paths through `paths` globs.
 5. Confirm the base stack is healthy; start what is missing.
-6. `sh scripts/pick-port.sh <portGroup range lo> <hi> <worktree> <reserved, basePorts, ports taken this run>`; bind strictly.
-7. Launch each mapped service, rewiring unchanged dependencies to the base stack.
-8. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
+6. Before launching, read `references/shared-state.md` and record every verdict it demands.
+7. `sh scripts/pick-port.sh <portGroup range lo> <hi> <worktree> <reserved, basePorts, ports taken this run>`; bind strictly.
+8. Launch each mapped service, rewiring unchanged dependencies to the base stack.
+9. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
 
 ## Output Contract
 

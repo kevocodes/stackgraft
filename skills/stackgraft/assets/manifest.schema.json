@@ -59,7 +59,8 @@
           },
           "covers": {
             "type": "array",
-            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest.",
+            "minItems": 1,
+            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest. At least one is mandatory, for the same reason sources itself may not be empty: an entry covering nothing contributes nothing to the refresh union, so it drifts, re-derives no key — and still has its fingerprint rewritten in step 7 of references/discovery.md, spending the one signal that would have caught the change. Emptiness here is unfalsifiable in the same way writes: [] would be without stateReview; a source whose covers cannot be named has not been understood well enough to record.",
             "items": {
               "type": "string",
               "not": { "pattern": "^(verifiedOverlays|acceptedRisks)" },

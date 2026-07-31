@@ -37,6 +37,8 @@ Verified on git 2.50.1, one scratch repository per shape:
 | `--separate-git-dir`, from the main worktree | `<elsewhere>/repo.git` | 3 | the main worktree |
 | `--separate-git-dir` or bare, from a linked worktree | `<elsewhere>/repo.git` | 4 | stop and ask |
 
+`gitCommonDir` is also the cache key's input, and it is hashed exactly the way `scripts/pick-port.sh` hashes a worktree path: `printf '%s' "$gitCommonDir" | git hash-object --stdin`, with no trailing newline. `echo` would add one and digest to something else, so two runs spelling it differently would key two manifests for one repository and each would rediscover what the other already knew.
+
 The last row is a limit of the repository, not of this rule. `--separate-git-dir` writes a one-way link: the checkout's `.git` file points at the git dir and nothing points back, so from a linked worktree the main worktree is unrecoverable — git itself answers wrongly here, `git worktree list` reporting the *git dir* as the main worktree because it derives that path by stripping a trailing `/.git` from the common dir. A bare repository has no main worktree at all. In both cases ask for `repoRoot`; substituting this checkout is the one answer guaranteed to be wrong.
 
 ## 1. Prefer the ecosystem's resolver over hand-parsing

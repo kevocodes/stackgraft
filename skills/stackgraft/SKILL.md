@@ -32,7 +32,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 | Some source drifted | Re-discover only that slice, rewrite those entries and hashes |
 | Changed paths map to no service | No overlay; run tests only and say so |
 | Change touches a shared/common dir | Overlay every service listed in that entry's `consumers` |
-| Only the client/frontend changed | Overlay the dev server on a free port; reuse all backends |
+| Only the client/frontend changed | Overlay the dev server on a candidate port; reuse all backends |
 | Overlay needs a port outside the range | Stop and ask before binding |
 
 ## Execution Steps

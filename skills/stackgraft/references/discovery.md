@@ -39,7 +39,7 @@ Record *why* it degraded in `sources[].resolverStatus`: `docker daemon not runni
 
 ## 2. Tier the sources
 
-Record as `sources[]` every file that defines topology, with the manifest keys it `covers`.
+Record as `sources[]` every file that defines topology, with the manifest keys it `covers`. **Every entry names at least one key.** A source covering nothing still drifts and still has its fingerprint rewritten in section 5, so the one signal that file could ever give is spent on re-deriving nothing; if you cannot name what a file is authoritative for, you have not learned enough about it to record it.
 
 **`sources` may never be empty, including when the user supplied the topology.** An empty array makes the reuse gate vacuously true forever, and the manifest stops being a cache. A user-answered topology has no file of its own, so record it as one entry anyway, `confidence: "user"`, with `resolverStatus` saying why nothing resolved it:
 

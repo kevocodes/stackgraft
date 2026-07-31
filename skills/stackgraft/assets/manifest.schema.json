@@ -96,8 +96,8 @@
               },
               "confidence": {
                 "type": "string",
-                "enum": ["resolved", "inferred", "user"],
-                "description": "Only \"resolved\" may satisfy the shared-state gate. A degraded discovery path must not launder a guess into a safety verdict."
+                "enum": ["declared", "inferred", "user"],
+                "description": "Only \"declared\" may satisfy the shared-state gate. A degraded discovery path must not launder a guess into a safety verdict."
               },
               "approval": {
                 "type": "object",

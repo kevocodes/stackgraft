@@ -34,7 +34,7 @@
         "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T postgres dropdb -U bookshop --if-exists {{isolationName}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
         "discoveredFrom": "docker-compose.yml",
-        "confidence": "resolved"
+        "confidence": "declared"
       },
       "notes": [
         "createdb runs inside the running container, so no psql has to exist on the host.",
@@ -44,7 +44,7 @@
 
     "redis-pubsub": {
       "substrate": "redis",
-      "isolation": { "mechanism": "none", "confidence": "resolved" },
+      "isolation": { "mechanism": "none", "confidence": "declared" },
       "notes": [
         "Deliberately mechanism none. SELECT isolates the keyspace but NOT pub/sub: a message published on database 10 reaches a subscriber on database 1, so channel names collide across every logical database.",
         "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly."

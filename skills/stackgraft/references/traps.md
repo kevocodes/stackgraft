@@ -20,6 +20,13 @@ Each of these has been hit for real. Check them every run — they fail silently
 - **A shared/common edit does not reach every service.** Only those whose build context includes that tree. Read the Dockerfile per service and record the answer once, in the shared entry's `consumers` list — a per-service copy of the same fact drifts out of sync and then lies.
 - **Co-overlaid peers must point at each other**, not at the base stack. Rewrite those URLs to the overlay ports, or you will test the old code and believe it passed.
 
+## Shared state
+
+- **An all-empty classification asserted by a human is the shape of a disarmed gate.** Every service carrying `writes: []`, `competesOn: []`, and `stateReview.method: "user-asserted"` is not a clean repository — it is what one lazy pass looks like after it told the gate what the gate wanted to hear. `[]` means *checked and none*; absent means *unknown*. Spot-check one such service against its source before trusting the set.
+- **A writer pointed at the base namespace passes every check and corrupts anyway.** Confirm the overlay's env actually names the isolated database, vhost, or prefix. An `isolation.command` that ran successfully proves the namespace exists, not that the overlay is using it.
+- **A migration in the diff outranks whatever the manifest claims.** If the worktree touches a migrations directory, or the launch command runs one, treat the pair as isolate-or-refuse no matter what `writes` says. Migrations are the one write that damages every other consumer at once.
+- **Refusing is a result, not a failure.** When the verdict is REFUSE, report it and stop. Working around a refusal by hand — creating the database yourself, reusing the shared one "just this once" — is exactly the path the gate exists to close.
+
 ## Environment
 
 - **Never place a worktree in `/tmp` or `/var/tmp`.** Both trees are reaped on a schedule no run controls, so a worktree can vanish mid-session and take uncommitted work with it. Use `<repo-parent>/<repo-name>-worktrees/<name>` or a path inside the repo's ignored area.

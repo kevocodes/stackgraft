@@ -299,7 +299,7 @@
                 },
                 "overlayIdentity": {
                   "type": "string",
-                  "description": "The distinct VALUE substituted for that key when the overlay runs, e.g. sg_feat_x_1a2b3c4d for a group.id. Step 2 of references/shared-state.md clears X only by supplying one, and without a field to hold it the re-classification could not persist: the pair would return to REFUSE on the next run with nothing recording what was already done. Absent means no distinct identity was supplied, which is the competing case. It is a value the overlay applies, not a claim about the repository, so it does not on its own make X no — the re-entry at step 1 still has to confirm the overlay actually attaches under it.",
+                  "description": "The distinct VALUE substituted for that key when the overlay runs, e.g. sg_feat_x_1a2b3c4d for a group.id. Step 2 of references/shared-state.md clears X only by supplying one, and without a field to hold it the re-classification could not persist: the pair would return to REFUSE on the next run with nothing recording what was already done. Absent means no distinct identity was supplied, which is the competing case. It is a value the overlay applies, not a claim about the repository, so it does not on its own make X no: step 2 clears X only for a value VERIFIED DISTINCT — different from what the base attaches under, actually applied to the launched process, and on a substrate where a distinct identity ends the competition at all. Unverified, X stays undetermined and the pair refuses at step 1.",
                   "examples": ["sg_feat_x_1a2b3c4d"]
                 }
               }

@@ -26,7 +26,7 @@ Take the steps in order and stop at the first one that matches. **X is evaluated
 | Step | Condition | Verdict |
 |:----:|-----------|---------|
 | 1 | **Any** of W, X, N undetermined | Treat that pair as `W=yes, X=yes, N=no` → **REFUSE**. |
-| 2 | **X = yes**, whatever W and N say | **REFUSE** a plain attach. Read-only is not enough when the read protocol competes: a consumer joining the base `group.id` takes partitions even if it only logs. Supply a distinct consumer identity, then re-enter at step 1 with X evaluated again — the substitution alone never approves. |
+| 2 | **X = yes**, whatever W and N say | **REFUSE** a plain attach. Read-only is not enough when the read protocol competes: a consumer joining the base `group.id` takes partitions even if it only logs. Supply a distinct consumer identity, **record the value as `competesOn[].overlayIdentity`**, then re-enter at step 1 with X evaluated again — the substitution alone never approves. `identity` holds the key's name (`group.id`); `overlayIdentity` holds what the overlay actually attaches under, and without it recorded the re-classification does not persist and the pair is back at REFUSE on the next run. |
 | 3 | X = no, W = no | **REUSE** the base store. The only unconditionally safe case. |
 | 4 | X = no, **W = yes**, N = yes | **ISOLATE** inside the running instance. Reuse the server process, never the namespace. |
 | 5 | X = no, **W = yes**, N = no | **REFUSE**, or run a dedicated store. Never reuse. |

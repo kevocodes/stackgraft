@@ -3,30 +3,84 @@
   "title": "stackgraft topology manifest",
   "description": "Per-repository cache of the local run topology. Keyed by the main repo root; shared by all its worktrees. Every field is a cache of something re-derivable from the repo, so a drifted fingerprint always beats a stored value.",
   "type": "object",
-  "required": ["schemaVersion", "repoRoot", "sources", "services", "portPolicy"],
+  "required": ["schemaVersion", "repoRoot", "fingerprintTool", "sources", "services", "backingStores", "portPolicy"],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "The gate in references/shared-state.md runs once per (service, store) pair, so an empty backingStores runs it zero times and every interlock inside that loop is skipped wholesale. backingStores is therefore REQUIRED — an absent map and a map discovery never populated are the same bytes — and an EMPTY one is a claim that has to be evidenced exactly like writes: [] is: the manifest must carry a root stateReview recording that discovery looked for stateful dependencies and found none. Unevidenced emptiness is undetermined, not safe, and refuses.",
+      "if": {
+        "required": ["backingStores"],
+        "properties": { "backingStores": { "maxProperties": 0 } }
+      },
+      "then": { "required": ["stateReview"] }
+    },
+    {
+      "$comment": "Every manifest carries a sources[] entry covering backingStores. The obligation is keyed on backingStores, which is required and so always fires, rather than on the root stateReview: a POPULATED map needs a covering source just as badly, because that map is the gate's pair set and a key no source covers is a key no drift can re-derive — a repository that gains a second store would never get it into the map, and that store would never be paired with any service. Keyed on the record alone, only the storeless manifest was ever asked for one. For the storeless case the same entry does double duty: the root stateReview is the one evidence record here with nothing of its own to expire it — a source has its fingerprint, an isolation approval has sourceFingerprint, a classification has serviceFingerprint — so the covering source's drift is its expiry, and references/shared-state.md reads a record whose covering source has drifted as stale, which is not a verdict.",
+      "if": { "required": ["backingStores"] },
+      "then": {
+        "properties": {
+          "sources": {
+            "contains": {
+              "type": "object",
+              "required": ["covers"],
+              "properties": { "covers": { "contains": { "const": "backingStores" } } }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "repoRoot": {
       "type": "string",
       "description": "Absolute path of the MAIN worktree, not the checkout in use."
     },
     "discoveredAt": { "type": "string", "format": "date-time" },
+    "fingerprintTool": {
+      "type": "string",
+      "description": "The one tool that produced every sources[].fingerprint, e.g. git-hash-object-no-filters. A value other than the tool in use marks EVERY source drifted, i.e. full rediscovery — the same fail-safe direction as an unrecognized schemaVersion."
+    },
 
     "sources": {
       "type": "array",
-      "description": "Files that define the topology. Their hashes drive invalidation.",
+      "minItems": 1,
+      "description": "Files that define the topology. Their hashes drive invalidation. At least one is mandatory: with an empty array the \"all fingerprints match\" gate is vacuously true on every run, so the manifest could never be invalidated and would become truth instead of a cache. A topology the user answered by hand still records an entry — see references/discovery.md section 2.",
       "items": {
         "type": "object",
-        "required": ["path", "sha256", "covers"],
+        "required": ["path", "fingerprint", "covers"],
         "additionalProperties": false,
         "properties": {
           "path": { "type": "string", "description": "Relative to repoRoot." },
-          "sha256": { "type": "string" },
+          "fingerprint": {
+            "type": "string",
+            "description": "Opaque value from fingerprintTool, compared only for equality. Deliberately unconstrained: a repo using a non-default object format yields a different length, and a pattern would reject it."
+          },
+          "revalidate": {
+            "type": "string",
+            "enum": ["fingerprint", "always"],
+            "default": "fingerprint",
+            "description": "Whether fingerprint equality is accepted as proof of freshness. \"always\" is for a source whose real input set is not enumerable, where the stored hash covers only the entry file, so an unchanged hash proves nothing. The criterion is that a file this manifest does not list can change the resolved topology, which covers both a file that PULLS one in — a compose file using include: or extends:, a Tiltfile that imports arbitrary Starlark — and a file MERGED IN without being named anywhere: compose.override.yaml auto-merge, a COMPOSE_FILE or -f chain, a profile. The second shape is how a store arrives without moving any stored fingerprint. Such an entry is re-derived every run regardless of equality.",
+            "$comment": "default is an annotation: an absent value and \"fingerprint\" mean the same thing."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["declared", "inferred", "user"],
+            "description": "How this entry was obtained. \"inferred\" marks a degraded path — a static parse standing in for an unavailable resolver — and must not be trusted for anything that gates safety."
+          },
+          "resolverStatus": {
+            "type": "string",
+            "description": "Why the resolver degraded, when it did, e.g. docker daemon not running, toolchain absent, resolver refused for being non-read-only. Recorded so the next run can tell a genuine absence from an unavailable tool instead of re-deciding blind."
+          },
           "covers": {
             "type": "array",
-            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest.",
-            "items": { "type": "string" }
+            "minItems": 1,
+            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest. At least one is mandatory, for the same reason sources itself may not be empty: an entry covering nothing contributes nothing to the refresh union, so it drifts, re-derives no key — and still has its fingerprint rewritten in step 7 of references/discovery.md, spending the one signal that would have caught the change. Emptiness here is unfalsifiable in the same way writes: [] would be without stateReview; a source whose covers cannot be named has not been understood well enough to record.",
+            "items": {
+              "type": "string",
+              "not": { "pattern": "^(verifiedOverlays|acceptedRisks)" },
+              "description": "A dot-delimited key path. verifiedOverlays and acceptedRisks are rejected on purpose: both are records of something a human or a real request did, not something derivable from the repository, and acceptedRisks is the gate's only bypass. A source that could re-derive them could regrant the bypass from repository data alone."
+            }
           }
         }
       }
@@ -34,26 +88,205 @@
 
     "baseStack": {
       "type": "object",
-      "description": "How the shared, unmodified stack is started and proven healthy.",
+      "description": "How the shared, unmodified stack is started and proven healthy. All three commands are DISCOVERED FROM THE REPOSITORY — the orchestrator's own entry points — and share one placeholder, {{repoRoot}}, the main worktree this manifest is keyed by. {{port}} and {{worktree}} are deliberately NOT members: the base stack is per repository, not per overlay, so a picked port or a checkout path means nothing in these lines. COLLISION RULE: a token shaped {{.Something}} is the orchestrator's own Go template — docker compose --format writes {{.Service}}, {{.State}}, {{.Publishers}} — and is passed through verbatim, never substituted and never read as an unknown placeholder. That is why the closed set matches exact names and not the {{...}} shape. Values substituted in are quoted per references/discovery.md section 6.",
       "additionalProperties": false,
       "properties": {
-        "startCommand": { "type": "string" },
-        "statusCommand": { "type": "string" },
-        "teardownCommand": { "type": "string" },
+        "startCommand": {
+          "type": "string",
+          "description": "Starts the base stack, or brings up the part of it that is missing. This is the whole-stack up form the overlay exists to avoid duplicating, so it runs against the base stack only, never for an overlay."
+        },
+        "statusCommand": {
+          "type": "string",
+          "description": "Read-only: prints what is running and where it publishes, so a partial base stack is told apart from a healthy one before anything is overlaid. This is the field most likely to carry Go template tokens, which pass through untouched."
+        },
+        "teardownCommand": {
+          "type": "string",
+          "description": "Stops the base stack the overlay was grafted onto. It is not the overlay's teardown — an overlay is stopped through its own process — and it belongs to whoever owns the base stack."
+        },
         "bindsTo": { "type": "string", "description": "e.g. 127.0.0.1" }
+      }
+    },
+
+    "backingStores": {
+      "type": "object",
+      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. REQUIRED, and it is the gate's pair set: every runnable service is paired with every entry here, so a missing map means zero pairs, zero verdicts and an ungated launch. It MAY be empty, but only alongside the root stateReview that evidences the emptiness — see the conditional at the top of this schema. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+        "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps the one repository-controlled substituted value from carrying shell syntax or a second word into an executed argument — the substitution check in references/shared-state.md is structural, so this pattern is where that value is constrained. It still accepts the names real orchestrators use — uppercase, dots and digits are all legal compose service names, and a store that could not be recorded under its real name would resolve to neither map and refuse forever with no remedy."
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["substrate", "isolation"],
+        "additionalProperties": false,
+        "properties": {
+          "substrate": {
+            "type": "string",
+            "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
+            "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies."
+          },
+          "isolation": {
+            "type": "object",
+            "required": ["mechanism"],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "$comment": "An approval is a baseline against one specific discovered source. Without discoveredFrom there is no file to re-fingerprint, so the drift rule could never fire and the approval would never expire.",
+                "if": { "required": ["approval"] },
+                "then": { "required": ["discoveredFrom"] }
+              },
+              {
+                "$comment": "A mechanism is a claim that this store CAN be isolated, and N in references/shared-state.md reads it as one. {\"mechanism\": \"database\"} alone satisfies N and reaches an ISOLATE verdict while carrying nothing that could create or point at the isolated namespace. A mechanism with no way to apply it is \"none\": either a command creates the namespace or an env points the overlay at one, and neither is optional.",
+                "if": {
+                  "required": ["mechanism"],
+                  "properties": { "mechanism": { "not": { "const": "none" } } }
+                },
+                "then": {
+                  "anyOf": [{ "required": ["command"] }, { "required": ["env"] }]
+                }
+              },
+              {
+                "$comment": "A create with no drop leaves one namespace per branch behind forever — isolated databases, vhosts and buckets accumulate until somebody goes looking. The approval rule in references/shared-state.md already shows BOTH substituted commands before the first run, which assumes both exist. So a command obliges a teardownCommand; where no teardown is discoverable the honest record is mechanism none, because half a lifecycle is not an isolation mechanism. env-only isolation is deliberately exempt: it has no create command and nothing a drop command could remove, so its namespace is named in the run's output instead.",
+                "if": { "required": ["command"] },
+                "then": { "required": ["teardownCommand"] }
+              }
+            ],
+            "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",
+            "properties": {
+              "mechanism": {
+                "type": "string",
+                "examples": ["database", "schema", "vhost", "keyspace", "topic-prefix", "consumer-group", "bucket", "index-prefix", "file-copy", "none"],
+                "description": "\"none\" is legal and meaningful, not a gap: it records that this substrate offers no in-instance isolation — Redis pub/sub channels and externally visible side effects are real examples. A store with mechanism \"none\" resolves to REFUSE or to a dedicated instance; it never resolves to reuse."
+              },
+              "applyVia": {
+                "type": "string",
+                "examples": ["compose-exec", "host-client", "manual"],
+                "description": "How the command reaches the store. compose-exec borrows the client from inside the running container, which is why no client binary has to exist on the host."
+              },
+              "command": {
+                "type": "string",
+                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. The placeholder set is closed and is exactly the one in references/shared-state.md, which is the authority: {{isolationName}}, {{store}}, {{worktree}}, {{repoRoot}}, {{port}}. Every member has a defined source — generated name, backingStores key, overlay checkout, this manifest's repoRoot, and the port picked this run. Any other {{...}} invalidates the template, which makes mechanism \"none\". It must invoke one program: shell metacharacters are rejected in the raw template the repository wrote, and the check after substitution is structural — every placeholder value must occupy exactly one argv element and never be re-split — because under argv a metacharacter inside a host path is inert and re-denying it would refuse every store on that host. That inertness lasts only while nothing downstream re-parses the element, so the program itself may not take a command line or program text as an argument: a shell, env, eval, xargs and awk are rejected outright, and a language runtime is rejected when given a -c/-e style flag, because sh -c '... {{repoRoot}} ...' hands the substituted path back to shell grammar inside one argv element. A pipeline belongs in a task target the repo already defines."
+              },
+              "teardownCommand": {
+                "type": "string",
+                "description": "Templated command that removes the isolated namespace when the overlay is done, DISCOVERED FROM THE REPOSITORY exactly as command is. The whole template contract in references/shared-state.md governs it — same closed placeholder set, same deny-list on the raw template, same structural check after substitution, same argv execution, same one-program rule, same destructive-verb rule, same approval — because it is equally repository-supplied and equally executed against the running store, and it is the half more likely to be destructive. Dropping {{isolationName}} is the accepted case; anything that removes a namespace not derived from it is rejected, and a rejected teardown makes the whole isolation record mechanism \"none\".",
+                "examples": ["docker compose exec -T postgres dropdb --if-exists {{isolationName}}"]
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Env overrides that point the overlay at the isolated namespace instead of the shared one."
+              },
+              "discoveredFrom": {
+                "type": "string",
+                "description": "The file the command came from. Drift here invalidates any approval recorded against it."
+              },
+              "confidence": {
+                "type": "string",
+                "enum": ["declared", "inferred", "user"],
+                "description": "Only \"declared\" may satisfy the shared-state gate. A degraded discovery path must not launder a guess into a safety verdict."
+              },
+              "approval": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["at", "sourceFingerprint"],
+                "properties": {
+                  "at": { "type": "string", "format": "date-time" },
+                  "by": { "type": "string" },
+                  "sourceFingerprint": {
+                    "type": "string",
+                    "description": "The fingerprint of the discoveredFrom file when the command was approved, produced by fingerprintTool. Without it \"re-prompt when discoveredFrom drifts\" has no baseline to compare against, so an approval outlives the command it approved and a rewritten template runs unprompted. The entry is treated as ABSENT once this stops matching, exactly as acceptedRisks.serviceFingerprint works: the human approved a command that no longer exists, so the substituted command is shown again before the first run."
+                  }
+                }
+              }
+            }
+          },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
+    "stateReview": {
+      "type": "object",
+      "required": ["at", "method", "confidence"],
+      "additionalProperties": false,
+      "description": "Manifest-level evidence that discovery LOOKED for stateful dependencies. REQUIRED when backingStores has no members, and the one verdict recorded per manifest rather than per (service, store) pair: it is what makes \"this repository runs no shared store\" a falsifiable claim instead of an omission. It has to exist because the degraded path is reachable — references/discovery.md section 1 has a resolver that was unavailable and a static parse standing in for it — and a map that pass never filled is byte-identical to a map a repository never needed. Same method scale as services[].stateReview, minus serviceFingerprint: there is no service to fingerprint. Its expiry is the covering source instead: the conditional at the top of this schema requires a sources[] entry covering backingStores of EVERY manifest — keyed on the map rather than on this record, so a populated map is owned too — and references/shared-state.md treats the record as stale, not a verdict, once that source drifts. Legal and harmless when backingStores is non-empty, where it says nothing about any individual pair; those still need their own verdicts.",
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "confidence": {
+          "type": "string",
+          "enum": ["declared", "inferred", "user"],
+          "description": "How this record was obtained, the same scale sources[].confidence and isolation.confidence use. REQUIRED, unlike those optional siblings, because this is the record that releases the gate for the whole repository: an omission here would be read as trust, and the degraded pass is the one least likely to write the field. Only \"declared\" counts — references/shared-state.md rejects any other value AND any absence, which leaves the pair set undetermined and refuses. The absence case is not dead weight: a manifest-less run has no schema to enforce this, so the read side must reject it on its own.",
+          "$comment": "Required on the record rather than checked only at read time so a manifest that omits it is discarded and rediscovered, which is the same fail-safe direction as an unrecognized schemaVersion."
+        },
+        "method": {
+          "type": "string",
+          "enum": ["code-scan", "user-asserted", "resolver-declared"],
+          "description": "How the absence was established, same scale as services[].stateReview.method. user-asserted is the weakest here, and at the root it does not count at all: references/shared-state.md reads a user-asserted root record as no verdict whatever its confidence claims, because a human saying a repository has no database disarms the gate for every service against every store at once. It stays legal to record — the value is still the honest description of a pass that only asked — and it is legal beside a populated backingStores, where the record gates nothing; only code-scan or resolver-declared evidences an EMPTY map."
+        },
+        "notes": { "type": "string" }
       }
     },
 
     "services": {
       "type": "object",
-      "description": "One entry per runnable unit, keyed by the name the orchestrator uses.",
+      "description": "One entry per unit, keyed by the name the orchestrator uses. Runnable entries are launched; runnable: false entries only fan a change out to their consumers.",
       "additionalProperties": {
         "type": "object",
-        "required": ["kind", "paths"],
+        "required": ["paths"],
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": { "runnable": { "const": false } },
+              "required": ["runnable"]
+            },
+            "then": {
+              "required": ["paths", "consumers"],
+              "properties": {
+                "basePort": false,
+                "portGroup": false,
+                "overlayCommand": false,
+                "verifyRequest": false,
+                "peerEnv": false
+              }
+            },
+            "else": { "required": ["portGroup", "dependsOn"] }
+          },
+          {
+            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview. dependsOn is in this list because an empty one is the same kind of claim — checked and none — and must be as falsifiable as the rest; it does not narrow the gate's pair set, which comes from backingStores.",
+            "if": {
+              "anyOf": [
+                { "required": ["dependsOn"] },
+                { "required": ["writes"] },
+                { "required": ["competesOn"] },
+                { "required": ["migrates"] }
+              ]
+            },
+            "then": { "required": ["stateReview"] }
+          }
+        ],
         "properties": {
           "kind": {
-            "enum": ["docker-compose", "node-dev-server", "process", "static"]
+            "type": "string",
+            "not": { "const": "static" },
+            "examples": ["docker-compose", "node-dev-server", "process"],
+            "description": "Descriptive label for the stack type. Deliberately open: a repo on a stack this list never named still validates, and no schemaVersion bump is owed for one. It keys nothing. The retired \"static\" value is rejected — a non-launchable tree is runnable: false.",
+            "$comment": "kind is no longer required: a runnable: false entry has no stack type to describe."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["declared", "inferred", "user"],
+            "description": "How this entry was obtained, same scale as sources[].confidence. \"inferred\" is what a Tier-2 or statically-parsed entry gets — a Tiltfile port forward extracted from Starlark, a fallback parse after a resolver was unavailable. It still maps paths to units; it is not trusted for anything that gates safety."
+          },
+          "runnable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Absent means true. False marks a tree that is never launched and never gets a port — shared code, generated assets — so the entry exists only to fan a change under paths out to consumers.",
+            "$comment": "default is an annotation, so the conditional above treats absent and true alike."
+          },
+          "portGroup": {
+            "type": "string",
+            "description": "Key into portPolicy.ranges. Independent of kind on purpose, so several kinds can share one range and one kind can split across two. A portGroup with no matching ranges key means stop and ask, never guess a range."
           },
           "basePort": {
             "type": "integer",
@@ -65,19 +298,14 @@
             "items": { "type": "string" }
           },
           "buildContext": { "type": "string" },
-          "dockerfile": { "type": "string" },
-          "sharedDirsIncluded": {
-            "type": "boolean",
-            "description": "False when the build context excludes the shared/ tree, so edits there do NOT reach this service."
-          },
           "dependsOn": {
             "type": "array",
-            "description": "Services this one calls. Unchanged ones get redirected to the base stack.",
+            "description": "Every dependency this unit reaches — services and backing stores alike. Unchanged ones get redirected to the base stack. REQUIRED on a runnable entry so the redirect has a list to work from. It only ADDS to the shared-state gate's pair set and never narrows it: per references/shared-state.md the set is every runnable service against every backingStores entry, plus any dependency of its own that resolves to a store. An EMPTY array means checked and none — it removes no pair — and like the classification fields it must be accompanied by stateReview so the claim is falsifiable.",
             "items": { "type": "string" }
           },
           "consumers": {
             "type": "array",
-            "description": "Services that break when this one changes. Required on shared/common entries.",
+            "description": "The single direction of truth for shared-tree reach: every service whose build context includes this entry's paths. Required on a runnable: false entry. A service absent here is not reached, and no field on that service records the inverse — one fact, one place, so nothing can fall out of sync with it.",
             "items": { "type": "string" }
           },
           "peerEnv": {
@@ -85,18 +313,80 @@
             "description": "Env var -> URL used to reach each peer. The overlay rewrites these to base-stack host ports.",
             "additionalProperties": { "type": "string" }
           },
-          "healthPath": { "type": "string" },
+          "writes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Backing stores this service MUTATES — inserts, updates, DDL, migrations, publishes, uploads. An EMPTY array means checked and none; an ABSENT field means unknown, and unknown fails closed. That distinction is the whole encoding, so never emit [] to mean \"did not look\"."
+          },
+          "competesOn": {
+            "type": "array",
+            "description": "Stores this service attaches to COMPETITIVELY: consumer groups, queue subscribers, advisory or leader locks, replication slots. Evaluated independently of writes, because a read-only service still steals work — a consumer joining the base group.id takes partitions even if it only logs. Empty means checked and none; absent means unknown.",
+            "items": {
+              "type": "object",
+              "required": ["store", "identity"],
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "$comment": "A recorded identity that never reaches the launched process changes nothing about what the overlay attaches under, and step 2 of references/shared-state.md clears X only for a value actually applied. overlayCommand's placeholders are closed to three and isolation.env belongs to the store — every service paired with it shares those overrides — so without this field there is no channel at all. Recording the value therefore obliges recording the channel, the same way a create command obliges its teardown.",
+                  "if": { "required": ["overlayIdentity"] },
+                  "then": { "required": ["overlayIdentityEnv"] }
+                }
+              ],
+              "properties": {
+                "store": { "type": "string" },
+                "identity": {
+                  "type": "string",
+                  "description": "The key whose NAME decides whether attaching competes, e.g. group.id, queue name, durable consumer name, lock name. This is the key, never its value — see overlayIdentity for that.",
+                  "examples": ["group.id", "queue", "durable", "advisory-lock"]
+                },
+                "overlayIdentity": {
+                  "type": "string",
+                  "description": "The distinct VALUE substituted for that key when the overlay runs, e.g. sg_feat_x_1a2b3c4d for a group.id. Step 2 of references/shared-state.md clears X only by supplying one, and without a field to hold it the re-classification could not persist: the pair would return to REFUSE on the next run with nothing recording what was already done. Absent means no distinct identity was supplied, which is the competing case. It is a value the overlay applies, not a claim about the repository, so it does not on its own make X no: step 2 clears X only for a value VERIFIED DISTINCT — different from what the base attaches under, actually applied to the launched process, and on a substrate where a distinct identity ends the competition at all. Unverified, X stays undetermined and the pair refuses at step 1.",
+                  "examples": ["sg_feat_x_1a2b3c4d"]
+                },
+                "overlayIdentityEnv": {
+                  "type": "string",
+                  "description": "The env var the overlay's launch sets to overlayIdentity — the channel that carries the distinct identity into the process it must configure. It is per service, which is what the store's isolation.env cannot be: that map is shared by every service paired with the store, so one overlay's group.id would be handed to all of them. DISCOVERED FROM THE SERVICE's own configuration — the variable it already reads that identity key from — never invented, because a variable the service does not read applies nothing while looking like it did. Required whenever overlayIdentity is present; step 2 of references/shared-state.md then treats the pair as undetermined, and refuses it, when the value was recorded but the launch did not apply it. Naming the variable is not delivering it: a container-run overlay inherits nothing from the launching shell, since docker compose run builds the container environment from the compose file and overlayCommand takes no -e flag at substitution time, so the launch carries it by a route references/discovery.md section 6 names — the worktree compose file, a run form that already passes it, or the exported environment of a host-run overlay. Where the launch method has no such route the pair is undetermined and refuses.",
+                  "examples": ["KAFKA_GROUP_ID"]
+                }
+              }
+            }
+          },
+          "migrates": {
+            "type": "boolean",
+            "description": "True when launching this service applies schema migrations. references/shared-state.md reads it as W = yes for EVERY pair of this service, whatever writes lists, which is how it forces isolate-or-refuse regardless of what the rest of the classification claims: a migration against a shared database damages every other consumer of it, and succeeds silently while doing so. It is the escalation the diff cannot supply — a service migrating from its own entrypoint touches no migrations directory in the diff and names no migrate step in its launch command."
+          },
+          "stateReview": {
+            "type": "object",
+            "required": ["at", "method", "serviceFingerprint"],
+            "additionalProperties": false,
+            "description": "Evidence of HOW the classification above was reached. Required whenever writes, competesOn, or migrates is present. Without it an all-empty classification is indistinguishable from a lazy pass that disarmed the gate everywhere — see references/traps.md.",
+            "properties": {
+              "at": { "type": "string", "format": "date-time" },
+              "serviceFingerprint": {
+                "type": "string",
+                "description": "The service's own source fingerprint when the classification was made, the same value acceptedRisks.serviceFingerprint uses and computed by the same recipe at the end of references/shared-state.md. Required because at and method alone give the cached classification no baseline: sources[] fingerprints cover topology files, and a service's own source tree is not a topology source, so on this skill's primary case — a worktree whose service code changed — the gate would read a classification derived from different code. A service discovered read-only and then given an INSERT would still present writes: [] and resolve to reuse. Once this stops matching the service's current source the classification is UNDETERMINED, not valid, which refuses at step 1 until it is re-derived.",
+                "$comment": "Deliberately not required to equal acceptedRisks.serviceFingerprint: the two are taken at different moments and drift independently."
+              },
+              "method": {
+                "type": "string",
+                "enum": ["code-scan", "user-asserted", "resolver-declared"],
+                "description": "code-scan read the service's source; resolver-declared came from the stack's own resolver; user-asserted is the human's word and is the weakest, so an all-empty classification asserted this way deserves suspicion rather than trust."
+              },
+              "notes": { "type": "string" }
+            }
+          },
           "verifyRequest": {
             "type": "string",
-            "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced."
+            "description": "A REAL request proving the service works, not /health. Include the Origin or host header when one is enforced. It is substituted like every other templated command, so it has a closed placeholder set too, and that set is exactly one: {{port}}, the port picked this run. {{worktree}} and {{repoRoot}} are deliberately NOT members — a request is made against a listening port, not against a checkout, and a line that needs a path off the filesystem is a script rather than a verification request. A token shaped {{.Something}} is the orchestrator's own Go template and passes through verbatim; any OTHER {{...}} has no defined source, which means the line was not taken from a request that can actually be made: re-derive it or ask, never guess a value, and record no verifiedOverlays entry for a verification that never ran. Substituted per references/discovery.md section 6."
           },
           "overlayCommand": {
             "type": "string",
-            "description": "Templated launch command. Use {{port}} and {{worktree}} placeholders."
+            "description": "Templated launch command for this one unit. The placeholder set is closed and is exactly three: {{port}} (the port picked this run), {{worktree}} (the overlay's checkout), {{repoRoot}} (this manifest's repoRoot). references/discovery.md section 3 states the same three for this field and for prepareCommand. A token shaped {{.Something}} is the orchestrator's own Go template — docker compose --format writes them — and is passed through verbatim, never substituted; any OTHER {{...}} has no defined source, which means the line was not taken from the repository's own single-unit run form: re-derive it or ask, never guess a value. Every value substituted in is quoted as one shell word, or placed in its own argv element — see references/discovery.md section 6; a worktree path containing a space otherwise splits into two operands."
           },
           "prepareCommand": {
             "type": "string",
-            "description": "One-time setup inside the worktree, e.g. cloning node_modules."
+            "description": "One-time setup inside the worktree, e.g. cloning node_modules. Same closed placeholder set as overlayCommand — {{port}}, {{worktree}}, {{repoRoot}} — and the same passthrough, substitution and quoting rules."
           },
           "notes": { "type": "array", "items": { "type": "string" } }
         }
@@ -115,7 +405,7 @@
         },
         "ranges": {
           "type": "object",
-          "description": "Allowed overlay ranges per service kind.",
+          "description": "Allowed overlay ranges, keyed by services[].portGroup. Never keyed by kind: a new stack type must not silently mis-key onto a range that was never sized for it.",
           "additionalProperties": {
             "type": "array",
             "items": { "type": "integer" },
@@ -142,15 +432,43 @@
       }
     },
 
-    "verifiedOverlays": {
-      "type": "array",
-      "description": "Append-only log of overlays that actually worked. Evidence the entry is still correct.",
-      "items": {
+    "acceptedRisks": {
+      "type": "object",
+      "description": "The ONLY bypass of the shared-state gate, and there is no global one. Keyed \"<service>::<store>\" so latest-only is structural rather than procedural: a JSON object cannot hold a duplicate key, so re-accepting replaces instead of appending. Service and store live in the key alone and are never repeated as fields, so the key and the body cannot disagree. (The specification describes this as keyed by service and store with a recorded fingerprint; those are exactly this key and serviceFingerprint.) SPLIT AT THE LAST \"::\": everything before it is the services key, everything after is the backingStores key.",
+      "propertyNames": {
+        "pattern": "^.+::[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+        "description": "Only the store half is constrained, to the same pattern backingStores property names use — which admits no colon. That is what keeps the last \"::\" unambiguous as the separator no matter what the service half contains, so the service half is left unconstrained exactly as the services keys are. It has to be: services keys are whatever the orchestrator calls a unit, and references/discovery.md names Gradle and Bazel as path-to-unit sources, whose unit names are literally \":core:data\" and \"//pkg:target\". A pattern rejecting every colon made the gate's only bypass unrecordable for those units, and an unrecordable bypass fails the whole manifest's validation, which discards it."
+      },
+      "additionalProperties": {
         "type": "object",
-        "required": ["service", "port", "at"],
+        "required": ["at", "serviceFingerprint", "reason", "acceptedBy"],
         "additionalProperties": false,
         "properties": {
-          "service": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "serviceFingerprint": {
+            "type": "string",
+            "description": "The service's source fingerprint when the risk was accepted. The entry is treated as ABSENT once this stops matching: acceptance was granted for code that no longer exists, so the original verdict applies again and the overlay is refused until a human accepts anew."
+          },
+          "reason": {
+            "type": "string",
+            "description": "What is being accepted and why it is tolerable here. REQUIRED: this is the only bypass of the shared-state gate, and an acceptance carrying no reason records that a refusal was overridden without recording anything that could later be judged."
+          },
+          "acceptedBy": {
+            "type": "string",
+            "description": "Who accepted it. REQUIRED for the reason references/shared-state.md gives: an acceptance naming neither a reason nor an author is indistinguishable from one the agent granted itself, and a bypass nobody is named on is not a human decision the next run can rely on."
+          }
+        }
+      }
+    },
+
+    "verifiedOverlays": {
+      "type": "object",
+      "description": "Latest successful overlay per service, keyed by service name. Not a log: only the newest record is evidence that an entry still works, and keying bounds growth at one record per service with no trim policy and no tie-break to get wrong. This file is a cache, so an unbounded append-only history in it would grow forever and prove nothing extra.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["port", "at"],
+        "additionalProperties": false,
+        "properties": {
           "port": { "type": "integer" },
           "at": { "type": "string", "format": "date-time" },
           "worktree": { "type": "string" },

@@ -1,0 +1,22 @@
+{
+  "name": "stackgraft",
+  "owner": {
+    "name": "kevocodes",
+    "url": "https://github.com/kevocodes"
+  },
+  "plugins": [
+    {
+      "name": "stackgraft",
+      "source": "./",
+      "description": "Run only the services your git worktree changed, on alternate ports, grafted onto the stack you already have running.",
+      "author": {
+        "name": "kevocodes",
+        "url": "https://github.com/kevocodes"
+      },
+      "homepage": "https://github.com/kevocodes/stackgraft",
+      "license": "Apache-2.0",
+      "keywords": ["worktree", "monorepo", "docker-compose", "local-development", "ports"],
+      "category": "development"
+    }
+  ]
+}

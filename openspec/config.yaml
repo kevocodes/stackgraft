@@ -41,6 +41,7 @@ testing:
     - "JSON well-formedness and JSON Schema validity of assets/*.json."
     - "Cross-file consistency: every field named in SKILL.md and references/ exists in assets/manifest.schema.json."
     - "Portability grep: no agent-specific path or tool name in shipped files."
+    - "POSIX syntax check: dash -n on every skills/stackgraft/scripts/*.sh, plus one command -v per name for git and awk on macOS and a minimal Linux image (busybox command -v reports only its first argument, so never pass several names at once)."
 
 rules:
   proposal:
@@ -81,7 +82,7 @@ rules:
 
 open_decisions:
   - id: scripts-runtime
-    status: open
+    status: resolved
     do_not_decide_in: ["sdd-init"]
     question: >-
       Which language implements the deterministic helper under
@@ -90,9 +91,13 @@ open_decisions:
       It MUST run with no install step on both macOS and Linux, because
       adopting the skill has to stay "copy a folder". No package manager
       step, no build step, no runtime the user must add.
+    decision: >-
+      POSIX sh with git and POSIX awk, invoked as `sh scripts/<name>.sh` so
+      that neither the executable bit nor the shebang is load-bearing (design
+      DS19). All three ship with a stock macOS and a minimal Linux image, so
+      adoption stays "copy a folder".
     notes: >-
-      This constrains the choice hard. Any runtime the helper needs must
-      already be present on a stock macOS and a stock Linux box. Evaluate
-      candidates against that, and against what the helper actually has to
-      do: hash files, parse and write JSON, and match changed paths
-      against globs.
+      python3 is a stub on stock macOS, and jq, node, and sha256sum are absent
+      from minimal Linux images. So the helpers never touch JSON — the agent
+      owns the manifest file — hashing borrows git, and glob matching stays
+      with the agent.

@@ -1,19 +1,19 @@
 {
   "schemaVersion": 2,
-  "repoRoot": "/Users/example/Workspaces/bookshop",
+  "repoRoot": "/home/dev/projects/bookshop",
   "discoveredAt": "2026-07-30T12:00:00Z",
   "fingerprintTool": "git-hash-object-no-filters",
 
   "sources": [
     {
-      "path": "docker-compose.yml",
+      "path": "compose.yaml",
       "fingerprint": "0000000000000000000000000000000000000000",
-      "covers": ["services", "baseStack", "constraints"]
+      "covers": ["services", "backingStores", "baseStack", "constraints"]
     },
     {
-      "path": "frontend/package.json",
+      "path": "apps/storefront/package.json",
       "fingerprint": "1111111111111111111111111111111111111111",
-      "covers": ["services.frontend"]
+      "covers": ["services.storefront"]
     }
   ],
 
@@ -33,7 +33,7 @@
         "command": "docker compose --project-directory {{repoRoot}} exec -T postgres createdb -U bookshop -T bookshop {{isolationName}}",
         "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T postgres dropdb -U bookshop --if-exists {{isolationName}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
-        "discoveredFrom": "docker-compose.yml",
+        "discoveredFrom": "compose.yaml",
         "confidence": "declared"
       },
       "notes": [
@@ -42,7 +42,7 @@
       ]
     },
 
-    "redis-pubsub": {
+    "events": {
       "substrate": "redis",
       "isolation": { "mechanism": "none", "confidence": "declared" },
       "notes": [
@@ -59,54 +59,74 @@
       "basePort": 8080,
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
-      "dependsOn": ["postgres"],
-      "writes": ["postgres", "redis-pubsub"],
+      "dependsOn": ["postgres", "events"],
+      "writes": ["postgres", "events"],
       "competesOn": [],
       "migrates": true,
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
-        "notes": "init_db runs CREATE TABLE on startup, so every launch is a migration against whatever database it points at."
+        "notes": "Applies pending migrations on startup, so every launch writes schema to whichever database it points at."
       },
       "peerEnv": {
         "SEARCH_URL": "http://search-indexer:8090"
       },
-      "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/auth/login -H 'Origin: http://localhost:5174' -H 'Content-Type: application/json' -d '{\"email\":\"...\",\"password\":\"...\"}'",
+      "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/books -H 'Content-Type: application/json' -d '{\"title\":\"...\",\"isbn\":\"...\"}'",
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
-        "Builds from its own directory, so packages/contracts/** edits do NOT reach it — this service is deliberately absent from the shared entry's consumers.",
         "This overlay runs in a container, so localhost would resolve to the container itself. The worktree compose file declares the base stack's network external, which keeps the base DNS names working unchanged. See references/discovery.md section 4.",
         "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port."
       ]
     },
 
-    "backend-shared": {
-      "runnable": false,
-      "paths": ["packages/contracts/**"],
-      "consumers": ["catalog-api", "search-indexer", "search-indexer"],
+    "search-indexer": {
+      "kind": "docker-compose",
+      "portGroup": "compose",
+      "basePort": 8090,
+      "paths": ["services/search/**"],
+      "buildContext": "./services/search",
+      "dependsOn": ["events"],
+      "writes": [],
+      "competesOn": [{ "store": "events", "identity": "consumer-group" }],
+      "stateReview": {
+        "at": "2026-07-30T12:00:00Z",
+        "method": "code-scan",
+        "notes": "Reads only, but subscribes to the shared channel, so an overlay would take deliveries away from the base indexer."
+      },
+      "verifyRequest": "curl -sS -i 'http://localhost:{{port}}/search?q=test'",
+      "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8090 search-indexer",
       "notes": [
-        "Present so a shared-tree edit fans out to every service whose build context includes it.",
-        "Services building from their own directory are deliberately absent from consumers."
+        "The theft case in one entry: nothing is written, yet reusing the base subscription still breaks the base stack."
       ]
     },
 
-    "frontend": {
+    "shared-contracts": {
+      "runnable": false,
+      "paths": ["packages/contracts/**"],
+      "consumers": ["catalog-api", "search-indexer"],
+      "notes": [
+        "Present so a shared-package edit fans out to every service whose build context includes it.",
+        "A service whose build context excludes this tree is deliberately absent here."
+      ]
+    },
+
+    "storefront": {
       "kind": "node-dev-server",
       "portGroup": "node-dev",
       "basePort": 5173,
-      "paths": ["frontend/**"],
-      "dependsOn": ["catalog-api", "search-indexer"],
+      "paths": ["apps/storefront/**"],
+      "dependsOn": ["catalog-api"],
       "writes": [],
       "competesOn": [],
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
-        "notes": "Browser client only: it reaches backends over HTTP and holds no store credentials, so both lists are checked-empty rather than unknown."
+        "notes": "Browser client only: it reaches services over HTTP and holds no store credentials, so both lists are checked-empty rather than unknown."
       },
       "peerEnv": {},
-      "verifyRequest": "curl -sS -i http://localhost:{{port}}/ && open http://localhost:{{port}}",
-      "prepareCommand": "cp -Rc {{repoRoot}}/frontend/node_modules {{worktree}}/frontend/node_modules",
-      "overlayCommand": "cd {{worktree}}/frontend && npm run dev -- --port {{port}} --strictPort",
+      "verifyRequest": "curl -sS -i http://localhost:{{port}}/",
+      "prepareCommand": "cp -Rc {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
+      "overlayCommand": "cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}} --strictPort",
       "notes": [
         "Not dockerized. Service URLs fall back to http://localhost:PORT in code, so it reaches the base stack with no config.",
         "cp -Rc is an APFS clone: near-instant, near-zero disk, and each server keeps its own pre-bundle cache."
@@ -125,27 +145,27 @@
   "constraints": [
     {
       "kind": "cors-allowlist",
-      "where": "CORS_ORIGINS, set on every service in docker-compose.yml",
-      "effect": "An overlay frontend on a port outside the allowlist gets 400 with no CORS header, while /health still answers 200 — the browser only shows 'Failed to fetch'.",
-      "remedy": "Have the user add the port to the gitignored root .env before launching; verify by reading the response headers of a real cross-origin request."
+      "where": "CORS_ORIGINS, set on every service in compose.yaml",
+      "effect": "An overlay storefront on a port outside the allowlist gets 400 with no CORS header, while a health route still answers 200 — the browser only shows 'Failed to fetch'.",
+      "remedy": "Add the port to the gitignored root .env before launching; verify by reading the response headers of a real cross-origin request."
     }
   ],
 
   "acceptedRisks": {
-    "catalog-api::redis-pubsub": {
+    "catalog-api::events": {
       "at": "2026-07-30T12:05:00Z",
       "serviceFingerprint": "e60378b0e52df7e42905d2fc7cf94beb995e5f6a",
-      "reason": "Session-invalidation events are published on a shared channel that cannot be isolated. Base-stack subscribers will see this overlay's events; accepted because the base stack is idle during this test.",
-      "acceptedBy": "kevocodes"
+      "reason": "Stock-change events are published on a shared channel that cannot be isolated. Base-stack subscribers will see this overlay's events; accepted because the base stack is idle during this test.",
+      "acceptedBy": "dev"
     }
   },
 
   "verifiedOverlays": {
-    "frontend": {
+    "storefront": {
       "port": 5174,
       "at": "2026-07-27T19:00:00Z",
-      "worktree": "/Users/example/Workspaces/bookshop-worktrees/feat-x",
-      "result": "login POST returned 200 with access-control-allow-origin echoed back"
+      "worktree": "/home/dev/projects/bookshop-worktrees/feat-x",
+      "result": "catalog POST returned 200 with access-control-allow-origin echoed back"
     }
   }
 }

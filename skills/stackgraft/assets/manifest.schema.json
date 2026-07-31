@@ -19,7 +19,8 @@
 
     "sources": {
       "type": "array",
-      "description": "Files that define the topology. Their hashes drive invalidation.",
+      "minItems": 1,
+      "description": "Files that define the topology. Their hashes drive invalidation. At least one is mandatory: with an empty array the \"all fingerprints match\" gate is vacuously true on every run, so the manifest could never be invalidated and would become truth instead of a cache. A topology the user answered by hand still records an entry — see references/discovery.md section 2.",
       "items": {
         "type": "object",
         "required": ["path", "fingerprint", "covers"],

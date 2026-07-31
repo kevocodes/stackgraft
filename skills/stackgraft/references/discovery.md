@@ -24,6 +24,8 @@ One manifest serves every worktree of a repository, keyed by the main worktree, 
 
 Read branch 2 from the common dir's own `config` file rather than through a plain `git config` lookup: with `extensions.worktreeConfig` enabled, `core.worktree` is per-worktree, so an ordinary lookup can answer for *this* checkout. Resolve every path with `CDPATH= cd -- <path> && pwd -P` before comparing or storing it, so branch 3 compares physical paths and one stored `repoRoot` keeps matching across symlinked spellings.
 
+**Two pins on the line that produces `gitCommonDir`.** `CDPATH=` is load-bearing here for the same reason both scripts carry it: `--git-common-dir` answers the *relative* string `.git` at the worktree top, and a first component that is neither `.` nor `..` is looked up in `CDPATH` before the current directory — so with `CDPATH` exported, `cd -- .git` can enter a different repository's git dir, and it echoes the directory it chose to stdout as well. Verified: with `CDPATH` pointing at a decoy holding a `.git`, `dash -c 'cd -- "$(git rev-parse --git-common-dir)" && pwd -P'` printed the decoy path twice — once from `cd`, once from `pwd` — while the `CDPATH= cd` form printed the real common dir once. Second pin: run it **at the worktree top**, because the answer is relative to wherever it was asked (`.git` at the top, `../.git` one directory down) and means nothing in a directory the run has since moved to.
+
 Verified on git 2.50.1, one scratch repository per shape:
 
 | Shape | `gitCommonDir` | Branch | `repoRoot` |

@@ -1,42 +1,104 @@
-# stackgraft
+<p align="center">
+  <img src="assets/logo.svg" width="620" alt="stackgraft — run only what you changed">
+</p>
 
-Run only the services your git worktree changed — grafted onto the stack you already have running.
+<p align="center">
+  <strong>Run only the services your git worktree changed</strong><br>
+  <em>Agent-agnostic. No install step. Refuses before it corrupts.</em>
+</p>
 
-A graft joins a living branch to an established rootstock. The roots keep working; only the grafted part is new. That is what this does: your worktree's modified service runs on its own port, and every unchanged dependency resolves to the stack that is already up.
+<p align="center">
+  <a href="docs/INSTALLATION.md">Installation</a> &bull;
+  <a href="docs/HOW-IT-WORKS.md">How it works</a> &bull;
+  <a href="docs/SHARED-STATE.md">Shared state</a> &bull;
+  <a href="CONTRIBUTING.md">Contributing</a> &bull;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-## The problem
+---
 
-You have a repository with many services. You open a git worktree to work on a branch in parallel. To test it, you would have to bring up the whole stack a second time — most of it byte-identical to what is already running.
+> **graft** `/ɡrɑːft/` — *horticulture*: joining a living shoot to an established rootstock so the two grow as one. The roots keep working. Only the grafted part is new.
 
-## The approach
+You open a git worktree to work on a branch in parallel. To test it you would have to bring the whole stack up a second time — most of it byte-identical to what is already running.
 
-Start only the services whose files the worktree changed. Point everything else at the base stack. Cache the discovered topology per repository so the second run does not rediscover it, and invalidate that cache by fingerprint when the source files drift.
+**stackgraft starts only what you changed**, on its own port, and wires every unchanged dependency back to the stack you already have up.
 
-## Status
+```
+  base stack — already running                    your worktree
+  ┌───────────────────────────────┐
+  │  catalog-api      :8080       │ ◄──────────────┐
+  │  search-indexer   :8090       │ ◄────┐         │  only this one changed
+  │  postgres         :5432       │      │         │
+  │  storefront       :5173       │      │         │
+  └───────────────────────────────┘      │  ┌──────┴───────────────┐
+                                         └──┤  catalog-api  :18042 │ ← the graft
+                                            └──────────────────────┘
+```
 
-Usable, and honest about its edges.
+One service starts. Three are reused. Nothing is duplicated.
 
-What ships: an agent-neutral manifest cached under `XDG_CACHE_HOME`, invalidated per source by fingerprint rather than wholesale. Two POSIX `sh` helpers that need only `git` and `awk` — no Python, no Node, no `jq`. Discovery that separates "which unit owns this path" from "how does that unit start", prefers each ecosystem's own resolver over hand-parsing, and degrades instead of failing when a resolver is unavailable. And a shared-state gate that refuses an overlay until every `(service, store)` pair has a verdict, treating unknown as unsafe.
+## Why this is not just `docker compose up`
 
-The gate is the part worth knowing about. Running a second copy of one service against the database everyone else is testing on does not fail — it works, and quietly corrupts. So the skill classifies what each service writes and what it competes for, isolates inside the store already running where that is possible, and refuses where it is not. The only bypass is an explicit acceptance recorded per service and store, which expires the moment that service's source changes.
+Because the naive version of this **silently corrupts your data**.
 
-Not done: verification is manual. Two of the four checks the project relies on have no committed tooling, so "passes" currently means a human ran them.
+Reuse the stack and your overlay reaches the same Postgres everyone else is testing against. Run a migration, insert a row, and you have changed the data under your colleague's feet. It does not error. It works, and it poisons.
 
-## Install
+There is a nastier variant. A service that only *reads* can still break the base stack by **attaching** to something competitive — a Kafka consumer group, a queue subscriber, an advisory lock, a scheduler singleton. It takes work away from a service you never modified, so the symptom appears where you are not looking.
 
-This is an [Agent Skill](https://agentskills.io) — one folder, read by ~40 agents including Claude Code, Codex, Cursor, Gemini CLI, Copilot, OpenCode, and Goose.
+stackgraft classifies every `(service, store)` pair before anything launches and produces one verdict: reuse the store, isolate inside the instance already running, or refuse. **Unknown resolves to refusal.** An empty answer is a claim that needs evidence, never an omission.
 
-Copy `skills/stackgraft/` into your agent's skills directory (`~/.claude/skills/`, `~/.copilot/skills/`, …).
+→ [How the gate works](docs/SHARED-STATE.md)
 
-Claude Code users can install it as a plugin instead, which puts the skill on disk and keeps it updated:
+## Quick start
+
+**Any agent that reads the [Agent Skills](https://agentskills.io) standard** — Claude Code, Codex, Cursor, Gemini CLI, Copilot, OpenCode, Goose, Amp, Kiro and ~30 more:
+
+```bash
+git clone https://github.com/kevocodes/stackgraft
+cp -R stackgraft/skills/stackgraft ~/.claude/skills/     # or ~/.copilot/skills/, etc.
+```
+
+**Claude Code**, as a plugin that stays updated:
 
 ```
 /plugin marketplace add kevocodes/stackgraft
 /plugin install stackgraft@stackgraft
 ```
 
-The plugin is the same folder — `skills/stackgraft/` is discovered automatically — so nothing about the skill is Claude-specific. The plugin only exists to save other Claude Code users a manual copy.
+Then just ask, in whatever words you use:
+
+> *run this worktree against the stack that's already up*
+
+→ [Per-agent paths and troubleshooting](docs/INSTALLATION.md)
+
+## What ships
+
+```
+skills/stackgraft/
+├── SKILL.md          the body — the only file loaded whole
+├── references/       shared-state.md · discovery.md · traps.md
+├── assets/           manifest schema + a worked example
+└── scripts/          two POSIX sh helpers
+```
+
+**No runtime to install.** The helpers need `git`, a POSIX shell and `awk` — nothing else. `python3` is a stub on a stock macOS, so it was disqualified; hashing rides on `git hash-object`, which the skill already depends on.
+
+**Topology is cached, not re-derived.** A per-repository manifest under `XDG_CACHE_HOME`, keyed by the git common dir so every worktree shares one. Each source records the manifest keys it owns, so a drifted file re-derives only its slice. The manifest is a cache, never truth — on conflict the repository wins.
+
+**Discovery prefers your ecosystem's own resolver** over hand-parsing, and degrades to a marked static parse instead of failing when the resolver is unavailable.
+
+## Honest limits
+
+- **The verification is real but young.** Schema negatives, script runs and body budgets are checked in CI; the shared-state gate has never been exercised against a production-shaped repository.
+- **POSIX only.** macOS, Linux and WSL. Windows-native is out of scope.
+- **`git` is required and is not present in minimal container images** — alpine, debian-slim and distroless ship none.
+
+## How it got here
+
+Three adversarial review rounds, six correction passes and six blind dual re-judgments closed roughly seventy findings. The most stubborn was a gate that could be satisfied by declaring nothing: the trigger rested on data that could be absent, and it reopened one level up four times before it closed. What ended it was not another trigger — it was making emptiness cost something at every level.
+
+That history is in the [changelog](CHANGELOG.md), and the reasoning lives in the skill's own reference files.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

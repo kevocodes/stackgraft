@@ -22,7 +22,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 - Never place a worktree under `/tmp` or `/var/tmp`; both are reaped without warning.
 - `/health` returning 200 is not proof; verify a real request and read its headers.
 - The manifest is a cache, never truth: refresh drifted entries; on conflict the repo wins and the entry is rewritten.
-- An overlay with any base-stack dependency is REFUSED until `references/shared-state.md` has been read and a verdict is recorded for every `(service, store)` pair. No verdict, no launch. Nothing else — not the manifest, not the user, not inference — produces a verdict.
+- Every overlay is REFUSED until `references/shared-state.md` has been read and a verdict is recorded for it. An empty dependency set is not a verdict. Nothing else — not the manifest, not the user, not inference — produces one.
 
 ## Decision Gates
 

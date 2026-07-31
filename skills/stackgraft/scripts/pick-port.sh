@@ -1,3 +1,4 @@
+#!/bin/sh
 # pick-port.sh - deterministic overlay port CANDIDATE for stackgraft.
 #
 # usage:  sh scripts/pick-port.sh <lo> <hi> [worktree-path] [excluded-port...]

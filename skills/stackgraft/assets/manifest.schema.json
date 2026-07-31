@@ -60,7 +60,7 @@
             "type": "string",
             "enum": ["fingerprint", "always"],
             "default": "fingerprint",
-            "description": "Whether fingerprint equality is accepted as proof of freshness. \"always\" is for a source whose real input set is not enumerable — a compose file using include: or extends:, a Tiltfile that imports arbitrary Starlark — where the stored hash covers only the entry file, so an unchanged hash proves nothing about what it pulled in. Such an entry is re-derived every run regardless of equality.",
+            "description": "Whether fingerprint equality is accepted as proof of freshness. \"always\" is for a source whose real input set is not enumerable, where the stored hash covers only the entry file, so an unchanged hash proves nothing. The criterion is that a file this manifest does not list can change the resolved topology, which covers both a file that PULLS one in — a compose file using include: or extends:, a Tiltfile that imports arbitrary Starlark — and a file MERGED IN without being named anywhere: compose.override.yaml auto-merge, a COMPOSE_FILE or -f chain, a profile. The second shape is how a store arrives without moving any stored fingerprint. Such an entry is re-derived every run regardless of equality.",
             "$comment": "default is an annotation: an absent value and \"fingerprint\" mean the same thing."
           },
           "confidence": {

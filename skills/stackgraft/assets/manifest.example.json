@@ -8,6 +8,7 @@
     {
       "path": "compose.yaml",
       "fingerprint": "0000000000000000000000000000000000000000",
+      "revalidate": "always",
       "covers": ["services", "backingStores", "baseStack", "constraints"]
     },
     {

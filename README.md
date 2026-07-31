@@ -101,12 +101,6 @@ Grafting joins a living shoot to a rootstock that is already established. The ro
 
 Your running stack is the rootstock. The service you changed is the shoot. The alternate port and the rewired dependencies are the join.
 
-## How it got here
-
-Three adversarial review rounds, six correction passes and six blind dual re-judgments closed roughly seventy findings. The most stubborn was a gate that could be satisfied by declaring nothing: the trigger rested on data that could be absent, and it reopened one level up four times before it closed. What ended it was not another trigger — it was making emptiness cost something at every level.
-
-That history is in the [changelog](CHANGELOG.md), and the reasoning lives in the skill's own reference files.
-
 ## License
 
 [Apache-2.0](LICENSE)

@@ -1,43 +1,90 @@
+#!/bin/sh
 # pick-port.sh - deterministic overlay port CANDIDATE for stackgraft.
 #
-# usage:  sh scripts/pick-port.sh <lo> <hi> [worktree-path] [excluded-port...]
+# usage:  sh scripts/pick-port.sh <lo> <hi> <worktree-path> [excluded-port...]
+#         Every port argument is decimal and within 1-65535, and every
+#         exclusion is its OWN argument: "3000,5173" is a single argument that
+#         is not a port, and is rejected by name rather than silently split.
 # stdout: exactly one integer - a CANDIDATE, never a verified-free port.
 #         Availability is not portably checkable and any reading is stale at
 #         once, so the authoritative test is the launcher's strict-port bind
 #         failure. On that failure re-run with the port appended to the
 #         excluded list; never record a failed port in the manifest.
 # exit:   0 candidate emitted  ·  2 usage error  ·  3 range exhausted
+#         4 environment failure: git could not hash the worktree path. Kept
+#         apart from 2 so a caller can tell a bad invocation from a broken
+#         toolchain - the first is worth retrying differently, the second is not.
 #
 # Reads no stdin, by design. Exclusions arrive as arguments so a caller that
 # forgets a redirect cannot hang: for a tool agents invoke, blocking forever is
 # worse than failing, because it leaves nothing to diagnose.
 #
 # Needs git and POSIX awk. Probes nothing, writes no file. The start offset is
-# derived from the worktree path so two worktrees of one repo do not collide,
-# while one worktree keeps the same port across runs.
+# derived from the worktree path - required, because it is the only thing that
+# makes the offset per-worktree - so two worktrees of one repo are unlikely to
+# start on the same port. Unlikely, not impossible: the offset is digest mod
+# span, so over the 26-port range the shipped example uses, two paths share a
+# start about one time in 26 (measured 3.8% over 10000 random pairs). What
+# makes that safe is the launcher's strict-port bind failing loudly, not the
+# arithmetic; re-run with the taken port excluded. The offset's job is to keep
+# collisions incidental rather than systematic, which starting every worktree
+# at <lo> would not.
+# One worktree keeps the same port across runs however its path was
+# spelled: the path is normalised to an absolute physical one (cd + pwd -P)
+# before hashing, so "/path/wt", "/path/wt/", a relative form, and /tmp versus
+# /private/tmp all land on the same port. An all-digit third
+# argument is refused: it is an exclusion sitting in the worktree slot, and
+# accepting it would silently drop that port from the excluded set.
 
+# Names the rejected argument before printing the usage line. Without it a
+# caller learns only that one of five arguments was wrong, which is the least
+# useful half of the answer - and the commonest mistake, a comma-separated
+# exclusion list like "3000,5173", looks like a correct invocation until the
+# offending argument is quoted back.
 usage() {
-    printf 'usage: sh %s <lo> <hi> [worktree-path] [excluded-port...]\n' "$0" >&2
+    [ "$#" -eq 0 ] || printf '%s: %s\n' "${0##*/}" "$1" >&2
+    printf 'usage: sh %s <lo> <hi> <worktree-path> [excluded-port...]\n' "$0" >&2
+    printf '       one excluded port per argument; a comma-separated list is one bad argument\n' >&2
     exit 2
 }
 
-case ${1:-} in '' | *[!0-9]*) usage ;; esac
-case ${2:-} in '' | *[!0-9]*) usage ;; esac
-[ "$1" -le "$2" ] || usage
+# Validates one port argument into port_val: decimal, 1-65535, leading zeros
+# stripped so arithmetic expansion cannot read "08" as a bad octal constant.
+# Sets a global instead of printing, because usage() has to end the script and
+# an exit inside a command substitution would only leave the subshell. $2 is
+# the label this argument is reported under when it is rejected.
+port_arg() {
+    case ${1:-} in
+        '') usage "missing ${2:-port argument}" ;;
+        *[!0-9]*) usage "${2:-port argument} is not a decimal port: '$1'" ;;
+    esac
+    port_val=$1
+    while [ "${port_val#0}" != "$port_val" ]; do port_val=${port_val#0}; done
+    [ -n "$port_val" ] && [ "${#port_val}" -le 5 ] && [ "$port_val" -le 65535 ] \
+        || usage "${2:-port argument} is outside 1-65535: '$1'"
+}
 
-lo=$1
-span=$(($2 - $1 + 1))
+port_arg "${1:-}" 'range low'; lo=$port_val
+port_arg "${2:-}" 'range high'; hi=$port_val
+[ "$lo" -le "$hi" ] || usage "range low $lo is above range high $hi"
+[ "$#" -ge 3 ] && [ -n "$3" ] || usage 'missing worktree path'
+case $3 in *[!0-9]*) ;; *) usage "worktree path is all digits: '$3' - an exclusion belongs after it" ;; esac
 
-if [ "$#" -ge 3 ]; then
-    worktree=${3:-$PWD}
-    shift 3
-else
-    worktree=$PWD
-    shift "$#"
-fi
-excluded=" $* "
+span=$((hi - lo + 1))
 
-digest=$(printf '%s' "$worktree" | git hash-object --stdin) || exit 2
+worktree=$(CDPATH= cd -- "$3" 2>/dev/null && pwd -P) || usage "worktree path is not a directory: '$3'"
+shift 3
+
+# Exclusions are normalised too: "018099" must exclude 18099, not slip past a
+# string comparison against the emitted form.
+excluded=' '
+for arg in "$@"; do
+    [ -n "$arg" ] || continue
+    port_arg "$arg" 'excluded port'
+    excluded="$excluded$port_val "
+done
+
+digest=$(printf '%s' "$worktree" | git hash-object --stdin) || exit 4
 offset=$(printf '%s' "$digest" | awk -v s="$span" '{n = 0; for (i = 1; i <= 8; i++) n = (n * 16 + index("0123456789abcdef", substr($0, i, 1)) - 1) % s; print n}')
 
 i=0

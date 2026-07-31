@@ -8,6 +8,7 @@
     {
       "path": "compose.yaml",
       "fingerprint": "0000000000000000000000000000000000000000",
+      "revalidate": "always",
       "covers": ["services", "backingStores", "baseStack", "constraints"]
     },
     {
@@ -30,15 +31,16 @@
       "isolation": {
         "mechanism": "database",
         "applyVia": "compose-exec",
-        "command": "docker compose --project-directory {{repoRoot}} exec -T postgres createdb -U bookshop -T bookshop {{isolationName}}",
-        "teardownCommand": "docker compose --project-directory {{repoRoot}} exec -T postgres dropdb -U bookshop --if-exists {{isolationName}}",
+        "command": "make -C {{repoRoot}} db-create DB={{isolationName}}",
+        "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationName}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
-        "discoveredFrom": "compose.yaml",
+        "discoveredFrom": "Makefile",
         "confidence": "declared"
       },
       "notes": [
-        "createdb runs inside the running container, so no psql has to exist on the host.",
-        "Templating from the base database requires no active connections to it; when that fails the verdict falls back to REFUSE rather than writing to the shared database."
+        "Rung 1, which is what earns declared: db-create and db-drop are targets the Makefile already defines, and discoveredFrom names that file rather than the compose file the store itself was read from.",
+        "The targets wrap docker compose exec, so applyVia stays compose-exec and no psql has to exist on the host. Recording the raw exec line instead would be rung 2, which is inferred and does not satisfy the gate on its own — the pair would refuse rather than isolate.",
+        "db-create templates the new database from bookshop, which requires no active connections to it; when that fails the verdict falls back to REFUSE rather than writing to the shared database."
       ]
     },
 
@@ -47,7 +49,26 @@
       "isolation": { "mechanism": "none", "confidence": "declared" },
       "notes": [
         "Deliberately mechanism none. SELECT isolates the keyspace but NOT pub/sub: a message published on database 10 reaches a subscriber on database 1, so channel names collide across every logical database.",
-        "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly."
+        "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly.",
+        "Subscribing here is fan-out, not competition: every subscriber receives every message, so an overlay consumer takes nothing from the base stack. It is therefore never recorded in competesOn — the hazard it does carry is duplicate processing."
+      ]
+    },
+
+    "kafka": {
+      "substrate": "kafka",
+      "isolation": {
+        "mechanism": "topic-prefix",
+        "applyVia": "compose-exec",
+        "command": "make -C {{repoRoot}} topic-create TOPIC={{isolationName}}.book-events",
+        "teardownCommand": "make -C {{repoRoot}} topic-delete TOPIC={{isolationName}}.book-events",
+        "env": { "KAFKA_TOPIC_PREFIX": "{{isolationName}}." },
+        "discoveredFrom": "Makefile",
+        "confidence": "declared"
+      },
+      "notes": [
+        "Rung 1 for the same reason postgres is: topic-create and topic-delete are Makefile targets wrapping the kafka-topics client inside the running container, so the record is declared and discoveredFrom names the Makefile.",
+        "topic-prefix isolates the topics and nothing else. group.id is whatever each consumer configures, so an overlay keeping the base value joins the base group and takes partitions from it — an attachment hazard with no write in sight.",
+        "That is why search-indexer records competesOn against this store instead of leaning on this isolation record: N being satisfied says nothing about X."
       ]
     }
   },
@@ -55,17 +76,19 @@
   "services": {
     "catalog-api": {
       "kind": "docker-compose",
+      "confidence": "declared",
       "portGroup": "compose",
       "basePort": 8080,
       "paths": ["services/catalog/**"],
       "buildContext": "./services/catalog",
-      "dependsOn": ["postgres", "events"],
-      "writes": ["postgres", "events"],
+      "dependsOn": ["postgres", "events", "kafka", "search-indexer"],
+      "writes": ["postgres", "events", "kafka"],
       "competesOn": [],
       "migrates": true,
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
+        "serviceFingerprint": "e60378b0e52df7e42905d2fc7cf94beb995e5f6a",
         "notes": "Applies pending migrations on startup, so every launch writes schema to whichever database it points at."
       },
       "peerEnv": {
@@ -75,28 +98,32 @@
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
         "This overlay runs in a container, so localhost would resolve to the container itself. The worktree compose file declares the base stack's network external, which keeps the base DNS names working unchanged. See references/discovery.md section 4.",
-        "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port."
+        "verifyRequest targets localhost because curl runs on the host, where the overlay publishes its port.",
+        "Both isolated pairs launch through that same worktree compose file: DATABASE_URL and KAFKA_TOPIC_PREFIX are named under this service's environment: there, because an exported variable stops at the docker compose CLI and never enters the container. See references/discovery.md section 6."
       ]
     },
 
     "search-indexer": {
       "kind": "docker-compose",
+      "confidence": "declared",
       "portGroup": "compose",
       "basePort": 8090,
       "paths": ["services/search/**"],
       "buildContext": "./services/search",
-      "dependsOn": ["events"],
+      "dependsOn": ["events", "kafka"],
       "writes": [],
-      "competesOn": [{ "store": "events", "identity": "consumer-group" }],
+      "competesOn": [{ "store": "kafka", "identity": "group.id" }],
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
-        "notes": "Reads only, but subscribes to the shared channel, so an overlay would take deliveries away from the base indexer."
+        "serviceFingerprint": "408e713c4c5c942ca0b02ebf60c6e8d348544681",
+        "notes": "Reads only. It consumes book events under the base group.id, so an overlay joining that group takes partitions the base indexer was reading; the Redis subscription beside it takes nothing, because pub/sub is fan-out."
       },
       "verifyRequest": "curl -sS -i 'http://localhost:{{port}}/search?q=test'",
       "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8090 search-indexer",
       "notes": [
-        "The theft case in one entry: nothing is written, yet reusing the base subscription still breaks the base stack."
+        "The theft case in one entry: nothing is written, yet joining the base group.id starves a service nobody modified of the partitions it was consuming. identity holds the key's NAME, group.id; the distinct value an overlay would attach under belongs in overlayIdentity, and until one is recorded and verified distinct the pair stays refused.",
+        "Its Redis subscription is deliberately absent from competesOn. Pub/sub is fan-out: both subscribers get every message and neither takes delivery from the other, so nothing is stolen. The hazard there is duplicate processing, which lands in this overlay's own index — and would still be refused if that duplicated work sent email, webhooks or payments."
       ]
     },
 
@@ -112,6 +139,7 @@
 
     "storefront": {
       "kind": "node-dev-server",
+      "confidence": "declared",
       "portGroup": "node-dev",
       "basePort": 5173,
       "paths": ["apps/storefront/**"],
@@ -121,15 +149,16 @@
       "stateReview": {
         "at": "2026-07-30T12:00:00Z",
         "method": "code-scan",
+        "serviceFingerprint": "113264c22300bf1bc3cc55af3c4c86324a7533a6",
         "notes": "Browser client only: it reaches services over HTTP and holds no store credentials, so both lists are checked-empty rather than unknown."
       },
       "peerEnv": {},
       "verifyRequest": "curl -sS -i http://localhost:{{port}}/",
-      "prepareCommand": "cp -Rc {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
+      "prepareCommand": "cp -a --reflink=auto {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
       "overlayCommand": "cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}} --strictPort",
       "notes": [
         "Not dockerized. Service URLs fall back to http://localhost:PORT in code, so it reaches the base stack with no config.",
-        "cp -Rc is an APFS clone: near-instant, near-zero disk, and each server keeps its own pre-bundle cache."
+        "prepareCommand clones the dependency tree instead of reinstalling it: near-instant, near-zero disk, and each server keeps its own pre-bundle cache. The clone flag is platform-specific and this repoRoot is a Linux path, so the command uses GNU cp's --reflink=auto, which clones on btrfs or XFS and falls back to a plain copy elsewhere. The macOS equivalent is cp -Rc, an APFS clone; -c is not a GNU cp flag and fails on Linux."
       ]
     }
   },

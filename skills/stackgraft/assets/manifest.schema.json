@@ -394,7 +394,7 @@
       },
       "additionalProperties": {
         "type": "object",
-        "required": ["at", "serviceFingerprint"],
+        "required": ["at", "serviceFingerprint", "reason", "acceptedBy"],
         "additionalProperties": false,
         "properties": {
           "at": { "type": "string", "format": "date-time" },
@@ -402,8 +402,14 @@
             "type": "string",
             "description": "The service's source fingerprint when the risk was accepted. The entry is treated as ABSENT once this stops matching: acceptance was granted for code that no longer exists, so the original verdict applies again and the overlay is refused until a human accepts anew."
           },
-          "reason": { "type": "string" },
-          "acceptedBy": { "type": "string" }
+          "reason": {
+            "type": "string",
+            "description": "What is being accepted and why it is tolerable here. REQUIRED: this is the only bypass of the shared-state gate, and an acceptance carrying no reason records that a refusal was overridden without recording anything that could later be judged."
+          },
+          "acceptedBy": {
+            "type": "string",
+            "description": "Who accepted it. REQUIRED for the reason references/shared-state.md gives: an acceptance naming neither a reason nor an author is indistinguishable from one the agent granted itself, and a bypass nobody is named on is not a human decision the next run can rely on."
+          }
         }
       }
     },

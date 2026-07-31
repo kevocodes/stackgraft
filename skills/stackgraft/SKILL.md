@@ -10,7 +10,7 @@ metadata:
 
 ## Activation Contract
 
-Load when a worktree or second checkout must run locally and duplicating the stack is not worth it.
+Load when a worktree or second checkout must run locally and duplicating the stack is wasteful.
 
 Skip when the repo has one service, `up` is cheap, or the user wants an isolated full stack.
 
@@ -21,9 +21,9 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 - Never kill a process you did not start.
 - Never place a worktree under `/tmp` or `/var/tmp`: both are reaped.
 - `/health` returning 200 is not proof: verify a real request, read its headers.
-- The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite the entry.
+- The manifest is a cache, not truth: refresh drifted entries; on conflict the repo wins, rewrite it.
 - Substitute placeholders as quoted words: host paths hold whitespace.
-- Every overlay is REFUSED until `references/shared-state.md` has been read and every verdict it demands is recorded. Emptiness is a claim, never a verdict — that file says what evidences it. Nothing else — manifest, user, or inference — produces one.
+- Every overlay is REFUSED until `references/shared-state.md` has been read and every verdict it demands is recorded. Emptiness is a claim, never a verdict — that file says what evidences it. Nothing else — manifest, user, or inference — produces one. An overlay whose verdict is a refusal does not launch.
 
 ## Decision Gates
 
@@ -41,11 +41,11 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 
 1. At the worktree top, `gitCommonDir` = `CDPATH= cd -- "$(git rev-parse --git-common-dir)" && pwd -P`. Derive `repoRoot` — the **main** worktree, never this checkout — per `references/discovery.md` §0.
 2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `printf '%s' "$gitCommonDir" | git hash-object --stdin`, cut to 8. Discard on validation failure or `repoRoot` mismatch; if unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
-3. Discover or refresh per the Decision Gates (`references/discovery.md`).
+3. Discover or refresh per Decision Gates (`references/discovery.md`).
 4. Diff the worktree against its base branch; map changed paths through `paths` globs.
-5. Confirm the base stack is healthy; start what is missing.
-6. Before launching, read `references/shared-state.md` and record every verdict it demands.
-7. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — the `portGroup` range, one port per argument: reserved, base ports, taken this run. Bind strictly.
+5. Confirm base-stack health; start what is missing.
+6. Before launching, read `references/shared-state.md`; record every verdict it demands.
+7. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one port per argument: reserved, base ports, taken this run. Bind strictly.
 8. Launch each mapped service, rewiring unchanged dependencies to the base stack.
 9. Verify with a real request, record `verifiedOverlays`, rewrite the manifest.
 
@@ -55,7 +55,7 @@ Skip when the repo has one service, `up` is cheap, or the user wants an isolated
 - Changed paths and their mapped services.
 - Per overlay: service, port, launch command, verification result.
 - Base-stack services reused, not duplicated.
-- The exact teardown command, plus any isolated namespace left behind and how to remove it.
+- The exact teardown command, any isolated namespace left behind, and how to remove it.
 
 ## References
 

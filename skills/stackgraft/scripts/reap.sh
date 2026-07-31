@@ -3,8 +3,8 @@
 #           re-proving inside this script that it is this repository's.
 #
 # usage:  sh scripts/reap.sh [-C <repoRoot>] [-b <basePort>]... report <hash8>
-#         sh scripts/reap.sh [-C <repoRoot>] [-b <basePort>]... -m stop   <hash8> <target>...
-#         sh scripts/reap.sh [-C <repoRoot>] [-b <basePort>]... -m remove <hash8> <target>...
+#         sh scripts/reap.sh [-C <repoRoot>] (-b <basePort>... | -B) -m stop   <hash8> <target>...
+#         sh scripts/reap.sh [-C <repoRoot>] (-b <basePort>... | -B) -m remove <hash8> <target>...
 #
 #         -C  the repository root - the MAIN worktree, as fingerprint.sh takes
 #             it. Defaults to the working directory.
@@ -19,6 +19,17 @@
 #         -b  one host port the manifest records as a baseStack port, repeated
 #             once per port. This script parses no JSON, so the caller reads
 #             them out of the manifest; the decision they drive stays here.
+#         -B  the manifest records NO baseStack port. A claim, not an omission,
+#             and the only other way to satisfy the requirement below.
+#
+# Base-stack information is MANDATORY for a container mutation, and its absence
+# is unknown rather than none. A caller that passes neither -b nor -B has told
+# this script nothing about which ports belong to the base stack, and deciding
+# a stop against a port set that was never supplied is deciding blind - which
+# is how a hand-labelled base-stack container gets stopped by omitting a flag.
+# So every c: target under a mutation verb is refused until one of the two is
+# present. The report path is unaffected: it takes no decision, and it is what
+# every invocation runs.
 #
 # target: c:<container-id>            one argument
 #         p:<pid> <recorded-lstart>   TWO arguments, the second verbatim as it
@@ -37,17 +48,24 @@
 #         acted      how many targets were acted on. A skipped no-op is not one.
 # exit:   0 ok
 #         2 usage error
-#         3 a target failed its proof - NOTHING was acted on
-#         4 environment failure
+#         3 at least one target failed its proof and was refused; every target
+#           that DID prove out was still acted on, and acted says how many
+#         4 environment failure, including a proven target the runtime would
+#           not act on. The remaining targets are still acted on and acted is
+#           still reported.
 #
 # Every target is re-proved HERE, immediately before acting, and not by the
 # caller. An agent that never opened references/reaping.md must still be unable
 # to stop something unproven, so the proof lives in the actuator.
 #
-# Exit 3 refuses the whole invocation rather than the one target: proving all
-# of them before acting on any means a run cannot be half-applied and then
-# refused. The reap still proceeds - re-invoke with the proven targets only,
-# which is the caller's own record of what was refused and why.
+# A refusal refuses ITS OWN TARGET and nothing else. Every target is proven,
+# every proven one is acted on, every unproven one is refused by name, and both
+# sets are reported - then exit 3 says at least one was refused. Refusing the
+# whole invocation was the earlier shape and it does not survive contact with
+# what is actually here: each stop is independent, no state spans two targets,
+# and there is no transaction for a partial run to violate. What it did cost
+# was real - one unprovable target withheld the reap from every orphan named
+# beside it, which is the work the caller asked for and proved out.
 #
 # Reads no stdin and WRITES NO FILE, under any verb. The report path in
 # particular takes no lock, creates none, and must complete while another
@@ -79,7 +97,8 @@ nl='
 usage() {
     [ "$#" -eq 0 ] || printf '%s: %s\n' "$me" "$1" >&2
     printf 'usage: sh %s [-C <repoRoot>] [-b <basePort>]... report <hash8>\n' "$0" >&2
-    printf '       sh %s [-C <repoRoot>] [-b <basePort>]... -m stop|remove <hash8> <target>...\n' "$0" >&2
+    printf '       sh %s [-C <repoRoot>] (-b <basePort>... | -B) -m stop|remove <hash8> <target>...\n' "$0" >&2
+    printf '       -b one baseStack port, repeated; -B the manifest records none\n' >&2
     printf '       target: c:<container-id>  or  p:<pid> <recorded-lstart>\n' >&2
     exit 2
 }
@@ -195,6 +214,8 @@ wt_state() {
 
 repo_root=.
 base_ports=' '
+base_given=0
+base_none=0
 mutate=0
 
 while [ "$#" -gt 0 ]; do
@@ -207,7 +228,10 @@ while [ "$#" -gt 0 ]; do
                 '' | *[!0-9]*) usage "base port is not a decimal port: '${2:-}'" ;;
             esac
             base_ports="$base_ports$2 "
+            base_given=1
             shift 2 ;;
+        -B) base_none=1
+            shift ;;
         -m) mutate=1
             shift ;;
         --) shift
@@ -216,6 +240,14 @@ while [ "$#" -gt 0 ]; do
         *)  break ;;
     esac
 done
+
+# The two are contradictory claims about one thing, so taking both would leave
+# the run with no answer to give. base_known is the whole question the
+# container proof asks: was this told anything at all about the base stack.
+if [ "$base_given" -eq 1 ] && [ "$base_none" -eq 1 ]; then
+    usage '-B states the manifest records no baseStack port, so it cannot be combined with -b'
+fi
+base_known=$((base_given + base_none))
 
 [ "$#" -ge 1 ] || usage 'missing verb: report, stop or remove'
 verb=$1
@@ -466,6 +498,16 @@ refuse() {
 
 prove_container() {
     _id=$1
+    # Fail closed on the base stack BEFORE anything else is asked about this
+    # container. A port set the caller never supplied is not an empty one, and
+    # comparing against it would answer "no base port matches" for every
+    # container on the host - which is a gate keyed on an optional input, and
+    # so no gate at all.
+    if [ "$base_known" -eq 0 ]; then
+        refuse "c:$_id" base-stack-ports-unknown \
+            'no base-stack port information was given: pass -b <port> once per port the manifest records as a baseStack port, or -B to state that it records none. Absent information is unknown, and unknown refuses'
+        return 0
+    fi
     if [ "$docker_ok" -eq 0 ]; then
         refuse "c:$_id" docker-unavailable 'the container runtime is absent or did not answer'
         return 0
@@ -556,13 +598,11 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$refusals" -gt 0 ]; then
-    printf '%s: %s target(s) failed their proof; nothing was acted on. Re-invoke with the proven targets only.\n' \
-        "$me" "$refusals" >&2
-    exit 3
-fi
-
+# Refusals are already reported, one record each, naming their own target. They
+# do not stop what follows: every target that proved out is acted on here, and
+# the exit code at the end says that some target did not.
 acted=0
+unactionable=0
 rest=$plan
 while [ -n "$rest" ]; do
     case $rest in
@@ -590,8 +630,8 @@ while [ -n "$rest" ]; do
                 acted=$((acted + 1))
             else
                 emit refused "c:$a_id" stop-failed 'the runtime would not stop it'
-                printf '%s: docker stop failed for %s\n' "$me" "$a_id" >&2
-                exit 4
+                printf '%s: docker stop failed for %s; the other targets are unaffected\n' "$me" "$a_id" >&2
+                unactionable=$((unactionable + 1))
             fi
         else
             if docker rm -f "$a_id" >/dev/null 2>&1; then
@@ -599,8 +639,8 @@ while [ -n "$rest" ]; do
                 acted=$((acted + 1))
             else
                 emit refused "c:$a_id" remove-failed 'the runtime would not remove it'
-                printf '%s: docker rm failed for %s\n' "$me" "$a_id" >&2
-                exit 4
+                printf '%s: docker rm failed for %s; the other targets are unaffected\n' "$me" "$a_id" >&2
+                unactionable=$((unactionable + 1))
             fi
         fi
     else
@@ -609,11 +649,25 @@ while [ -n "$rest" ]; do
             acted=$((acted + 1))
         else
             emit refused "p:$fields" signal-failed 'the signal could not be delivered'
-            printf '%s: could not signal pid %s\n' "$me" "$fields" >&2
-            exit 4
+            printf '%s: could not signal pid %s; the other targets are unaffected\n' "$me" "$fields" >&2
+            unactionable=$((unactionable + 1))
         fi
     fi
 done
 
+# Always printed, on every path out of the loop. It is the run's own account of
+# what it did, so suppressing it on the way to an error leaves the caller with
+# a failure and no idea what already happened.
 emit acted "$acted"
+
+if [ "$unactionable" -gt 0 ]; then
+    printf '%s: %s proven target(s) could not be acted on by the runtime; %s acted on, %s refused before acting.\n' \
+        "$me" "$unactionable" "$acted" "$refusals" >&2
+    exit 4
+fi
+if [ "$refusals" -gt 0 ]; then
+    printf '%s: %s target(s) failed their proof and were refused individually; %s proven target(s) were acted on.\n' \
+        "$me" "$refusals" "$acted" >&2
+    exit 3
+fi
 exit 0

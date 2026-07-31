@@ -186,7 +186,13 @@ A second, independent condition covers the repository that writes the label itse
 - A candidate publishing a port the manifest records as a `basePort` is **never a target under any flag**, and the anomaly is reported. The script parses no JSON, so those ports are read out of the manifest by the run and passed as `-b <port>`, once per port; the decision they drive lives in the actuator.
 - A candidate whose `stackgraft.worktree` is **present** in the worktree list is live, and live is never a target — §10.
 
-Both conditions are re-tested inside `scripts/reap.sh` immediately before it acts, not once at classification time. A run that never opened this file still cannot reach a base-stack service.
+**Those ports are evidence, and not having them is *unknown* rather than *none*.** A mutation run that passed no `-b` at all has told the actuator nothing about the base stack, and a port set nobody supplied answers *no base port matches* for every container on the host. That is a gate keyed on an optional input, which is no gate: omit the flag and the condition above silently stops applying. So a `c:` target under `stop` or `remove` is **refused outright until the run supplies that information** — `-b <port>` once per port the manifest records, or `-B` to state that it records none. `-B` is a claim, not a shortcut past the rule: it is the same *checked-and-none* against *nobody looked* distinction §14 draws for the two ownership stores, applied to the one input this decision rests on. The report path decides nothing and needs neither flag, which keeps the benefit every invocation gets free of the requirement only a mutation carries.
+
+Both conditions are re-tested inside `scripts/reap.sh` immediately before it acts, not once at classification time. A run that never opened this file therefore cannot reach a base-stack service by leaving a flag off: with no base-stack information every container mutation refuses, and the only way past that refusal is to supply the information the exclusion is made of.
+
+**Declared limit: past its ports, a base-stack service is not identifiable from here.** The requirement this section implements excludes a candidate publishing a recorded `basePort` *or one identified as a base-stack service*, and the second half has no mechanism in this design. Saying so is the honest option; leaving it to read as implemented is not. Nothing on a running container separates a base-stack one from an overlay except the port: `stackgraft.service` holds a manifest service key and the base stack runs those same services, so refusing on the name would refuse every overlay this file exists to reclaim. A compose project name would need the base project's, which lives in the manifest this script does not parse and over which the caller has no more authority than the ports it already passes.
+
+So the port condition **is** the whole of the second condition, and exactly one shape falls outside it: a container hand-labelled with this repository's `hash8`, whose `stackgraft.worktree` is absent from the worktree list, and whose published port is none of the ones the run passed. Two things keep that residue small rather than nominal — the positive allowlist of §9, which leaves everything this skill never launched outside the candidate set for free, and the fail-closed rule above, which stops *not knowing the ports* from being the way in. It is an accepted coverage loss, stated here, and not a gap awaiting a mechanism.
 
 ## 10. Liveness, decided against the worktree list
 
@@ -271,7 +277,11 @@ Emptiness is a claim that needs evidence, never an omission. Four different sent
 
 ## 15. Refusal cases
 
-Each of these is reported with its reason, and none of them stops the run from proceeding with the candidates that did prove out — re-invoke the actuator with the proven targets only. A refusal inside one invocation refuses that whole invocation, so a run is never half-applied and then stopped.
+**A refusal refuses its own target and nothing else.** Each case below is reported with its reason, and the run carries on with the candidates that did prove out: every target is proven, every proven one is acted on, every unproven one is refused by name, and both sets are reported before the run exits non-zero to say some target was refused. There is nothing to re-invoke and nothing lost by naming an unprovable target alongside provable ones.
+
+This used to read the other way — one refusal refused the whole invocation, on the argument that a run should never be half-applied and then stopped. That argument does not survive what is actually here: each stop is independent, no state spans two targets, and there is no transaction a partial run could violate. What it did cost was real, because one unprovable target withheld the reap from every orphan named beside it, and an unprovable target is the ordinary case rather than the exception — a live worktree, an unreadable store and a recycled pid all land there. A run that acts on nothing because one candidate could not be proven is not safer; it just does not work.
+
+The same rule applies after the proof: a proven target the runtime will not act on is that target's failure, reported and counted, while the rest of the plan still runs and the `acted` record is still printed. A run that stops mid-loop leaves exactly the half-applied state this section once claimed to prevent, and hides it by suppressing the one record that says what happened.
 
 | Case | Why it refuses |
 |---|---|
@@ -279,6 +289,7 @@ Each of these is reported with its reason, and none of them stops the run from p
 | the worktree list could not be read | liveness is unestablished, so nothing is an orphan |
 | the recorded path will not resolve, or git C-quotes it | unproven, and unproven is never orphaned |
 | a port the manifest records as a `basePort` | a base-stack service, however it is labelled — the anomaly is reported |
+| no base-stack port information was given at all | absent is unknown, never none; the exclusion cannot be applied against a port set nobody supplied — §9 |
 | fewer than five labels | partial labelling is a launch that went wrong, not ownership |
 | an unrecognised `stackgraft.labels` value | the same fail-safe direction an unrecognised `schemaVersion` takes |
 | the recorded `lstart` is `null` or absent | permanently unproven on this host |

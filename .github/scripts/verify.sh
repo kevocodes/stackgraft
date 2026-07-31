@@ -884,22 +884,23 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     fixture_container "$RH" "$gone_wt" catalog-api 18103 ; handlabelled=$cid
     fixture_container "$RH" "$gone_wt" storefront 18104 9 ; future=$cid
     fixture_container "$RH" "$gone_wt" worker 18105 1 'exit 0' ; exited=$cid
+    fixture_container "$RH" "$gone_wt" storefront 18106 ; mixed=$cid
 
-    reap_run -C "$repo" -m stop "$RH" "c:$livewt"
+    reap_run -C "$repo" -B -m stop "$RH" "c:$livewt"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'worktree-still-listed'; then
         ok "rejected: a labelled overlay whose worktree is still listed"
     else
         fail "live-worktree target: exit $reap_rc, said '$reap_out'"
     fi
 
-    reap_run -C "$repo" -m stop "$RH" "c:$bare"
+    reap_run -C "$repo" -B -m stop "$RH" "c:$bare"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'not-a-labelled-overlay'; then
         ok "rejected: an unlabelled base-stack-shaped container"
     else
         fail "unlabelled target: exit $reap_rc, said '$reap_out'"
     fi
 
-    reap_run -C "$repo" -m stop "$RH" "c:$future"
+    reap_run -C "$repo" -B -m stop "$RH" "c:$future"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
         ok "rejected: a label contract version this run does not recognise"
     else
@@ -911,6 +912,54 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         ok "rejected: a base-stack container hand-labelled with this repository's hash8"
     else
         fail "hand-labelled base-stack target: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # --- C3  the same target with -b OMITTED -------------------------------
+    # The row above passes -b 18103, and so does every other base-stack row in
+    # this file, which is precisely why none of them can see this: the
+    # exclusion was keyed on a flag the caller may simply not pass, and a gate
+    # keyed on an optional input is not a gate. Base-port information the run
+    # was never given is UNKNOWN, and unknown refuses - so a container mutation
+    # with no base-stack information at all refuses the target rather than
+    # deciding blind, and the hand-labelled container is untouched.
+    reap_run -C "$repo" -m stop "$RH" "c:$handlabelled"
+    if [ "$reap_rc" -eq 3 ] \
+       && printf '%s' "$reap_out" | grep -q 'base-stack-ports-unknown' \
+       && [ "$(docker inspect --format '{{.State.Status}}' "$handlabelled" 2>/dev/null)" = running ]; then
+        ok "rejected: a container mutation carrying no base-stack port information at all"
+    else
+        fail "-b omitted: exit $reap_rc, state $(docker inspect --format '{{.State.Status}}' "$handlabelled" 2>/dev/null), said '$reap_out'"
+    fi
+
+    # ...and the refusal is the missing information, not a blanket refusal:
+    # -B says the manifest records no base-stack port, which is a claim rather
+    # than an omission, and under it the run proceeds. The C2 row below acts on
+    # a real orphan with exactly that flag, so this pair covers both halves.
+    reap_run -C "$repo" report "$RH"
+    if [ "$reap_rc" -eq 0 ] && printf '%s' "$reap_out" | grep -q "^legacy${TAB}"; then
+        ok "the report path still runs with no base-stack information - only mutation refuses"
+    else
+        fail "report with no -b: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # --- C2  a refusal refuses its own target, not the invocation -----------
+    # One invocation, two targets: an orphan that proves out and a live-worktree
+    # overlay that does not. Two locked requirements say a refusal MUST NOT stop
+    # the run acting on the remaining proven candidates, and nothing here is
+    # transactional - each stop is independent and no state spans the two - so
+    # refusing the whole invocation costs the proven work and buys nothing.
+    # Both sets must be reported: the refusal by name, and the count of what was
+    # acted on.
+    reap_run -C "$repo" -B -m stop "$RH" "c:$mixed" "c:$livewt"
+    mixed_state=$(docker inspect --format '{{.State.Status}}' "$mixed" 2>/dev/null)
+    live_state=$(docker inspect --format '{{.State.Status}}' "$livewt" 2>/dev/null)
+    if [ "$reap_rc" -eq 3 ] \
+       && printf '%s' "$reap_out" | grep -q 'worktree-still-listed' \
+       && printf '%s' "$reap_out" | grep -q "^acted${TAB}1\$" \
+       && [ "$mixed_state" = exited ] && [ "$live_state" = running ]; then
+        ok "a refused target does not stop the proven one: the orphan is acted on, the live overlay refused"
+    else
+        fail "proven + unproven in one invocation: exit $reap_rc, orphan $mixed_state, live $live_state, said '$reap_out'"
     fi
 
     # The removal flag on its own mutates nothing and says what is missing.
@@ -926,7 +975,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
 
     # Under stop an already-exited container is a no-op, so it is reported and
     # skipped and MUST NOT be counted as work done: acted stays at zero.
-    reap_run -C "$repo" -m stop "$RH" "c:$exited"
+    reap_run -C "$repo" -B -m stop "$RH" "c:$exited"
     if [ "$reap_rc" -eq 0 ] \
        && printf '%s' "$reap_out" | grep -q 'skipped-not-running' \
        && printf '%s' "$reap_out" | grep -q "^acted${TAB}0\$"; then
@@ -952,7 +1001,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
 
     # Under remove the same exited container IS a target - D8's corollary is a
     # filter on the state, not a comment about it.
-    reap_run -C "$repo" -m remove "$RH" "c:$exited"
+    reap_run -C "$repo" -B -m remove "$RH" "c:$exited"
     if [ "$reap_rc" -eq 0 ] && ! docker inspect "$exited" >/dev/null 2>&1; then
         ok "an exited container is a target under remove"
     else
@@ -1010,6 +1059,42 @@ if [ "$lstart_here" -eq 1 ]; then
         fail "true-lstart target: exit $reap_rc, said '$reap_out'"
     fi
     kill -KILL "$vic" 2>/dev/null
+
+    # --- W3  a runtime that will not act is one target's failure ------------
+    # A target can prove out and still not be actionable, and the failure used
+    # to end the loop where it happened: the targets after it were never
+    # reached and the acted record - the run's own account of what it did - was
+    # never printed at all. That is the half-applied run the whole-invocation
+    # refusal was justified by, produced by the code that justified it.
+    #
+    # pid 1 is the portable "proven, and not ours to signal": its start time
+    # re-reads and matches, so the proof holds, while kill returns EPERM for
+    # any user that is not root. Root ignores that, so the row stands down
+    # there rather than actually signalling init.
+    #
+    # Its survival is asserted with ps rather than kill -0, because kill -0
+    # answers EPERM here too - the same permission that makes this fixture
+    # deterministic would make that probe read a living init as gone.
+    if [ "$(id -u)" -ne 0 ]; then
+        one_lstart=$(ps -o lstart= -p 1 2>/dev/null | awk 'NF { print; exit }')
+        vic2=$(sh -c 'sleep 300 >/dev/null 2>&1 & printf "%s\n" "$!"')
+        vic2_lstart=$(ps -o lstart= -p "$vic2" 2>/dev/null | awk 'NF { print; exit }')
+        reap_run -m stop 00c0ffee 'p:1' "$one_lstart" "p:$vic2" "$vic2_lstart"
+        n=0
+        while kill -0 "$vic2" 2>/dev/null && [ "$n" -lt 10 ]; do sleep 1; n=$((n + 1)); done
+        if [ "$reap_rc" -eq 4 ] \
+           && printf '%s' "$reap_out" | grep -q 'signal-failed' \
+           && printf '%s' "$reap_out" | grep -q "^acted${TAB}1\$" \
+           && ! kill -0 "$vic2" 2>/dev/null \
+           && ps -o pid= -p 1 >/dev/null 2>&1; then
+            ok "a target the runtime would not act on is one refusal: the next target is still acted on and acted is reported"
+        else
+            fail "unsignallable target mid-run: exit $reap_rc, said '$reap_out'"
+        fi
+        kill -KILL "$vic2" 2>/dev/null
+    else
+        printf '  skip  the unsignallable-target row (running as root, which can signal pid 1)\n'
+    fi
 else
     printf '  skip  the (pid, lstart) target rows (this host has no ps -o lstart=)\n'
 fi

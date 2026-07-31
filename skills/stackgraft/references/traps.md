@@ -16,8 +16,8 @@ Each of these has been hit for real. Check them every run — they fail silently
 
 ## Wiring
 
-- **Orchestrator DNS names do not resolve from the host.** `http://search-indexer:8090` works inside a compose network; a host-run overlay must use `localhost:<published port>`. Rewrite every peer URL.
-- **A shared/common edit does not reach every service.** Only those whose build context includes that tree. Read the Dockerfile per service; `sharedDirsIncluded` exists because this is not uniform.
+- **A peer URL that is right for one overlay is wrong for the other.** `http://search-indexer:8090` resolves inside a compose network but not from the host; `localhost:<published port>` resolves from the host but points a *container* at itself. Pick per overlay, per `references/discovery.md` section 4 — never copy one form to the other kind of overlay.
+- **A shared/common edit does not reach every service.** Only those whose build context includes that tree. Read the Dockerfile per service and record the answer once, in the shared entry's `consumers` list — a per-service copy of the same fact drifts out of sync and then lies.
 - **Co-overlaid peers must point at each other**, not at the base stack. Rewrite those URLs to the overlay ports, or you will test the old code and believe it passed.
 
 ## Environment
@@ -26,4 +26,4 @@ Each of these has been hit for real. Check them every run — they fail silently
 - **Clone dependency trees instead of reinstalling.** On APFS, `cp -Rc <base>/node_modules <worktree>/node_modules` is a clonefile: near-instant, near-zero real disk, and each server keeps its own pre-bundle cache. Symlinking breaks that cache; reinstalling wastes minutes.
 - **zsh does not word-split unquoted variables.** `for s in "auth 8080"; do set -- $s` leaves `$2` empty and produces a URL like `localhost:/health`, which reads as a service failure. Use arrays or literals.
 - **`assets/manifest.example.json` is illustrative, not factual.** It shows three services of a large compose backend plus a non-dockerized dev server; a real manifest lists every runnable unit. Its ports, paths, and commands are examples — discover them against the real files instead of copying them, or the manifest lies from the first run.
-- **Commands that dump merged config or `.env` are correctly permission-blocked** — they would print every secret. Ask the user to edit the file and verify by observable effect instead.
+- **A config dump prints secrets — unless you disable interpolation.** `docker compose config` expands every variable, so it leaks the whole `.env`; being permission-blocked for that is correct. `docker compose config --no-interpolate` leaves variables unexpanded, which is why `references/discovery.md` recommends it as the resolver. The two are not in conflict: never dump an interpolated config, always prefer the non-interpolating form. For editing a real `.env`, still ask the user and verify by observable effect.

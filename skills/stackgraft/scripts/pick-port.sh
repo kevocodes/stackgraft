@@ -2,7 +2,9 @@
 # pick-port.sh - deterministic overlay port CANDIDATE for stackgraft.
 #
 # usage:  sh scripts/pick-port.sh <lo> <hi> <worktree-path> [excluded-port...]
-#         Every port argument is decimal and within 1-65535.
+#         Every port argument is decimal and within 1-65535, and every
+#         exclusion is its OWN argument: "3000,5173" is a single argument that
+#         is not a port, and is rejected by name rather than silently split.
 # stdout: exactly one integer - a CANDIDATE, never a verified-free port.
 #         Availability is not portably checkable and any reading is stale at
 #         once, so the authoritative test is the launcher's strict-port bind
@@ -34,31 +36,43 @@
 # argument is refused: it is an exclusion sitting in the worktree slot, and
 # accepting it would silently drop that port from the excluded set.
 
+# Names the rejected argument before printing the usage line. Without it a
+# caller learns only that one of five arguments was wrong, which is the least
+# useful half of the answer - and the commonest mistake, a comma-separated
+# exclusion list like "3000,5173", looks like a correct invocation until the
+# offending argument is quoted back.
 usage() {
+    [ "$#" -eq 0 ] || printf '%s: %s\n' "${0##*/}" "$1" >&2
     printf 'usage: sh %s <lo> <hi> <worktree-path> [excluded-port...]\n' "$0" >&2
+    printf '       one excluded port per argument; a comma-separated list is one bad argument\n' >&2
     exit 2
 }
 
 # Validates one port argument into port_val: decimal, 1-65535, leading zeros
 # stripped so arithmetic expansion cannot read "08" as a bad octal constant.
 # Sets a global instead of printing, because usage() has to end the script and
-# an exit inside a command substitution would only leave the subshell.
+# an exit inside a command substitution would only leave the subshell. $2 is
+# the label this argument is reported under when it is rejected.
 port_arg() {
-    case ${1:-} in '' | *[!0-9]*) usage ;; esac
+    case ${1:-} in
+        '') usage "missing ${2:-port argument}" ;;
+        *[!0-9]*) usage "${2:-port argument} is not a decimal port: '$1'" ;;
+    esac
     port_val=$1
     while [ "${port_val#0}" != "$port_val" ]; do port_val=${port_val#0}; done
-    [ -n "$port_val" ] && [ "${#port_val}" -le 5 ] && [ "$port_val" -le 65535 ] || usage
+    [ -n "$port_val" ] && [ "${#port_val}" -le 5 ] && [ "$port_val" -le 65535 ] \
+        || usage "${2:-port argument} is outside 1-65535: '$1'"
 }
 
-port_arg "${1:-}"; lo=$port_val
-port_arg "${2:-}"; hi=$port_val
-[ "$lo" -le "$hi" ] || usage
-[ "$#" -ge 3 ] && [ -n "$3" ] || usage
-case $3 in *[!0-9]*) ;; *) usage ;; esac
+port_arg "${1:-}" 'range low'; lo=$port_val
+port_arg "${2:-}" 'range high'; hi=$port_val
+[ "$lo" -le "$hi" ] || usage "range low $lo is above range high $hi"
+[ "$#" -ge 3 ] && [ -n "$3" ] || usage 'missing worktree path'
+case $3 in *[!0-9]*) ;; *) usage "worktree path is all digits: '$3' - an exclusion belongs after it" ;; esac
 
 span=$((hi - lo + 1))
 
-worktree=$(CDPATH= cd -- "$3" 2>/dev/null && pwd -P) || usage
+worktree=$(CDPATH= cd -- "$3" 2>/dev/null && pwd -P) || usage "worktree path is not a directory: '$3'"
 shift 3
 
 # Exclusions are normalised too: "018099" must exclude 18099, not slip past a
@@ -66,7 +80,7 @@ shift 3
 excluded=' '
 for arg in "$@"; do
     [ -n "$arg" ] || continue
-    port_arg "$arg"
+    port_arg "$arg" 'excluded port'
     excluded="$excluded$port_val "
 done
 

@@ -40,7 +40,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 ## Execution Steps
 
 1. Resolve `repoRoot`: `git rev-parse --path-format=absolute --git-common-dir` minus `/.git`.
-2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `git hash-object --stdin` over that common dir, truncated to 8. Discard on `schemaVersion`/`repoRoot` mismatch; when unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `scripts/fingerprint.sh`.
+2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`, `hash8` being `git hash-object --stdin` over that common dir, truncated to 8. Discard on validation failure or `repoRoot` mismatch; when unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `scripts/fingerprint.sh`.
 3. Discover or refresh per the Decision Gates (`references/discovery.md`).
 4. Diff the worktree against its base branch; map changed paths through `paths` globs.
 5. Confirm the base stack is healthy; start what is missing.

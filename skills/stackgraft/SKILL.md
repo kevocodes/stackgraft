@@ -29,7 +29,7 @@ Skip when the repo has one service, a full `up` is cheap, or the user explicitly
 | Situation | Action |
 |-----------|--------|
 | Manifest missing | Full discovery, then write it |
-| All fingerprints match | Reuse manifest, skip discovery |
+| All fingerprints match | Reuse manifest, skip discovery — but re-derive every `revalidate: "always"` source |
 | Some source drifted | Re-discover only that slice, rewrite those entries and hashes |
 | Changed paths map to no service | No overlay; run tests only and say so |
 | Change touches a shared/common dir | Overlay every service listed in that entry's `consumers` |

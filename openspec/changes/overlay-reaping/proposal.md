@@ -128,7 +128,7 @@ Ordering is not stylistic. Slice 2 can only find overlays that slice 1 labelled,
 
 - `portable-runtime`: adds `scripts/reap.sh` and `scripts/with-lock.sh`; `compatibility` gains the `lstart` note.
 - `manifest-cache`: the manifest write becomes serialized (D9). Behavior change to shipped code, admitted deliberately.
-- `topology-discovery`: `overlayCommand` gains an appendability constraint (D2).
+- `topology-discovery`: `overlayCommand` gains a label-anchor constraint (D2, as amended by A2 and A5).
 
 ## Affected areas
 
@@ -139,7 +139,7 @@ Ordering is not stylistic. Slice 2 can only find overlays that slice 1 labelled,
 | `skills/stackgraft/references/reaping.md` | New | Label contract, sidecar shape, liveness procedure, reconciliation, refusal cases |
 | `skills/stackgraft/scripts/reap.sh` | New | POSIX `sh`; report and mutation paths |
 | `skills/stackgraft/scripts/with-lock.sh` | New | `mkdir` lock, bounded wait, staleness policy, temp-and-rename. A script rather than body prose so the discipline costs the body one word, not a paragraph |
-| `skills/stackgraft/assets/manifest.schema.json` | Modified | `overlayCommand` description only — appendability. No new fields, no version bump |
+| `skills/stackgraft/assets/manifest.schema.json` | Modified | `overlayCommand` description only — the label anchor. No new fields, no version bump |
 | `README.md` | Modified | Status |
 
 ## Risks
@@ -197,6 +197,18 @@ Four locked decisions did not survive design contact. Each is corrected here rat
 **A3 — T4's "slice 1 net ≤ +0" is insufficient, not merely loose.** The real constraint is `slice1_out + slice2_delta ≤ 500`. Slice 1 landing at 497 leaves slice 2 three words against its own forty-word ceiling — the two stated budgets cannot both hold. Slice 1's target is net **−34**, to 463.
 
 **A4 — D7 mis-slices `references/reaping.md`, and slice 1's CI goes red because of it.** Slice 1's Hard Rule names the file, and `.github/scripts/verify.sh:87-88` resolves every backticked `references/…` link and fails on a dangling one. The file is created in slice 1 with the instrumentation half and extended in slice 2. `references/discovery.md` joins slice 1 for the same structural reason and was missing from the affected-areas table.
+
+**A5 — the spec's refusal test is over-broad; DS24's anchor test replaces it.** `specs/topology-discovery/spec.md` refuses any command that "pipes, wraps, redirects, or otherwise terminates the argument list"; DS24 refuses on *anchor absence*. They disagree on the piped case, and DS24 is right: insertion lands immediately after the `run` token, before the pipe, so the labels reach the launcher and the container starts correctly labelled. The spec's test refuses launches that would have succeeded.
+
+What the spec was protecting — **never launch an unlabeled container** — is preserved unchanged, and the criterion becomes: refuse when no anchor exists after a recognised launcher token, and refuse `up`-shaped templates outright. Interpreter templates (`sh -c …`) stay refused by the existing deny-list in `references/shared-state.md`, which is where that rule already lives; anchor matching MUST NOT reach inside a quoted string, or `echo "docker run x" | sh` would be "labelled" into a string and launch bare.
+
+Rewrite the requirement and its second scenario accordingly. The requirement's name — *MUST tolerate appended arguments* — is part of the error and changes with it.
+
+**A6 — the `with-lock.sh` carve-out is one file too narrow.** The spec permits the lock directory and a rename. DS22 also needs `: > "$destination.wait.$$"` as the `find -newer` reference, and it cannot live inside the lock directory because that directory belongs to whoever holds it. Widen the carve to name a staleness-reference file adjacent to the destination, created and removed by the script. The two properties the rule protects — scripts parse no JSON, the agent owns the content — are untouched: the reference file is empty by construction.
+
+**A7 — T1's legacy detection has no mechanism, and the blind spot is the deliverable.** A container launched before instrumentation carries no label, so nothing distinguishes it from any other container on the machine. An unfiltered listing does not detect legacy overlays; it lists everything and cannot say which is which. Widening the query buys noise, not coverage, and the spec is right to forbid it. So the report names the category, states that overlays launched before `stackgraft.labels` are invisible by construction, and gives the manual command — which is what T1 asked for. Accepted as a real coverage loss, stated loudly.
+
+**A8 — `verify.sh`'s `compatibility` guard is vacuously satisfiable, and it ships today.** `[ "${compat:-0}" -lt 500 ]` reads `0` when awk prints nothing, so **deleting the field entirely passes the check**. It also enforces `< 500` where the requirement says *at most* 500. Same failure this project has now hit five times: a gate keyed on an optional field is no gate. Fix in slice 1, alongside the `compatibility` edit that first depends on the counter being honest — and pair it with a negative fixture, since a check that cannot fail is the thing being fixed.
 
 **Resolved, not amended:** the design flagged one blocking unknown — whether `docker compose run` accepts `--label`, the premise the whole D2 mechanism rests on. It does: `-l, --label stringArray  Add or override a label`. Verified against the installed binary.
 

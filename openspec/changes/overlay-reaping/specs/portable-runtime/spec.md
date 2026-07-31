@@ -6,8 +6,8 @@ Modified capability. The requirements below replace the same-named requirements 
 
 ### Requirement: Zero-install script runtime
 
-Every file under `scripts/` MUST run on a stock macOS and a minimal Linux image with no install step, `scripts/reap.sh` and `scripts/with-lock.sh` included. Scripts MUST be POSIX `sh`, MUST use only POSIX `awk` where awk is used, and MUST NOT depend on bash-4 constructs, GNU-only flags, `jq`, `node`, `python3`, a standalone hashing binary, `flock`, `timeout`, `lsof`, or `ss` — each is absent from at least one supported platform, and macOS ships bash 3.2. Scripts MUST NOT parse or emit JSON. `scripts/with-lock.sh` is the single exception to the no-file-writing rule: it MAY create and remove its lock directory and rename a file its caller already composed into place, and it MUST NOT compose, parse, or edit content. Every other script, `reap.sh` included, MUST NOT write or edit files — the agent owns the manifest and the sidecar. Fingerprints MUST be produced by git with content filters disabled, and the producing tool MUST be recorded in `fingerprintTool`.
-(Verify: file review plus POSIX syntax check under `dash -n` for all four scripts; portability grep for disallowed binaries; both new scripts executed on macOS and on a minimal Linux image.)
+Every file under `scripts/` MUST run on a stock macOS and a minimal Linux image with no install step, `scripts/reap.sh` and `scripts/with-lock.sh` included. Scripts MUST be POSIX `sh`, MUST use only POSIX `awk` where awk is used, and MUST NOT depend on bash-4 constructs, GNU-only flags, `jq`, `node`, `python3`, a standalone hashing binary, `flock`, `timeout`, `lsof`, or `ss` — each is absent from at least one supported platform, and macOS ships bash 3.2. Scripts MUST NOT parse or emit JSON. `scripts/with-lock.sh` is the single exception to the no-file-writing rule, and its carve-out names exactly three writes: it MAY create and remove its lock directory; it MAY create and remove one staleness-reference file adjacent to the destination, the reference its wait bound is measured against, which MUST be empty by construction and MUST NOT be placed inside the lock directory, because that directory belongs to whoever holds it; and it MAY rename a file its caller already composed into place. It MUST NOT compose, parse, or edit content. Every other script, `reap.sh` included, MUST NOT write or edit files — the agent owns the manifest and the sidecar. Fingerprints MUST be produced by git with content filters disabled, and the producing tool MUST be recorded in `fingerprintTool`.
+(Verify: file review plus POSIX syntax check under `dash -n` for all four scripts; portability grep for disallowed binaries; both new scripts executed on macOS and on a minimal Linux image; every path `with-lock.sh` creates compared against the three the carve-out names.)
 
 #### Scenario: Syntax and dependency check
 
@@ -27,6 +27,7 @@ Every file under `scripts/` MUST run on a stock macOS and a minimal Linux image 
 - GIVEN a caller has composed a replacement cache file
 - WHEN `scripts/with-lock.sh` puts it in place
 - THEN it takes the lock, renames the prepared file into the destination, releases the lock, and at no point parses or emits JSON
+- AND any staleness-reference file it created beside the destination was empty and is gone when it exits
 
 #### Scenario: Fingerprint I/O contract
 

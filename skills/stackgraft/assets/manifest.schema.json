@@ -73,12 +73,21 @@
 
     "baseStack": {
       "type": "object",
-      "description": "How the shared, unmodified stack is started and proven healthy.",
+      "description": "How the shared, unmodified stack is started and proven healthy. All three commands are DISCOVERED FROM THE REPOSITORY — the orchestrator's own entry points — and share one placeholder, {{repoRoot}}, the main worktree this manifest is keyed by. {{port}} and {{worktree}} are deliberately NOT members: the base stack is per repository, not per overlay, so a picked port or a checkout path means nothing in these lines. COLLISION RULE: a token shaped {{.Something}} is the orchestrator's own Go template — docker compose --format writes {{.Service}}, {{.State}}, {{.Publishers}} — and is passed through verbatim, never substituted and never read as an unknown placeholder. That is why the closed set matches exact names and not the {{...}} shape. Values substituted in are quoted per references/discovery.md section 6.",
       "additionalProperties": false,
       "properties": {
-        "startCommand": { "type": "string" },
-        "statusCommand": { "type": "string" },
-        "teardownCommand": { "type": "string" },
+        "startCommand": {
+          "type": "string",
+          "description": "Starts the base stack, or brings up the part of it that is missing. This is the whole-stack up form the overlay exists to avoid duplicating, so it runs against the base stack only, never for an overlay."
+        },
+        "statusCommand": {
+          "type": "string",
+          "description": "Read-only: prints what is running and where it publishes, so a partial base stack is told apart from a healthy one before anything is overlaid. This is the field most likely to carry Go template tokens, which pass through untouched."
+        },
+        "teardownCommand": {
+          "type": "string",
+          "description": "Stops the base stack the overlay was grafted onto. It is not the overlay's teardown — an overlay is stopped through its own process — and it belongs to whoever owns the base stack."
+        },
         "bindsTo": { "type": "string", "description": "e.g. 127.0.0.1" }
       }
     },
@@ -119,6 +128,11 @@
                 "then": {
                   "anyOf": [{ "required": ["command"] }, { "required": ["env"] }]
                 }
+              },
+              {
+                "$comment": "A create with no drop leaves one namespace per branch behind forever — isolated databases, vhosts and buckets accumulate until somebody goes looking. The approval rule in references/shared-state.md already shows BOTH substituted commands before the first run, which assumes both exist. So a command obliges a teardownCommand; where no teardown is discoverable the honest record is mechanism none, because half a lifecycle is not an isolation mechanism. env-only isolation is deliberately exempt: it has no create command and nothing a drop command could remove, so its namespace is named in the run's output instead.",
+                "if": { "required": ["command"] },
+                "then": { "required": ["teardownCommand"] }
               }
             ],
             "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",

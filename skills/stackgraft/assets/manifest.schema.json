@@ -126,7 +126,11 @@
                 "type": "string",
                 "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. The placeholder set is closed and is exactly the one in references/shared-state.md, which is the authority: {{isolationName}}, {{store}}, {{worktree}}, {{repoRoot}}, {{port}}. Every member has a defined source — generated name, backingStores key, overlay checkout, this manifest's repoRoot, and the port picked this run. Any other {{...}} invalidates the template, which makes mechanism \"none\". It must invoke one program: shell metacharacters are rejected in the raw template and again after substitution, so a pipeline belongs in a task target the repo already defines."
               },
-              "teardownCommand": { "type": "string" },
+              "teardownCommand": {
+                "type": "string",
+                "description": "Templated command that removes the isolated namespace when the overlay is done, DISCOVERED FROM THE REPOSITORY exactly as command is. The whole template contract in references/shared-state.md governs it — same closed placeholder set, same deny-list, same re-check after substitution, same argv execution, same one-program rule, same destructive-verb rule, same approval — because it is equally repository-supplied and equally executed against the running store, and it is the half more likely to be destructive. Dropping {{isolationName}} is the accepted case; anything that removes a namespace not derived from it is rejected, and a rejected teardown makes the whole isolation record mechanism \"none\".",
+                "examples": ["docker compose exec -T postgres dropdb --if-exists {{isolationName}}"]
+              },
               "env": {
                 "type": "object",
                 "additionalProperties": { "type": "string" },

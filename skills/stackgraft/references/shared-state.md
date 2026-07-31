@@ -115,7 +115,7 @@ Say so plainly and refuse; do not offer a middle option.
 
 ## Accepting a risk
 
-The only bypass is one explicit `acceptedRisks` entry per `(service, store)`, keyed `<service>::<store>` and **read by splitting at the last `::`** — a store name can hold no colon, so that split stays unambiguous for a unit named `:core:data` or `//pkg:target`. It records the timestamp and the service's fingerprint at acceptance. It is treated as **absent** once that fingerprint drifts — acceptance was granted for code that no longer exists. There is no global bypass.
+The only bypass is one explicit `acceptedRisks` entry per `(service, store)`, keyed `<service>::<store>` and **read by splitting at the last `::`** — a store name can hold no colon, so that split stays unambiguous for a unit named `:core:data` or `//pkg:target`. It records the timestamp and the service's fingerprint at acceptance, plus `reason` and `acceptedBy` — an acceptance naming neither is indistinguishable from one the agent granted itself. It is treated as **absent** once that fingerprint drifts — acceptance was granted for code that no longer exists. There is no global bypass.
 
 Compute the fingerprint by piping, in order, into `git hash-object --stdin`. `<service paths>` is that service's `paths` globs, each **quoted** and passed as a `:(glob)` pathspec — `':(glob)services/catalog/**'` — so git expands them and not the shell. An unquoted glob is expanded by the shell before git sees it, and POSIX shell globbing skips names beginning with a dot: `services/catalog/.env.example` is silently dropped from all three legs, so editing it never moves the value.
 

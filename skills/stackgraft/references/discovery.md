@@ -94,9 +94,11 @@ This is where overlays fail silently, and the correct answer depends on where th
 2. Union the drifted entries' `covers`, then **remove any token that is a strict descendant of another token already in the set**. `covers` values are dot-delimited key paths: `services`, `services.<name>`, `backingStores`, `baseStack`, `portPolicy`, `constraints`.
 3. **Coarse wins.** Refreshing `services` re-derives the whole object from every source covering any part of it, including sources that did not themselves drift — and every one of those sources is **re-fingerprinted in the same pass**. Otherwise a fine source keeps a stored fingerprint asserting ownership of a value the coarse pass just overwrote. Over-refresh is cheap; under-refresh is silent staleness.
 4. **Fine stays fine.** A drift in `services.storefront` re-derives that key alone. It may create, update, or delete that one key — never another.
-5. Update the drifted fingerprints and `discoveredAt`. Leave every untouched entry alone.
-6. If a source file disappeared, drop it and re-discover its `covers` from scratch.
-7. Discard and fully rediscover any manifest whose `schemaVersion` you do not recognize. There is no migration path, and there does not need to be — everything here is re-derivable.
+5. **A `revalidate: "always"` source is re-derived every run, fingerprint equality or not.** Its stored hash covers the entry file alone while its real input set is not enumerable — a compose file using `include:` or `extends:`, a Tiltfile importing arbitrary Starlark — so an unchanged hash proves nothing about what it pulled in.
+6. **Refreshing `services.<name>` drops that service's `verifiedOverlays` record and invalidates its `acceptedRisks` entries.** Both were evidence about code that just changed: a verification proved the old entry worked, and an acceptance was granted for the old fingerprint. Neither is refreshable from the repository, which is why no source may `cover` them — a human or a real request is the only thing that writes them back.
+7. Update the drifted fingerprints and `discoveredAt`. Leave every untouched entry alone.
+8. If a source file disappeared, drop it and re-discover its `covers` from scratch.
+9. Discard and fully rediscover any manifest whose `schemaVersion` you do not recognize. There is no migration path, and there does not need to be — everything here is re-derivable.
 
 ## 6. Wire and verify
 

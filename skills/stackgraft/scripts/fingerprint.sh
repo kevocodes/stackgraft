@@ -31,7 +31,10 @@ emit() {
 
 if [ "${1:-}" = "-C" ]; then
     [ "$#" -ge 3 ] || usage
-    cd -- "$2" || exit 2
+    # CDPATH= is load-bearing: with CDPATH set, cd echoes the resolved
+    # directory to stdout and would inject a stray line into the stream the
+    # caller parses - and could resolve a relative operand somewhere else.
+    CDPATH= cd -- "$2" || exit 2
     shift 2
 fi
 [ "$#" -ge 1 ] || usage

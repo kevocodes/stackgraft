@@ -37,7 +37,9 @@ fi
 [ "$#" -ge 1 ] || usage
 
 if [ "$1" = "-" ] && [ "$#" -eq 1 ]; then
-    while IFS= read -r path; do
+    # The || guard keeps a final line with no trailing newline: read returns
+    # non-zero at EOF even when it did assign a partial last field.
+    while IFS= read -r path || [ -n "$path" ]; do
         [ -n "$path" ] || continue
         emit "$path"
     done

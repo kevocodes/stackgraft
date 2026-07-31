@@ -21,9 +21,11 @@ Theft is the nastier one, because the symptom surfaces where you are not looking
 
 For each pair, evaluate three booleans against the manifest:
 
-- **W** — does the service mutate the store? (`writes` names it)
+- **W** — does the service mutate the store? (`writes` names it, **or** the service carries `migrates: true`)
 - **X** — is attaching competitive or exclusive? (`competesOn` names it)
 - **N** — does isolation exist inside the running instance? (`backingStores[store].isolation.mechanism` is not `none`, **and** the record carries a `command` that creates the namespace or an `env` that points the overlay at one). A mechanism with no way to apply it *is* `none`: `{"mechanism": "database"}` on its own names a capability and supplies nothing that could exercise it, so reading it as N=yes reaches ISOLATE with nothing to isolate with.
+
+**`migrates: true` makes W yes for every pair of that service**, whatever `writes` lists. A migration is a write to whichever store the process is pointed at, and nothing in the manifest can say which one an entrypoint will reach, so the claim is read against all of them. The service therefore cannot arrive at step 3: it lands on step 4 or step 5, which is exactly the isolate-or-refuse the field promises. Read it before `writes`, and never let a checked-and-empty `writes` cancel it — `writes: []` with `migrates: true` is a service that was correctly found to insert nothing and still rewrites the schema under every other consumer.
 
 Take the steps in order and stop at the first one that matches. **X is evaluated before W and independently of it**: writing is not the only way to break the base stack, so a decided W must never absorb the X question. A Kafka store with `mechanism: "topic-prefix"` satisfies N while `group.id` stays shared — isolate the topics and the overlay still steals partitions from a service nobody modified.
 
@@ -47,8 +49,9 @@ Take the steps in order and stop at the first one that matches. **X is evaluated
 
 ### Escalations that override any recorded claim
 
-Force ISOLATE-or-REFUSE regardless of what the manifest says, because these are visible in the diff:
+Force ISOLATE-or-REFUSE regardless of what the rest of the classification claims. The first is read out of the manifest; the others are read out of the diff and the commands, so they override a manifest that stays silent about them:
 
+- **`migrates: true` on the service**, which is W = yes for every one of its pairs as above. This is the entry the diff cannot supply: a service that migrates from its own entrypoint, with a diff touching no migrations directory and a launch command naming no migrate step, evaluates to W = no on `writes` alone and would otherwise reach reuse while migrating the base store.
 - The worktree diff touches a migrations directory, or a launch/prepare command runs a migration step (`db:migrate`, `alembic`, `rake db:`, `prisma migrate`).
 - The service's entrypoint is a scheduler, cron, beat, or worker singleton. Double-firing means duplicate emails and duplicate charges.
 - The service sends externally visible side effects: email, SMS, webhooks, payments.

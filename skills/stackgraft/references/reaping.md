@@ -34,9 +34,12 @@ Labels are **inserted at an anchor inside the command**, never appended to it. T
 | `… docker … create …` | after `create` | insert |
 | `… docker compose … up …` | none — `up` takes no label flag | **refuse the launch** |
 | recognised launcher, no anchor token after it | none | **refuse the launch** |
-| no recognised launcher token | none — this is a host kind | no labels; register in the sidecar (§4) |
+| container kind naming no recognised launcher at all, quoted launcher text included | none | **refuse the launch** |
+| host kind | — | outside this table: no labels; register in the sidecar (§4) |
 
 Recognised launcher tokens are `docker`, and by CLI compatibility `podman` and `nerdctl`.
+
+**The entry's `kind` selects the rows, not whether a launcher token happens to appear.** A container kind with no anchor is refused however the anchor went missing; a host kind is outside this table altogether and is never refused by it.
 
 Three rules the insertion may not bend:
 
@@ -67,9 +70,11 @@ One row per rule above. A template that is not in the accepted shapes is refused
 | Template | Why |
 |---|---|
 | `docker compose --project-directory {{worktree}} up catalog-api` | `up` is whole-stack and takes no label flag, so there is no anchor. `references/discovery.md` §3 already forbids `up` here; the remedy is the single-unit run form it would have produced anyway |
-| `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` | no recognised launcher token, so no container to label — this is a host kind and belongs in §4, not in this table |
 | `docker --context remote catalog-api` | a recognised launcher with no `run` or `create` token after it: nothing to insert against |
+| `cd {{worktree}} && ./serve-catalog --port {{port}}` on a **container** kind | no recognised launcher token at all, so no anchor. A container this skill cannot label is one it can never reclaim, so it is refused rather than launched bare |
 | `echo "docker run x" \| sh` | the only launcher text sits inside a quoted string. No anchor is found, nothing is written into the string literal, and the launch is refused rather than run bare |
+
+A host kind is in neither table. `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` names no launcher because there is no container to name one for: it launches, carries no labels, and is recorded in the sidecar (§4). Refusing it would refuse the ordinary case. The `./serve-catalog` row above is the same launcher-less shape on a **container** kind, and that one is refused — which is why the entry's `kind` decides and the launcher token does not.
 
 ## 4. Host kinds: the sidecar
 
@@ -162,7 +167,7 @@ The manifest and the sidecar are written under one discipline, through one scrip
 
 Staleness is decided by liveness first and by the clock only where liveness cannot answer. A holder whose pid is gone, or whose recorded start time no longer matches, is provably dead and its lock is reclaimed at once and the reclamation reported. A holder that is provably alive is never stolen from. Only an unprovable holder reaches the time bound, and that asymmetry is the argument: reclaiming from a live holder degrades to last-writer-wins, which the compare-and-swap guard still refuses, while never reclaiming turns one crash into a permanent outage. `SIGKILL` cannot be trapped, which is why a staleness policy is mandatory rather than a refinement.
 
-The script writes exactly three things: its lock directory, one empty staleness reference beside the destination, and the rename of the payload into place. It composes no content and parses no JSON — the agent owns the bytes, and the script owns only the moment they land.
+The script writes exactly four things: its lock directory, the transient name that directory is renamed to while it is being reclaimed — the rename is what elects one waiter out of many, so the name lives for the length of one reclaim and goes with it — one empty staleness reference beside the destination, and the rename of the payload into place. It composes no content and parses no JSON — the agent owns the bytes, and the script owns only the moment they land.
 
 ## 8. The two verdicts
 

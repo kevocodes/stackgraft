@@ -142,12 +142,23 @@ Options must precede the service operand.
 | `… docker [compose] … run …` | immediately after the first `run` token that follows a recognised launcher token | insert `--label k=v` per label |
 | `… docker … create …` | after `create` | insert |
 | `… docker compose … up …` | **none** — `up` takes no label flag | **refuse the launch** |
-| no recognised launcher token | none — treated as host kind | sidecar registration, no labels |
 | launcher present, no anchor token | none | **refuse the launch** |
+| container kind naming no recognised launcher at all | none | **refuse the launch** |
+| the only launcher text sits inside a quoted string — `echo "docker run x" \| sh` | none: an anchor is never matched inside a quoted string, or the insertion edits a string literal and the container still launches bare | **refuse the launch** |
+| host kind | — | outside this table: no labels, sidecar registration |
 
 Recognised launcher tokens: `docker`, and by CLI compatibility `podman` and `nerdctl`; the report pass
 queries each launcher its own templates named, so recognising them costs nothing and avoids a
 gratuitous refusal.
+
+**The entry's `kind` selects the rows, not whether a launcher token happens to appear.** A
+container-kind entry with no anchor is refused however the anchor went missing — absent launcher,
+unrecognised launcher, launcher inside a string, or `up` — and a host-kind entry is outside the rule
+entirely. The quoted-string row is amendment A5's and was written after this table; it is also why the
+original single row "no recognised launcher token ⇒ host kind" had to be split, because
+`echo "docker run x" | sh` on a container-kind entry exposes no recognised launcher and must still be
+refused rather than registered in the sidecar. A pipe, wrapper, or redirect *after* the anchor stays
+accepted: insertion lands ahead of it.
 
 | | |
 |---|---|

@@ -1,6 +1,6 @@
-# manifest-cache
+# manifest-contract
 
-Modified capability. The manifest requirements this capability extends were introduced by `portable-multi-stack` under the directory name `manifest-contract` (`../../../portable-multi-stack/specs/manifest-contract/spec.md`); `../../proposal.md` names the capability `manifest-cache` and that name is carried here. The two names MUST be reconciled to one capability directory before either change is archived, so that `openspec/specs/` gains one manifest capability rather than two covering the same file. Nothing stated in the earlier requirements is replaced.
+Modified capability. Extends the requirements introduced by `portable-multi-stack` (`../../../portable-multi-stack/specs/manifest-contract/spec.md`); nothing already stated there is replaced.
 
 Write discipline (D9) and the three obligations it creates: `../../proposal.md` D9 and Q4. The discipline is stated once here and applies to both cache files; `../overlay-ownership/spec.md` names the sidecar as subject to it.
 

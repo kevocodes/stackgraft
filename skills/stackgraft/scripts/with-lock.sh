@@ -41,12 +41,17 @@
 # Reads no stdin, by design: both other shipped scripts take arguments too, and
 # a helper an agent invokes that blocks forever leaves nothing to diagnose.
 #
-# Writes exactly three things and nothing else:
+# Writes exactly four things and nothing else:
 #   1. the lock directory <destination>.lock, with its owner and tmp files
-#      inside it. Reclaiming renames that directory aside to a unique name and
-#      deletes it, which is how it is removed rather than a fourth write. That
-#      deletion is VERIFIED rather than assumed: an aside that survives its own
-#      removal is a fourth path, so the run says so by name and fails with 4
+#      inside it.
+#   1b. the transient name that directory is renamed to while it is being
+#      reclaimed. The rename is what elects one waiter out of many, so the name
+#      lives for the length of one reclaim and goes with it. The spec names it
+#      (amendment A11) rather than reading it in as the mechanism of "remove":
+#      a carve-out that counts three while four names reach the disk is a
+#      document that does not match the runtime. That deletion is VERIFIED
+#      rather than assumed: an aside that survives its own
+#      removal is debris, so the run says so by name and fails with 4
 #      instead of committing and reporting a successful reclaim over it. Debris
 #      plus a success exit is the worse half - the caller is told the write
 #      landed and learns nothing about what is now sitting in the cache.

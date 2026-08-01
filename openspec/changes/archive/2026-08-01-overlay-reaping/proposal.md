@@ -127,7 +127,7 @@ Ordering is not stylistic. Slice 2 can only find overlays that slice 1 labelled,
 ### Modified
 
 - `portable-runtime`: adds `scripts/reap.sh` and `scripts/with-lock.sh`; `compatibility` gains the `lstart` note.
-- `manifest-cache`: the manifest write becomes serialized (D9). Behavior change to shipped code, admitted deliberately.
+- `manifest-contract`: the manifest write becomes serialized (D9). Behavior change to shipped code, admitted deliberately. The capability `portable-multi-stack` created under that name is extended, not duplicated.
 - `topology-discovery`: `overlayCommand` gains a label-anchor constraint (D2, as amended by A2 and A5).
 
 ## Affected areas
@@ -239,6 +239,16 @@ A9 removed `-B` and the hole moved into the value: `-b 0` — a decimal, so it p
 **Port-range validation still lands, and must not be sold as the fix.** `-b 0`, `-b 99999999` and `-b 018103` are not valid ports, and the last one — a manifest value typed with a leading zero — silently loses all protection today. `scripts/pick-port.sh` already validates 1–65535 with a leading-zero strip in `port_arg()`; `reap.sh` should reuse that shape for consistency. It removes footguns. It closes nothing, and no document may imply otherwise.
 
 **The verification must assert the true behaviour.** `verify.sh:1143`'s A9 negative control never pairs a wrong port with the base-stack container, which is precisely why the suite stayed green through this. The new row must execute the declared residual and assert that the container **is** stopped — a row that documents the limit instead of one that wishes it away. A suite that only tests the shapes we hoped were safe is how three rounds shipped green with a hole in each.
+
+**A11 — the carve-out counts three writes and the script puts four path names on disk. Name the fourth.**
+
+`specs/portable-runtime/spec.md` says the carve-out *"names exactly three writes"*. `scripts/with-lock.sh` also creates `<destination>.lock.stale.<pid>`: the lock directory renamed out of the way while it is being reclaimed, because DS22 requires rename-then-delete — the rename is atomic and elects exactly one of N waiters.
+
+Reading that as already covered — the renamed lock directory is the *mechanism* of clause 1's "remove" — is defensible, and the Phase 3 pass was right to refuse to widen a locked requirement on its own authority. But **a literal count is a literal claim**, and an observer looking at that directory sees four names where the contract promises three. This change spent four amendments learning what a document that does not match the runtime costs; freezing one more into the baseline at archive time would be the same mistake with a shorter fuse.
+
+**Decision: name it.** Clause 1 covers the lock directory *and the transient name it is renamed to while being removed*, and the count becomes four. Nothing about the script changes — this is the spec catching up to code that was already correct, verified, and registered with `cleanup()`. The verification row that enumerates the script's writes against the carve-out enumerates four.
+
+Note what this is not: it is not permission to write a fourth *kind* of thing. The transient is the same directory under another name for the length of one reclaim, and the two properties the rule protects — the script parses no JSON and composes no content — are untouched.
 
 **Resolved, not amended:** the design flagged one blocking unknown — whether `docker compose run` accepts `--label`, the premise the whole D2 mechanism rests on. It does: `-l, --label stringArray  Add or override a label`. Verified against the installed binary.
 

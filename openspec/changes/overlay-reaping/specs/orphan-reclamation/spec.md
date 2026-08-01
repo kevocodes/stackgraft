@@ -174,20 +174,42 @@ Every container query, on the report path and the mutation path alike, MUST carr
 
 ### Requirement: Nothing in the base stack is reachable as a reap target
 
-Candidacy MUST be positive and closed: a container is a candidate only if it carries the full label set with `stackgraft.repo` equal to this repository's `hash8`, so every base-stack container is outside the candidate set by construction rather than by exclusion. In addition, a container publishing a port the manifest records as a `basePort`, or one identified as a base-stack service, MUST be excluded even when it carries a matching label set, and the anomaly MUST be reported. No flag, flag combination, or code path MAY reach a base-stack service.
-(Verify: file review that candidacy is an allowlist; run a reap with the base stack up; hand-label a base-stack container and confirm it is still excluded.)
+Candidacy MUST be positive and closed: a container is a candidate only if it carries the full label set with `stackgraft.repo` equal to this repository's `hash8`, so every base-stack container is outside the candidate set by construction rather than by exclusion.
+
+Exclusion beyond that allowlist MUST be **by supplied port**. A container publishing a port the run supplied as a base-stack port MUST be excluded even when it carries a matching label set, and the anomaly MUST be reported. Those ports MUST reach the actuator as supplied values, one per port, because the scripts parse no JSON. A container mutation MUST therefore refuse until at least one base-stack port has been supplied — absent information is unknown rather than none, and a gate keyed on an optional input is no gate. **No flag, flag combination, or code path MAY stand in for that supply, and none MAY reach a container the supplied ports exclude.** The refusal MUST NOT name an override, because there MUST NOT be one: an assertion that there is nothing to exclude cannot be checked by a runtime that parses no JSON, and an unverifiable assertion that switches the exclusion off is the same absent gate under another name.
+
+Refusing on the **name** of a service MUST NOT be attempted, and the blind spot that leaves MUST be recorded in this requirement rather than only in a reference file. `stackgraft.service` holds a manifest service key and the base stack runs those same services, so a name test would refuse every overlay this capability exists to reclaim; a compose project name would have to come from the manifest the scripts do not parse. **The residual is therefore exactly one shape, and it is accepted: a container carrying this repository's complete label set, whose worktree is unlisted, and whose published port is none of those passed.** Nothing narrower is buildable under the zero-JSON constraint, so the limit is part of the contract and not a note beside it.
+(Verify: file review that candidacy is an allowlist; run a reap with the base stack up; hand-label a base-stack container and confirm it is excluded when its port is supplied and that the mutation refuses outright when no port is supplied; enumerate the flag surface and confirm no shape reaches it.)
 
 #### Scenario: Base stack running
 
 - GIVEN the base stack is up and one orphaned overlay exists
-- WHEN a reap runs with both mutation flags
+- WHEN a reap runs with both mutation flags and the base-stack ports supplied
 - THEN only the orphaned overlay is acted on and every base-stack container is still running
 
 #### Scenario: Base-stack container carrying a matching label
 
 - GIVEN a base-stack container has been hand-labelled with this repository's `stackgraft.repo`
-- WHEN candidates are classified
+- WHEN candidates are classified with that container's published port supplied as a base-stack port
 - THEN it is excluded, the anomaly is reported, and it is not acted on
+
+#### Scenario: Mutation with no base-stack port supplied
+
+- GIVEN a container target under a mutation verb and a run that supplied no base-stack port
+- WHEN the target is proven
+- THEN the target is refused as unknown rather than decided against an empty port set, the container is untouched, and the refusal names the missing port information without naming a way around it
+
+#### Scenario: No flag stands in for a supplied port
+
+- GIVEN the whole flag surface of the actuator
+- WHEN every shape that supplies no base-stack port is exercised against a hand-labelled base-stack container
+- THEN every one of them refuses and the container is still running
+
+#### Scenario: The accepted residual
+
+- GIVEN a container carrying this repository's complete label set, whose worktree is unlisted, and whose published port is none of those the run passed
+- WHEN it is classified
+- THEN it is treated as an orphan, which is the declared limit of exclusion-by-supplied-port and not a defect to be fixed by widening the test
 
 #### Scenario: Only the base stack is running
 
@@ -232,8 +254,8 @@ The default MUST be report-only. Stopping a container requires an explicit mutat
 
 ### Requirement: No mutation without proven ownership
 
-Before any stop, removal, or signal, the run MUST hold both an orphan classification from the liveness requirement and an ownership proof from `../overlay-ownership/spec.md`: a `hash8`-scoped full label set for container kinds, or a sidecar entry whose `(pid, lstart)` matches verbatim for host kinds. Ownership MUST NOT be inferred from port occupancy, container name, image, compose project, or from a manifest record alone. No process the run did not start MAY be signalled. A refusal MUST name its reason and MUST NOT stop the run from acting on the remaining proven candidates.
-(Verify: occupy an overlay port with an unlabelled process and confirm it survives both flags; exercise the recycled-pid case; delete the manifest and confirm nothing changes about what is reapable.)
+Before any stop, removal, or signal, the run MUST hold both an orphan classification from the liveness requirement and an ownership proof from `../overlay-ownership/spec.md`: a `hash8`-scoped full label set for container kinds, or a sidecar entry whose `(pid, lstart)` matches verbatim for host kinds. Ownership MUST NOT be inferred from port occupancy, container name, image, compose project, or from a manifest record alone. No process the run did not start MAY be signalled. A refusal MUST name its reason and MUST NOT stop the run from acting on the remaining proven candidates — including a target that fails at the parsing layer rather than at the proof, since a malformed target is one target's problem and refusing the whole invocation for it withholds the reap from the orphans that were named correctly beside it. What is not a target at all — the verb, the repository identifier, the options — MAY still be a usage error, because none of those belongs to a single target.
+(Verify: occupy an overlay port with an unlabelled process and confirm it survives both flags; exercise the recycled-pid case; delete the manifest and confirm nothing changes about what is reapable; name a malformed target beside two proven ones and confirm both proven ones are acted on.)
 
 #### Scenario: Port held by something unowned
 
@@ -252,6 +274,12 @@ Before any stop, removal, or signal, the run MUST hold both an orphan classifica
 - GIVEN the manifest records an overlay for which no labelled container and no sidecar entry exists
 - WHEN the reap runs
 - THEN nothing is acted on for that service and the discrepancy is reported
+
+#### Scenario: Malformed target beside proven ones
+
+- GIVEN one invocation naming two proven orphans and one target that will not parse
+- WHEN the run executes
+- THEN the malformed target is refused by name, both proven orphans are acted on, and the run reports how many it acted on before exiting non-zero
 
 ### Requirement: The report feeds known-held ports into port selection
 

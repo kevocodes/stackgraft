@@ -3,8 +3,8 @@
 #           re-proving inside this script that it is this repository's.
 #
 # usage:  sh scripts/reap.sh [-C <repoRoot>] [-b <basePort>]... report <hash8>
-#         sh scripts/reap.sh [-C <repoRoot>] (-b <basePort>... | -B) -m stop   <hash8> <target>...
-#         sh scripts/reap.sh [-C <repoRoot>] (-b <basePort>... | -B) -m remove <hash8> <target>...
+#         sh scripts/reap.sh [-C <repoRoot>] -b <basePort>... -m stop   <hash8> <target>...
+#         sh scripts/reap.sh [-C <repoRoot>] -b <basePort>... -m remove <hash8> <target>...
 #
 #         -C  the repository root - the MAIN worktree, as fingerprint.sh takes
 #             it. Defaults to the working directory.
@@ -19,17 +19,34 @@
 #         -b  one host port the manifest records as a baseStack port, repeated
 #             once per port. This script parses no JSON, so the caller reads
 #             them out of the manifest; the decision they drive stays here.
-#         -B  the manifest records NO baseStack port. A claim, not an omission,
-#             and the only other way to satisfy the requirement below.
+#             At least one is MANDATORY for a container mutation.
 #
-# Base-stack information is MANDATORY for a container mutation, and its absence
-# is unknown rather than none. A caller that passes neither -b nor -B has told
-# this script nothing about which ports belong to the base stack, and deciding
-# a stop against a port set that was never supplied is deciding blind - which
-# is how a hand-labelled base-stack container gets stopped by omitting a flag.
-# So every c: target under a mutation verb is refused until one of the two is
-# present. The report path is unaffected: it takes no decision, and it is what
-# every invocation runs.
+# A container mutation needs at least one real base port, and its absence is
+# unknown rather than none. A caller that passes no -b has told this script
+# nothing about which ports belong to the base stack, and deciding a stop
+# against a port set that was never supplied is deciding blind - which is how a
+# hand-labelled base-stack container gets stopped by omitting a flag. So every
+# c: target under a mutation verb is refused until a port is supplied, and that
+# refusal has NO override. A flag asserting that the manifest records none was
+# tried and removed: nothing here can check such a claim, so an unverifiable
+# assertion that switches the exclusion off is the same gate keyed on an
+# optional input under another name - and it is a claim about the MANIFEST
+# while the decision is about the base stack's real ports, which diverge in the
+# manifest-less mode the skill supports. The report path is unaffected: it
+# takes no decision, and it is what every invocation runs.
+#
+# The cost is real and is accepted rather than worked around: a repository
+# whose manifest records no baseStack port cannot mutate a container target
+# until one is supplied. That repository is degenerate for this skill, which
+# exists to overlay onto a running base stack whose ports the overlay must
+# avoid - pick-port.sh already needs those same ports.
+#
+# Declared limit, past the ports: a base-stack service is not identifiable from
+# here. stackgraft.service holds a manifest service key and the base stack runs
+# those same services, so refusing on the name would refuse every overlay this
+# script exists to reclaim. Exactly one shape falls outside the port test - a
+# container carrying this repository's complete label set, whose worktree is
+# unlisted, and whose published port is none of those passed.
 #
 # target: c:<container-id>            one argument
 #         p:<pid> <recorded-lstart>   TWO arguments, the second verbatim as it
@@ -44,12 +61,13 @@
 #         held       one port a live overlay of this repository holds
 #         legacy     a category this report structurally cannot enumerate
 #         degraded   something could not be read - which is UNKNOWN, never zero
-#         refused    a target that failed its proof, with the reason
+#         refused    a target that failed its proof or would not parse, and why
 #         acted      how many targets were acted on. A skipped no-op is not one.
 # exit:   0 ok
 #         2 usage error
-#         3 at least one target failed its proof and was refused; every target
-#           that DID prove out was still acted on, and acted says how many
+#         3 at least one target was refused - it failed its proof, or it would
+#           not parse; every target that DID prove out was still acted on, and
+#           acted says how many
 #         4 environment failure, including a proven target the runtime would
 #           not act on. The remaining targets are still acted on and acted is
 #           still reported.
@@ -66,6 +84,14 @@
 # and there is no transaction for a partial run to violate. What it did cost
 # was real - one unprovable target withheld the reap from every orphan named
 # beside it, which is the work the caller asked for and proved out.
+#
+# That holds at the PARSING layer too, and it did not used to. A target that
+# will not parse - a p: with a non-decimal pid, an empty c: id, a shape that is
+# neither - is one malformed target, so it is refused by name like any other
+# unprovable one while the targets that did prove out are still acted on. Only
+# the things that are not a target at all remain usage errors: the verb, the
+# hash8, and the options, none of which belong to one target and any of which
+# leaves the run with no idea what it was asked to do.
 #
 # Reads no stdin and WRITES NO FILE, under any verb. The report path in
 # particular takes no lock, creates none, and must complete while another
@@ -97,8 +123,8 @@ nl='
 usage() {
     [ "$#" -eq 0 ] || printf '%s: %s\n' "$me" "$1" >&2
     printf 'usage: sh %s [-C <repoRoot>] [-b <basePort>]... report <hash8>\n' "$0" >&2
-    printf '       sh %s [-C <repoRoot>] (-b <basePort>... | -B) -m stop|remove <hash8> <target>...\n' "$0" >&2
-    printf '       -b one baseStack port, repeated; -B the manifest records none\n' >&2
+    printf '       sh %s [-C <repoRoot>] -b <basePort>... -m stop|remove <hash8> <target>...\n' "$0" >&2
+    printf '       -b one baseStack port, repeated once per port; a container mutation needs at least one\n' >&2
     printf '       target: c:<container-id>  or  p:<pid> <recorded-lstart>\n' >&2
     exit 2
 }
@@ -215,7 +241,6 @@ wt_state() {
 repo_root=.
 base_ports=' '
 base_given=0
-base_none=0
 mutate=0
 
 while [ "$#" -gt 0 ]; do
@@ -230,8 +255,6 @@ while [ "$#" -gt 0 ]; do
             base_ports="$base_ports$2 "
             base_given=1
             shift 2 ;;
-        -B) base_none=1
-            shift ;;
         -m) mutate=1
             shift ;;
         --) shift
@@ -240,14 +263,6 @@ while [ "$#" -gt 0 ]; do
         *)  break ;;
     esac
 done
-
-# The two are contradictory claims about one thing, so taking both would leave
-# the run with no answer to give. base_known is the whole question the
-# container proof asks: was this told anything at all about the base stack.
-if [ "$base_given" -eq 1 ] && [ "$base_none" -eq 1 ]; then
-    usage '-B states the manifest records no baseStack port, so it cannot be combined with -b'
-fi
-base_known=$((base_given + base_none))
 
 [ "$#" -ge 1 ] || usage 'missing verb: report, stop or remove'
 verb=$1
@@ -503,9 +518,13 @@ prove_container() {
     # comparing against it would answer "no base port matches" for every
     # container on the host - which is a gate keyed on an optional input, and
     # so no gate at all.
-    if [ "$base_known" -eq 0 ]; then
+    #
+    # The message names what is missing and nothing else. It used to offer the
+    # flag that switched the whole rule off, which is a refusal advertising its
+    # own bypass; there is no bypass now, so there is none to name.
+    if [ "$base_given" -eq 0 ]; then
         refuse "c:$_id" base-stack-ports-unknown \
-            'no base-stack port information was given: pass -b <port> once per port the manifest records as a baseStack port, or -B to state that it records none. Absent information is unknown, and unknown refuses'
+            'no base-stack port was given: pass -b <port> once per port the manifest records as a baseStack port. Absent information is unknown, and unknown refuses'
         return 0
     fi
     if [ "$docker_ok" -eq 0 ]; then
@@ -551,7 +570,10 @@ prove_process() {
     _pid=$1
     _rec=$2
     case $_pid in
-        '' | *[!0-9]*) usage "a p: target needs a decimal pid: '$_pid'" ;;
+        '' | *[!0-9]*)
+            refuse "p:$_pid" malformed-target \
+                "a p: target needs a decimal pid: '$_pid'"
+            return 0 ;;
     esac
     case $_rec in
         '' | '-' | null)
@@ -579,22 +601,44 @@ prove_process() {
     plan="${plan}p$tab$_pid$nl"
 }
 
+# A target that will not parse is refused like any other unprovable target: by
+# name, with its reason, while the rest of the list is still proven and acted
+# on. Ending the whole invocation here is the shape that was already corrected
+# one layer down, and it costs the same thing - the reap the caller asked for
+# on the orphans that were named correctly beside the typo.
+#
+# The p: branch consumes its second argument BEFORE deciding anything, so a
+# refused p: target does not leave its recorded lstart to be read as the next
+# target. When there is no second argument there is no next target either, and
+# the loop ends after the refusal.
 while [ "$#" -gt 0 ]; do
     target=$1
     shift
     case $target in
         c:*)
-            [ -n "${target#c:}" ] || usage 'empty container id in a c: target'
-            prove_container "${target#c:}"
+            if [ -z "${target#c:}" ]; then
+                refuse "$target" malformed-target 'empty container id in a c: target'
+            else
+                prove_container "${target#c:}"
+            fi
             ;;
         p:*)
-            [ "$verb" != remove ] || usage 'remove has no meaning for a process; stop signals it'
-            [ "$#" -ge 1 ] || usage 'a p: target takes two arguments: p:<pid> <recorded-lstart>'
-            recorded=$1
-            shift
-            prove_process "${target#p:}" "$recorded"
+            if [ "$#" -eq 0 ]; then
+                refuse "$target" malformed-target \
+                    'a p: target takes two arguments: p:<pid> <recorded-lstart>'
+            else
+                recorded=$1
+                shift
+                if [ "$verb" = remove ]; then
+                    refuse "$target" malformed-target \
+                        'remove has no meaning for a process; stop signals it'
+                else
+                    prove_process "${target#p:}" "$recorded"
+                fi
+            fi
             ;;
-        *)  usage "target must be c:<container-id> or p:<pid> <recorded-lstart>: '$target'" ;;
+        *)  refuse "$target" malformed-target \
+                'a target is c:<container-id> or p:<pid> <recorded-lstart>' ;;
     esac
 done
 
@@ -666,7 +710,7 @@ if [ "$unactionable" -gt 0 ]; then
     exit 4
 fi
 if [ "$refusals" -gt 0 ]; then
-    printf '%s: %s target(s) failed their proof and were refused individually; %s proven target(s) were acted on.\n' \
+    printf '%s: %s target(s) were refused individually, each by name and with a reason; %s proven target(s) were acted on.\n' \
         "$me" "$refusals" "$acted" >&2
     exit 3
 fi

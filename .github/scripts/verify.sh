@@ -310,11 +310,19 @@ inventory() { ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort | tr '
 lock_said() { printf '%s\n' "$1" | grep "^${LOCK##*/}:"; }
 
 # Prints one line per path in $1 that is neither expected ($2, space-separated
-# basenames) nor named anywhere in what the run said ($3).
+# basenames) nor named anywhere in what the run said ($3). $4 is the set of
+# basenames the run may NEVER excuse, and it exists because the allowance in
+# $3 is a substring test that was swallowing the one path this row polices:
+# every refuse() and reclaim() message spells the lock's full path, so
+# "<dest>.lock" appeared inside them and was excused permanently, in BOTH W1
+# rows. The lock directory is transient by contract - it is removed on every
+# exit, successful or not - so its survival is debris whatever the run said
+# about it. Naming a path is not the same as leaving it behind on purpose.
 unreported_debris() {
     ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort ) | while read -r _p; do
         _n=${_p#./}
         case " $2 " in *" $_n "*) continue ;; esac
+        case " ${4:-} " in *" $_n "*) printf '%s\n' "$_n"; continue ;; esac
         printf '%s' "$3" | grep -qF "$_n" || printf '%s\n' "$_n"
     done
 }
@@ -330,7 +338,7 @@ w1_before=$(inventory "$w1")
 w1_msg=$(sh "$LOCK" "$d" "$w1/payload" "$fp" 2>&1)
 rc=$?
 w1_after=$(inventory "$w1")
-w1_left=$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")
+w1_left=$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")" 'w1.json.lock')
 if [ "$rc" -eq 0 ] && [ -z "$w1_left" ] && grep -q 'w1-new' "$d"; then
     ok "an ordinary reclaim leaves nothing but the destination ($w1_before-> $w1_after)"
 else
@@ -340,15 +348,36 @@ fi
 # ...and the enumeration can see a fourth path appear. Named after the one that
 # really leaked, so a detector that stopped looking is caught by the same shape.
 : > "$w1/w1.json.lock.stale.999"
-[ -n "$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")" ] \
+[ -n "$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")" 'w1.json.lock')" ] \
     && ok "rejected: an aside left beside the destination and named nowhere" \
     || fail "the debris enumeration cannot notice a fourth path"
+rm -f "$w1/w1.json.lock.stale.999"
+
+# ...and it can see the LOCK DIRECTORY itself, which is the path the allowance
+# used to swallow. Every refusal and every reclaim message spells the lock's
+# full path, so a substring test read that mention as "the run named it" and
+# excused a surviving lock in both W1 rows. It is planted after the run for the
+# same reason the aside above is: the enumeration has to be able to notice it.
+mkdir "$w1/w1.json.lock"
+[ -n "$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")" 'w1.json.lock')" ] \
+    && ok "rejected: a surviving lock directory, which the run's own message spells and cannot excuse" \
+    || fail "ACCEPTED but must be rejected: a lock directory left behind, excused by a message that merely names its path"
 rm -rf "$w1"
 
 # A reclaim whose deletion cannot complete: the aside survives, and reporting
 # success over it is the worse half of the leak. Made deterministic with a
 # subdirectory rm cannot empty - root ignores those permissions, so the row
 # stands down loudly there instead of passing for the wrong reason.
+#
+# The acceptance test is a FUNCTION, and 4 is spelled out in it rather than
+# "not zero". The negative control below is a different failure that also
+# exits non-zero, and a row that took any non-zero code would print this row's
+# sentence over it - "fails loudly and names what it left" - for a run that
+# reclaimed nothing and left the whole lock directory. Sharing the function is
+# what makes the control exercise the condition the row really uses instead of
+# a restatement of it that could drift.
+aside_row_accepts() { [ "$1" -eq 4 ] && [ -z "$2" ] && [ "$3" = "$4" ]; }
+
 if [ "$(id -u)" -ne 0 ]; then
     w1b=$(mktemp -d)
     d="$w1b/w1b.json"
@@ -363,14 +392,51 @@ if [ "$(id -u)" -ne 0 ]; then
     msg=$(sh "$LOCK" "$d" "$w1b/payload" "$fp" 2>&1)
     rc=$?
     after=$(git hash-object --stdin < "$d")
-    left=$(unreported_debris "$w1b" 'w1b.json payload' "$(lock_said "$msg")")
+    left=$(unreported_debris "$w1b" 'w1b.json payload' "$(lock_said "$msg")" 'w1b.json.lock')
     chmod -R 700 "$w1b" 2>/dev/null
-    if [ "$rc" -ne 0 ] && [ -z "$left" ] && [ "$before" = "$after" ]; then
+    if aside_row_accepts "$rc" "$left" "$before" "$after"; then
         ok "a reclaim that cannot delete its aside fails loudly (exit $rc) and names what it left"
     else
         fail "unremovable aside: exit $rc, bytes $before -> $after, unreported '$left'"
     fi
     rm -rf "$w1b"
+
+    # The negative control for the row above, and it needs a holder that is
+    # provably ALIVE: with one, with-lock.sh never reclaims, refuses at 3 and
+    # leaves the entire lock directory - a different failure, on the same
+    # fixture. The row above must REJECT it. Two ways it could not: an exit
+    # test that accepts any non-zero code, and a debris allowance that excuses
+    # <dest>.lock because the refusal message spells that path.
+    if [ "$lstart_here" -eq 1 ]; then
+        w1c=$(mktemp -d)
+        d="$w1c/w1c.json"
+        printf 'w1c\n' > "$d"
+        printf 'w1c-new\n' > "$w1c/payload"
+        fp=$(git hash-object --stdin < "$d")
+        before=$(git hash-object --stdin < "$d")
+        sleep 60 &
+        holdpid=$!
+        mkdir -p "$d.lock/stuck"
+        printf 'x\n' > "$d.lock/stuck/file"
+        printf '%s\n%s\n%s\n' "$holdpid" \
+            "$(ps -o lstart= -p "$holdpid" | awk 'NF { print; exit }')" "$(uname -n)" > "$d.lock/owner"
+        chmod 500 "$d.lock/stuck"
+        msg=$(sh "$LOCK" "$d" "$w1c/payload" "$fp" 2>&1)
+        rc=$?
+        after=$(git hash-object --stdin < "$d")
+        left=$(unreported_debris "$w1c" 'w1c.json payload' "$(lock_said "$msg")" 'w1c.json.lock')
+        chmod -R 700 "$w1c" 2>/dev/null
+        kill "$holdpid" 2>/dev/null
+        wait "$holdpid" 2>/dev/null
+        if aside_row_accepts "$rc" "$left" "$before" "$after"; then
+            fail "ACCEPTED but must be rejected: a live holder read as the unremovable-aside failure (exit $rc, unreported '$left')"
+        else
+            ok "rejected: a live holder is not that failure - exit $rc, and the lock it left is reported ('$left')"
+        fi
+        rm -rf "$w1c"
+    else
+        printf '  skip  the live-holder control for the unremovable-aside row (no ps -o lstart=)\n'
+    fi
 else
     printf '  skip  the unremovable-aside row (running as root, which ignores the mode)\n'
 fi
@@ -840,6 +906,90 @@ p_mut=$(extract_probe "$REAP" | awk 'NR == 1 { sub(/^#/, "!") } { print }' | git
     && ok "rejected: a probe copy with one byte changed" \
     || fail "the byte-identity comparison cannot notice a changed byte"
 
+# --- A9  the base-port requirement has no override, and its refusal says so --
+# The fix this replaces keyed the refusal on "was anything said about the base
+# stack" and answered a bare -B as yes. Nothing validated that claim: it
+# supplied zero ports, so every comparison missed and a hand-labelled
+# base-stack container was stopped with acted 1 and exit 0. Container mutation
+# now requires at least one real -b, with no override - and a refusal that
+# hands the reader a way past itself is not a refusal, so the message is
+# asserted as well as the exit code.
+#
+# No runtime is needed for either: the base-port gate fires before anything is
+# asked about the container.
+#
+# Both spellings are checked, the retired flag by name and the "or <flag>"
+# shape any replacement for it would take, because the defect was not that one
+# letter existed - it was that the refusal advertised an exit.
+offers_an_out() { printf '%s' "$1" | grep -qE -- '-B|[Oo]r +-[A-Za-z]'; }
+
+reap_run -m stop 00c0ffee 'c:deadbeefcafe'
+if [ "$reap_rc" -eq 3 ] \
+   && printf '%s' "$reap_out" | grep -q 'base-stack-ports-unknown' \
+   && printf '%s' "$reap_out" | grep -q -- '-b <port>' \
+   && ! offers_an_out "$reap_out"; then
+    ok "a container mutation with no base port refuses and names no way around it"
+else
+    fail "no-base-port refusal: exit $reap_rc, said '$reap_out'"
+fi
+
+# ...and the detector can see an advertised bypass. This is the wording that
+# shipped, verbatim, so a row that stopped looking is caught by the exact text
+# it was written against.
+offers_an_out 'no base-stack port information was given: pass -b <port> once per port the manifest records as a baseStack port, or -B to state that it records none' \
+    && ok "rejected: the shipped wording, which ended by naming the flag that switched the rule off" \
+    || fail "the bypass detector cannot fire on the wording it was written against"
+
+# The flag itself reaches nothing: it is an unknown option now, not a shape the
+# parser still answers.
+reap_run -B -m stop 00c0ffee 'c:deadbeefcafe'
+if [ "$reap_rc" -eq 2 ] && printf '%s' "$reap_out" | grep -q "unknown option: '-B'"; then
+    ok "the retired base-port override is an unknown option, not a flag with reduced powers"
+else
+    fail "the retired override: exit $reap_rc, said '$reap_out'"
+fi
+
+# ...and that exit 2 is about the retired flag, not about any flag: a real port
+# in the same position parses and gets as far as the target proof.
+reap_run -b 18103 -m stop 00c0ffee 'c:deadbeefcafe'
+if [ "$reap_rc" -ne 2 ]; then
+    ok "rejected: a usage error for a supplied base port, which the parser must accept ($reap_rc)"
+else
+    fail "a supplied -b was rejected as a usage error, so the row above proves nothing"
+fi
+
+# The usage text must not advertise it either. An agent reads the usage line
+# before it reads anything else.
+reap_run
+if ! offers_an_out "$reap_out"; then
+    ok "the usage text names no base-port override"
+else
+    fail "the usage text still advertises an override: '$reap_out'"
+fi
+
+# --- W5  a malformed target is one target's problem, not the invocation's ----
+# C2's shape, one layer up: a target that would not parse ended the whole run
+# at exit 2 with the proven orphans beside it left running and no acted record
+# printed at all - which contradicts both the reference file and the script's
+# own comment on that record. The docker half of this pair, with two proven
+# orphans around the malformed one, is in the fixture block below.
+reap_run -b 18103 -m stop 00c0ffee 'c:' 'zzz'
+if [ "$reap_rc" -eq 3 ] \
+   && [ "$(printf '%s\n' "$reap_out" | grep -c 'malformed-target')" -eq 2 ] \
+   && printf '%s' "$reap_out" | grep -q "^acted${TAB}0\$"; then
+    ok "an empty c: id and an unrecognised target shape are two refusals, and the run still reports what it did"
+else
+    fail "malformed target shapes: exit $reap_rc, said '$reap_out'"
+fi
+
+# ...and the reason is not handed out to targets that parse.
+reap_run -b 18103 -m stop 00c0ffee 'c:deadbeefcafe'
+if printf '%s' "$reap_out" | grep -q 'malformed-target'; then
+    fail "a well-formed c: target was refused as malformed"
+else
+    ok "rejected: the malformed-target reason on a target that parses"
+fi
+
 # --- V14, V19, V20, V22  the refusal fixtures --------------------------------
 # The refusals come before the positive that proves the actuator can act at
 # all, because what this script is worth is what it declines to do. Each one is
@@ -885,22 +1035,30 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     fixture_container "$RH" "$gone_wt" storefront 18104 9 ; future=$cid
     fixture_container "$RH" "$gone_wt" worker 18105 1 'exit 0' ; exited=$cid
     fixture_container "$RH" "$gone_wt" storefront 18106 ; mixed=$cid
+    fixture_container "$RH" "$gone_wt" worker 18107 ; residual=$cid
+    fixture_container "$RH" "$gone_wt" storefront 18108 ; w5a=$cid
+    fixture_container "$RH" "$gone_wt" storefront 18109 ; w5b=$cid
 
-    reap_run -C "$repo" -B -m stop "$RH" "c:$livewt"
+    # 18103 is this fixture repository's one base-stack port throughout, so
+    # every mutation row carries it - which is what the requirement asks for
+    # and what the rows below then have something real to be measured against.
+    # None of the other fixtures publishes it, so the base-stack branch stays
+    # keyed to the container it is about.
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$livewt"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'worktree-still-listed'; then
         ok "rejected: a labelled overlay whose worktree is still listed"
     else
         fail "live-worktree target: exit $reap_rc, said '$reap_out'"
     fi
 
-    reap_run -C "$repo" -B -m stop "$RH" "c:$bare"
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$bare"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'not-a-labelled-overlay'; then
         ok "rejected: an unlabelled base-stack-shaped container"
     else
         fail "unlabelled target: exit $reap_rc, said '$reap_out'"
     fi
 
-    reap_run -C "$repo" -B -m stop "$RH" "c:$future"
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$future"
     if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
         ok "rejected: a label contract version this run does not recognise"
     else
@@ -931,15 +1089,62 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         fail "-b omitted: exit $reap_rc, state $(docker inspect --format '{{.State.Status}}' "$handlabelled" 2>/dev/null), said '$reap_out'"
     fi
 
-    # ...and the refusal is the missing information, not a blanket refusal:
-    # -B says the manifest records no base-stack port, which is a claim rather
-    # than an omission, and under it the run proceeds. The C2 row below acts on
-    # a real orphan with exactly that flag, so this pair covers both halves.
+    # ...and the refusal is the missing information, not a blanket refusal.
+    # Two halves prove that: the report path decides nothing, so it runs with
+    # no base-stack information at all; and the rows further down act on a real
+    # orphan the moment a port is supplied.
     reap_run -C "$repo" report "$RH"
     if [ "$reap_rc" -eq 0 ] && printf '%s' "$reap_out" | grep -q "^legacy${TAB}"; then
         ok "the report path still runs with no base-stack information - only mutation refuses"
     else
         fail "report with no -b: exit $reap_rc, said '$reap_out'"
+    fi
+
+    # --- A9  no flag shape that names no port reaches a base-stack container -
+    # The row above proves ONE way in is closed. This one enumerates the flag
+    # surface, because the previous fix closed the omission and then opened a
+    # flag that reopened it: -B asserted there was nothing to exclude, nothing
+    # could check the assertion, and the same container the -b 18103 row proves
+    # is a base-stack service was stopped with acted 1 and exit 0.
+    #
+    # Every entry below is a shape that supplies no base-stack port, run
+    # against the container the two rows above have already established IS one.
+    # Each must refuse and leave it running. The retired flag stays in the list
+    # on purpose: it is the fixture where the refusal was bypassable, and the
+    # row is only worth having while it can still be run.
+    a9_bad=''
+    a9_try() {
+        _label=$1; _want=$2; _cid=$3; _verb=$4
+        shift 4
+        reap_run -C "$repo" "$@" -m "$_verb" "$RH" "c:$_cid"
+        _st=$(docker inspect --format '{{.State.Status}}' "$_cid" 2>/dev/null)
+        [ "$reap_rc" -eq "$_want" ] && [ "$_st" = running ] && return 0
+        a9_bad="$a9_bad [$_label: wanted exit $_want with it running, got exit $reap_rc and '${_st:-gone}']"
+    }
+
+    a9_try 'no base-port flag at all'            3 "$handlabelled" stop
+    a9_try 'the retired override'                2 "$handlabelled" stop   -B
+    a9_try 'the retired override, twice'         2 "$handlabelled" stop   -B -B
+    a9_try 'no base-port flag, under remove'     3 "$handlabelled" remove
+    a9_try 'the retired override, under remove'  2 "$handlabelled" remove -B
+    if [ -z "$a9_bad" ]; then
+        ok "no flag shape that names no base port reaches a base-stack container: all five refuse, it is still running"
+    else
+        fail "a base-stack container was reachable:$a9_bad"
+    fi
+
+    # ...and the enumeration can report a shape that DID reach its target. The
+    # fixture is the declared residual itself, executed rather than asserted: a
+    # port is supplied, it is simply not this container's, so the exclusion has
+    # nothing to match and the orphan is acted on. That is the accepted limit
+    # of exclusion-by-supplied-port - and it is also what proves the five rows
+    # above are not five refusals of everything.
+    a9_bad=''
+    a9_try 'a supplied port that is not this container-s' 3 "$residual" stop -b 19999
+    if [ -n "$a9_bad" ]; then
+        ok "rejected: the enumeration coming back silent for a shape that reached its target"
+    else
+        fail "the flag-surface enumeration cannot report a container it failed to protect"
     fi
 
     # --- C2  a refusal refuses its own target, not the invocation -----------
@@ -950,7 +1155,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     # refusing the whole invocation costs the proven work and buys nothing.
     # Both sets must be reported: the refusal by name, and the count of what was
     # acted on.
-    reap_run -C "$repo" -B -m stop "$RH" "c:$mixed" "c:$livewt"
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$mixed" "c:$livewt"
     mixed_state=$(docker inspect --format '{{.State.Status}}' "$mixed" 2>/dev/null)
     live_state=$(docker inspect --format '{{.State.Status}}' "$livewt" 2>/dev/null)
     if [ "$reap_rc" -eq 3 ] \
@@ -960,6 +1165,30 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         ok "a refused target does not stop the proven one: the orphan is acted on, the live overlay refused"
     else
         fail "proven + unproven in one invocation: exit $reap_rc, orphan $mixed_state, live $live_state, said '$reap_out'"
+    fi
+
+    # --- W5  the same rule one layer up, at the parsing layer ---------------
+    # A target that would not parse used to end the whole invocation at exit 2:
+    # both proven orphans beside it left running, and no acted record printed
+    # at all - the exact half of C2 that was fixed for the proof layer, still
+    # shipping at the layer before it. The malformed target sits BETWEEN the
+    # two proven ones, so a run that stopped at the first refusal and one that
+    # skipped only the refusal are distinguishable.
+    #
+    # 'p:abc' carries a second argument because a p: target takes two by
+    # contract, malformed or not - the parse consumes what the caller wrote as
+    # its start time rather than reading the next target as one.
+    reap_run -C "$repo" -b 18103 -m stop "$RH" \
+        "c:$w5a" 'p:abc' 'Wed Jul 30 12:00:00 2026' "c:$w5b"
+    w5a_state=$(docker inspect --format '{{.State.Status}}' "$w5a" 2>/dev/null)
+    w5b_state=$(docker inspect --format '{{.State.Status}}' "$w5b" 2>/dev/null)
+    if [ "$reap_rc" -eq 3 ] \
+       && printf '%s' "$reap_out" | grep -q 'malformed-target' \
+       && printf '%s' "$reap_out" | grep -q "^acted${TAB}2\$" \
+       && [ "$w5a_state" = exited ] && [ "$w5b_state" = exited ]; then
+        ok "a target that will not parse is one refusal: both proven orphans are still acted on and acted says 2"
+    else
+        fail "malformed target beside proven ones: exit $reap_rc, first '$w5a_state', second '$w5b_state', said '$reap_out'"
     fi
 
     # The removal flag on its own mutates nothing and says what is missing.
@@ -975,7 +1204,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
 
     # Under stop an already-exited container is a no-op, so it is reported and
     # skipped and MUST NOT be counted as work done: acted stays at zero.
-    reap_run -C "$repo" -B -m stop "$RH" "c:$exited"
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$exited"
     if [ "$reap_rc" -eq 0 ] \
        && printf '%s' "$reap_out" | grep -q 'skipped-not-running' \
        && printf '%s' "$reap_out" | grep -q "^acted${TAB}0\$"; then
@@ -1001,16 +1230,22 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
 
     # Under remove the same exited container IS a target - D8's corollary is a
     # filter on the state, not a comment about it.
-    reap_run -C "$repo" -B -m remove "$RH" "c:$exited"
+    reap_run -C "$repo" -b 18103 -m remove "$RH" "c:$exited"
     if [ "$reap_rc" -eq 0 ] && ! docker inspect "$exited" >/dev/null 2>&1; then
         ok "an exited container is a target under remove"
     else
         fail "exited container under remove: exit $reap_rc, said '$reap_out'"
     fi
 
+    # Removal has no meaning for a process, and that is the target's problem
+    # rather than the invocation's: refused by name, with the run's account of
+    # itself still printed. pid 1 is used because it is certain to exist, and
+    # nothing here reaches the signal.
     reap_run -C "$repo" -m remove "$RH" 'p:1' 'x'
-    if [ "$reap_rc" -eq 2 ] && printf '%s' "$reap_out" | grep -q 'no meaning for a process'; then
-        ok "rejected: remove against a process target, which has no meaning"
+    if [ "$reap_rc" -eq 3 ] \
+       && printf '%s' "$reap_out" | grep -q 'no meaning for a process' \
+       && printf '%s' "$reap_out" | grep -q "^acted${TAB}0\$"; then
+        ok "rejected: remove against a process target, refused by name and not as a usage error"
     else
         fail "remove against a p: target: exit $reap_rc, said '$reap_out'"
     fi

@@ -68,6 +68,312 @@ sh "$SKILL/scripts/fingerprint.sh" >/dev/null 2>&1
 
 rm -rf "$wt"
 
+# --------------------------------------------------- lock and swap ----------
+section "lock and compare-and-swap"
+
+LOCK="$SKILL/scripts/with-lock.sh"
+lockdir=$(mktemp -d)
+printf 'replacement\n' > "$lockdir/payload"
+
+# Counts the non-blank lines one ps invocation reports for a single pid. Two
+# calls make a probe rather than one: a ps that ignores -p answers the first
+# call plausibly and the second with the whole table.
+probe_lines() { ps -o lstart= -p "$1" 2>/dev/null | awk 'NF { n++ } END { print n + 0 }'; }
+if [ "$(probe_lines $$)" = 1 ] && [ "$(probe_lines 1)" = 1 ]; then
+    lstart_here=1
+else
+    lstart_here=0
+fi
+
+# Releases whatever is blocked reading the FIFO the holder was given as its
+# destination. Read-WRITE is deliberate: opening a FIFO write-only blocks until
+# a reader appears, so it would hang here forever exactly when the reader has
+# already died - the case this is called to clean up after. Read-write never
+# blocks, and closing it hands the reader its EOF.
+#
+# Signalling the process tree was the alternative and it does not work: plain
+# ps lists only processes on the current terminal, so in CI, where there is no
+# terminal, the walk finds no children at all and the run hangs with nothing to
+# diagnose.
+unblock() { : <> "$1"; }
+
+# Waits for a holder to have actually taken the lock instead of sleeping a
+# guessed interval: the owner file is the last thing acquisition writes.
+await_owner() {
+    _n=0
+    while [ "$_n" -lt 30 ]; do
+        [ -f "$1/owner" ] && return 0
+        _n=$((_n + 1))
+        [ "$_n" -gt 20 ] && sleep 1
+    done
+    return 1
+}
+
+# Every fixture below asserts the destination's BYTES as well as the exit code.
+# A refusal that replaced the file anyway is not a refusal, and an exit code on
+# its own cannot tell those two apart.
+
+# --- V7  compare-and-swap: the lock alone does not close the write window ----
+d="$lockdir/manifest.json"
+printf 'base\n' > "$d"
+fp=$(git hash-object --stdin < "$d")
+printf 'base\nA-entry\n' > "$lockdir/payload-a"
+printf 'base\nB-entry\n' > "$lockdir/payload-b"
+
+sh "$LOCK" "$d" "$lockdir/payload-a" "$fp" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'A-entry' "$d"; then
+    ok "CAS: the first writer commits (exit 0)"
+else
+    fail "CAS: the first writer exited $rc"
+fi
+
+# B read the file before A committed and still holds that fingerprint. This is
+# the read-modify-write window a perfect lock leaves wide open.
+sh "$LOCK" "$d" "$lockdir/payload-b" "$fp" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 5 ] && ok "CAS: a stale expected fingerprint is refused (exit 5)" \
+    || fail "CAS: the stale write exited $rc, not 5"
+if grep -q 'A-entry' "$d" && ! grep -q 'B-entry' "$d"; then
+    ok "CAS: the refused write left the first writer's entry intact"
+else
+    fail "CAS: the refused write damaged the destination"
+fi
+
+# ...and 5 is a refusal, not an inability to write. B re-reads, re-merges, retries.
+fp2=$(git hash-object --stdin < "$d")
+printf 'base\nA-entry\nB-entry\n' > "$lockdir/payload-b"
+sh "$LOCK" "$d" "$lockdir/payload-b" "$fp2" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'A-entry' "$d" && grep -q 'B-entry' "$d"; then
+    ok "CAS: the re-read retry commits and both entries survive"
+else
+    fail "CAS: the retry exited $rc or lost an entry"
+fi
+
+# "-" is the expected value for a destination the caller found absent.
+absent="$lockdir/absent.json"
+rm -f "$absent"
+sh "$LOCK" "$absent" "$lockdir/payload" - >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 0 ] && [ -f "$absent" ] && ok "CAS: '-' commits against an absent destination" \
+    || fail "CAS: '-' against an absent destination exited $rc"
+
+sh "$LOCK" "$d" "$lockdir/payload" >/dev/null 2>&1
+[ $? -eq 2 ] && ok "an omitted expected fingerprint is a usage error, never a default" \
+    || fail "with-lock accepted a missing expected fingerprint"
+
+# --- V8  liveness decides staleness, not a timer alone -----------------------
+d="$lockdir/v8.json"
+printf 'v8\n' > "$d"
+fp=$(git hash-object --stdin < "$d")
+deadpid=$(sh -c 'echo $$')
+mkdir "$d.lock"
+printf '%s\nWed Jul 30 12:00:00 2026\n%s\n' "$deadpid" "$(uname -n)" > "$d.lock/owner"
+t0=$(date +%s)
+sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
+rc=$?
+el=$(( $(date +%s) - t0 ))
+rm -rf "$d.lock"
+if [ "$rc" -eq 0 ] && [ "$el" -lt 10 ] && grep -q 'replacement' "$d"; then
+    ok "a lock whose owner is provably dead is reclaimed at once (exit 0 after ${el}s)"
+else
+    fail "dead-owner lock: exit $rc after ${el}s"
+fi
+
+if [ "$lstart_here" -eq 1 ]; then
+    d="$lockdir/v8b.json"
+    printf 'v8b\n' > "$d"
+    fp=$(git hash-object --stdin < "$d")
+    before=$(git hash-object --stdin < "$d")
+    sleep 60 &
+    livepid=$!
+    mkdir "$d.lock"
+    printf '%s\n%s\n%s\n' "$livepid" \
+        "$(ps -o lstart= -p "$livepid" | awk 'NF { print; exit }')" "$(uname -n)" > "$d.lock/owner"
+    msg=$(sh "$LOCK" "$d" "$lockdir/payload" "$fp" 2>&1)
+    rc=$?
+    after=$(git hash-object --stdin < "$d")
+    kill "$livepid" 2>/dev/null
+    wait "$livepid" 2>/dev/null
+    rm -rf "$d.lock"
+    if [ "$rc" -eq 3 ] && [ "$before" = "$after" ] && printf '%s' "$msg" | grep -q "$livepid"; then
+        ok "a provably live holder is never stolen from (exit 3, bytes unchanged, pid named)"
+    else
+        fail "live-holder lock: exit $rc, bytes $before -> $after, said '$msg'"
+    fi
+else
+    printf '  skip  live-holder refusal (this host has no ps -o lstart=)\n'
+fi
+
+# --- V9  the time bound only decides what liveness could not -----------------
+d="$lockdir/v9.json"
+printf 'v9\n' > "$d"
+fp=$(git hash-object --stdin < "$d")
+mkdir "$d.lock"
+t0=$(date +%s)
+sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
+rc=$?
+el=$(( $(date +%s) - t0 ))
+rm -rf "$d.lock"
+if [ "$rc" -eq 0 ] && [ "$el" -ge 10 ] && [ "$el" -lt 25 ]; then
+    ok "an owner-less lock is reclaimed by the time bound (exit 0 after ${el}s)"
+else
+    fail "owner-less lock: exit $rc after ${el}s"
+fi
+
+d="$lockdir/v9b.json"
+printf 'v9b\n' > "$d"
+fp=$(git hash-object --stdin < "$d")
+before=$(git hash-object --stdin < "$d")
+mkdir "$d.lock"
+( sleep 4; rm -rf "$d.lock"; mkdir "$d.lock" ) &
+churn=$!
+t0=$(date +%s)
+sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
+rc=$?
+el=$(( $(date +%s) - t0 ))
+wait "$churn" 2>/dev/null
+after=$(git hash-object --stdin < "$d")
+rm -rf "$d.lock"
+if [ "$rc" -eq 3 ] && [ "$before" = "$after" ]; then
+    ok "a lock created during the wait is not stolen (exit 3 after ${el}s)"
+else
+    fail "lock created during the wait: exit $rc after ${el}s, bytes $before -> $after"
+fi
+
+# --- V10  TERM runs the trap; KILL cannot, which is why staleness is policy --
+# The holder is made to hold by giving it a FIFO as the destination: it takes
+# the lock, writes its owner, and then blocks reading that destination to
+# compute the compare-and-swap fingerprint. Nothing is stubbed - this is the
+# shipped acquisition path and the shipped trap.
+for sig in TERM KILL; do
+    d="$lockdir/v10-$sig"
+    rm -f "$d"
+    mkfifo "$d"
+    sh "$LOCK" "$d" "$lockdir/payload" - >/dev/null 2>&1 &
+    holder=$!
+    if await_owner "$d.lock"; then
+        kill "-$sig" "$holder" 2>/dev/null
+        unblock "$d"
+        wait "$holder" 2>/dev/null
+        if [ "$sig" = TERM ]; then
+            [ ! -d "$d.lock" ] \
+                && ok "TERM to a holder runs the trap and the lock directory is gone" \
+                || fail "TERM to a holder left $d.lock behind"
+        else
+            [ -d "$d.lock" ] \
+                && ok "KILL to a holder leaves the lock: SIGKILL cannot be trapped" \
+                || fail "KILL to a holder removed the lock, which no trap can have done"
+        fi
+    else
+        fail "the holder never took the lock for the $sig case"
+        kill -KILL "$holder" 2>/dev/null
+        unblock "$d"
+    fi
+    rm -f "$d"
+done
+
+# The lock the killed holder left names a pid that is now gone, so the next
+# writer reclaims it. This is the half of the policy SIGKILL makes mandatory.
+d="$lockdir/v10-KILL"
+printf 'v10\n' > "$d"
+fp=$(git hash-object --stdin < "$d")
+sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && [ ! -d "$d.lock" ]; then
+    ok "the next writer reclaims the lock a killed holder left behind"
+else
+    fail "the lock a killed holder left wedged the next writer (exit $rc)"
+fi
+rm -rf "$lockdir"
+
+# --- W1  every path left beside the destination must be one the run named ----
+# The carve-out permits exactly three paths and all three are transient, so the
+# destination's directory is ENUMERATED before and after rather than probed for
+# names guessed in advance - a leak nobody predicted is exactly the one a
+# targeted check misses.
+#
+# The invariant is stronger than "exit 0": every surviving path must be one the
+# run itself named in its output. An exit code cannot express the failure this
+# catches, because that failure IS an exit 0 - the run reports "reclaimed an
+# abandoned lock", returns success, and says nothing at all about the aside it
+# renamed the lock directory to and could not delete.
+inventory() { ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort | tr '\n' ' ' ); }
+
+# Only what the SCRIPT said counts as the run naming something. Its own
+# diagnostics all carry its name; rm's incidental stderr does not. A leak the
+# caller learns about solely from a subcommand's noise is still a leak the run
+# itself claimed nothing about, and folding the two together would let the row
+# pass on exactly the output the defect already produces.
+lock_said() { printf '%s\n' "$1" | grep "^${LOCK##*/}:"; }
+
+# Prints one line per path in $1 that is neither expected ($2, space-separated
+# basenames) nor named anywhere in what the run said ($3).
+unreported_debris() {
+    ( CDPATH= cd -- "$1" && find . -maxdepth 1 ! -name . | sort ) | while read -r _p; do
+        _n=${_p#./}
+        case " $2 " in *" $_n "*) continue ;; esac
+        printf '%s' "$3" | grep -qF "$_n" || printf '%s\n' "$_n"
+    done
+}
+
+w1=$(mktemp -d)
+d="$w1/w1.json"
+printf 'w1\n' > "$d"
+printf 'w1-new\n' > "$w1/payload"
+fp=$(git hash-object --stdin < "$d")
+mkdir "$d.lock"
+printf '%s\nWed Jul 30 12:00:00 2026\n%s\n' "$(sh -c 'echo $$')" "$(uname -n)" > "$d.lock/owner"
+w1_before=$(inventory "$w1")
+w1_msg=$(sh "$LOCK" "$d" "$w1/payload" "$fp" 2>&1)
+rc=$?
+w1_after=$(inventory "$w1")
+w1_left=$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")
+if [ "$rc" -eq 0 ] && [ -z "$w1_left" ] && grep -q 'w1-new' "$d"; then
+    ok "an ordinary reclaim leaves nothing but the destination ($w1_before-> $w1_after)"
+else
+    fail "reclaim debris: exit $rc, before '$w1_before' after '$w1_after', unreported '$w1_left'"
+fi
+
+# ...and the enumeration can see a fourth path appear. Named after the one that
+# really leaked, so a detector that stopped looking is caught by the same shape.
+: > "$w1/w1.json.lock.stale.999"
+[ -n "$(unreported_debris "$w1" 'w1.json payload' "$(lock_said "$w1_msg")")" ] \
+    && ok "rejected: an aside left beside the destination and named nowhere" \
+    || fail "the debris enumeration cannot notice a fourth path"
+rm -rf "$w1"
+
+# A reclaim whose deletion cannot complete: the aside survives, and reporting
+# success over it is the worse half of the leak. Made deterministic with a
+# subdirectory rm cannot empty - root ignores those permissions, so the row
+# stands down loudly there instead of passing for the wrong reason.
+if [ "$(id -u)" -ne 0 ]; then
+    w1b=$(mktemp -d)
+    d="$w1b/w1b.json"
+    printf 'w1b\n' > "$d"
+    printf 'w1b-new\n' > "$w1b/payload"
+    fp=$(git hash-object --stdin < "$d")
+    before=$(git hash-object --stdin < "$d")
+    mkdir -p "$d.lock/stuck"
+    printf 'x\n' > "$d.lock/stuck/file"
+    printf '%s\nWed Jul 30 12:00:00 2026\n%s\n' "$(sh -c 'echo $$')" "$(uname -n)" > "$d.lock/owner"
+    chmod 500 "$d.lock/stuck"
+    msg=$(sh "$LOCK" "$d" "$w1b/payload" "$fp" 2>&1)
+    rc=$?
+    after=$(git hash-object --stdin < "$d")
+    left=$(unreported_debris "$w1b" 'w1b.json payload' "$(lock_said "$msg")")
+    chmod -R 700 "$w1b" 2>/dev/null
+    if [ "$rc" -ne 0 ] && [ -z "$left" ] && [ "$before" = "$after" ]; then
+        ok "a reclaim that cannot delete its aside fails loudly (exit $rc) and names what it left"
+    else
+        fail "unremovable aside: exit $rc, bytes $before -> $after, unreported '$left'"
+    fi
+    rm -rf "$w1b"
+else
+    printf '  skip  the unremovable-aside row (running as root, which ignores the mode)\n'
+fi
+
 # ---------------------------------------------------------------- body ------
 section "skill body"
 

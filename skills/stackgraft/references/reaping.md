@@ -34,9 +34,12 @@ Labels are **inserted at an anchor inside the command**, never appended to it. T
 | `… docker … create …` | after `create` | insert |
 | `… docker compose … up …` | none — `up` takes no label flag | **refuse the launch** |
 | recognised launcher, no anchor token after it | none | **refuse the launch** |
-| no recognised launcher token | none — this is a host kind | no labels; register in the sidecar (§4) |
+| container kind naming no recognised launcher at all, quoted launcher text included | none | **refuse the launch** |
+| host kind | — | outside this table: no labels; register in the sidecar (§4) |
 
 Recognised launcher tokens are `docker`, and by CLI compatibility `podman` and `nerdctl`.
+
+**The entry's `kind` selects the rows, not whether a launcher token happens to appear.** A container kind with no anchor is refused however the anchor went missing; a host kind is outside this table altogether and is never refused by it.
 
 Three rules the insertion may not bend:
 
@@ -67,9 +70,11 @@ One row per rule above. A template that is not in the accepted shapes is refused
 | Template | Why |
 |---|---|
 | `docker compose --project-directory {{worktree}} up catalog-api` | `up` is whole-stack and takes no label flag, so there is no anchor. `references/discovery.md` §3 already forbids `up` here; the remedy is the single-unit run form it would have produced anyway |
-| `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` | no recognised launcher token, so no container to label — this is a host kind and belongs in §4, not in this table |
 | `docker --context remote catalog-api` | a recognised launcher with no `run` or `create` token after it: nothing to insert against |
+| `cd {{worktree}} && ./serve-catalog --port {{port}}` on a **container** kind | no recognised launcher token at all, so no anchor. A container this skill cannot label is one it can never reclaim, so it is refused rather than launched bare |
 | `echo "docker run x" \| sh` | the only launcher text sits inside a quoted string. No anchor is found, nothing is written into the string literal, and the launch is refused rather than run bare |
+
+A host kind is in neither table. `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` names no launcher because there is no container to name one for: it launches, carries no labels, and is recorded in the sidecar (§4). Refusing it would refuse the ordinary case. The `./serve-catalog` row above is the same launcher-less shape on a **container** kind, and that one is refused — which is why the entry's `kind` decides and the launcher token does not.
 
 ## 4. Host kinds: the sidecar
 

@@ -2,7 +2,7 @@
 
 New capability. Label contract and sidecar (D1), application point (D2), composite identity (D3), scoping (D6): `../../proposal.md`. Sidecar location: proposal Q3. Write-discipline obligations: proposal Q4.
 
-The write discipline itself is normative once, in `../manifest-cache/spec.md`; this capability states only which ownership stores are subject to it.
+The write discipline itself is normative once, in `../manifest-contract/spec.md`; this capability states only which ownership stores are subject to it.
 
 ## ADDED Requirements
 
@@ -52,7 +52,7 @@ Every container started as an overlay MUST carry all five labels: `stackgraft.la
 
 - GIVEN a sidecar entry whose pid no longer exists
 - WHEN state is reconstructed
-- THEN the runtime's answer wins, the stale entry is named, and the sidecar is rewritten only under the discipline in `../manifest-cache/spec.md`
+- THEN the runtime's answer wins, the stale entry is named, and the sidecar is rewritten only under the discipline in `../manifest-contract/spec.md`
 
 ### Requirement: The label contract lives in the skill, never in a cached command
 
@@ -80,7 +80,7 @@ Labels MUST be appended by the skill at launch. No `overlayCommand` value writte
 
 ### Requirement: Host-kind overlays are registered in a per-repo sidecar
 
-Host-run overlays have nowhere to hang a label and MUST be registered at `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.processes.json`, one file per repository, using the same `hash8` derivation as the manifest. Every worktree of one repository MUST resolve to the same sidecar, and two repositories sharing a basename MUST resolve to different files. Each entry MUST record the service key, the published host port, the worktree's absolute physical path, the pid, and the start-time evidence of the composite-identity requirement below. The file MUST distinguish *checked and none* from *not checked*: a file that exists carrying an empty list is the former; an absent or unreadable file is the latter and MUST NOT be read as zero host overlays. Sidecar writes MUST use the discipline in `../manifest-cache/spec.md`.
+Host-run overlays have nowhere to hang a label and MUST be registered at `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.processes.json`, one file per repository, using the same `hash8` derivation as the manifest. Every worktree of one repository MUST resolve to the same sidecar, and two repositories sharing a basename MUST resolve to different files. Each entry MUST record the service key, the published host port, the worktree's absolute physical path, the pid, and the start-time evidence of the composite-identity requirement below. The file MUST distinguish *checked and none* from *not checked*: a file that exists carrying an empty list is the former; an absent or unreadable file is the latter and MUST NOT be read as zero host overlays. Sidecar writes MUST use the discipline in `../manifest-contract/spec.md`.
 (Verify: path resolution from a linked worktree and from the main checkout; two repositories sharing a basename; file review that the sidecar write calls the shared lock script.)
 
 #### Scenario: Two worktrees, one sidecar

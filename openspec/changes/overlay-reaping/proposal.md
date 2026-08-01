@@ -127,7 +127,7 @@ Ordering is not stylistic. Slice 2 can only find overlays that slice 1 labelled,
 ### Modified
 
 - `portable-runtime`: adds `scripts/reap.sh` and `scripts/with-lock.sh`; `compatibility` gains the `lstart` note.
-- `manifest-cache`: the manifest write becomes serialized (D9). Behavior change to shipped code, admitted deliberately.
+- `manifest-contract`: the manifest write becomes serialized (D9). Behavior change to shipped code, admitted deliberately. The capability `portable-multi-stack` created under that name is extended, not duplicated.
 - `topology-discovery`: `overlayCommand` gains a label-anchor constraint (D2, as amended by A2 and A5).
 
 ## Affected areas

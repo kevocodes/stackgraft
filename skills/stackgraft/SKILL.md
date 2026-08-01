@@ -34,18 +34,21 @@ Skip for single-service repos, cheap `up`, or full isolation.
 | Shared/common dir changed | Overlay its `consumers` |
 | Port outside the range | Stop and ask |
 | Any overlay | Gate it — `references/shared-state.md` |
+| Overlay outlived its worktree | Report it — `references/reaping.md` |
+| Stopping anything | Refuse without a matching identity |
 
 ## Execution Steps
 
 1. At the worktree top, derive `gitCommonDir` and `repoRoot` — the **main** worktree, never this checkout — per `references/discovery.md` §0.
 2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`; derive `hash8` and discard per `references/discovery.md` §0 and §5. If unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
-3. Discover or refresh per Decision Gates (`references/discovery.md`).
-4. Diff the worktree against its base branch; map changes through `paths`.
-5. Confirm base-stack health; start what is missing.
-6. Before launching, read `references/shared-state.md`; record every verdict it demands.
-7. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one per argument: reserved, base ports, taken this run. Bind strictly.
-8. Launch each mapped service per `references/reaping.md`, rewiring unchanged dependencies to the base stack.
-9. Verify with a real request, record `verifiedOverlays`, then rewrite the manifest through `scripts/with-lock.sh`.
+3. Report overlays of this repository per `references/reaping.md`; exclude their ports.
+4. Discover or refresh per Decision Gates (`references/discovery.md`).
+5. Diff the worktree against its base branch; map changes through `paths`.
+6. Confirm base-stack health; start what is missing.
+7. Before launching, read `references/shared-state.md`; record every verdict it demands.
+8. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one per argument: reserved, base ports, taken this run. Bind strictly.
+9. Launch each mapped service per `references/reaping.md`, rewiring unchanged dependencies to the base stack.
+10. Verify with a real request, record `verifiedOverlays`, then rewrite the manifest through `scripts/with-lock.sh`.
 
 ## Output Contract
 
@@ -57,5 +60,5 @@ Skip for single-service repos, cheap `up`, or full isolation.
 
 ## References
 
-- `assets/manifest.schema.json`, `assets/manifest.example.json`, `references/discovery.md`, `references/reaping.md`, `references/traps.md`, `scripts/fingerprint.sh`, `scripts/pick-port.sh`, `scripts/with-lock.sh`.
+- `assets/manifest.schema.json`, `assets/manifest.example.json`, `references/discovery.md`, `references/reaping.md`, `references/traps.md`, `scripts/fingerprint.sh`, `scripts/pick-port.sh`, `scripts/reap.sh`, `scripts/with-lock.sh`.
 - `references/shared-state.md` — the only verdict procedure.

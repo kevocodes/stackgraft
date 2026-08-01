@@ -78,7 +78,7 @@ skills/stackgraft/
 ├── SKILL.md          the body — the only file loaded whole
 ├── references/       shared-state.md · discovery.md · traps.md · reaping.md
 ├── assets/           manifest schema + a worked example
-└── scripts/          three POSIX sh helpers
+└── scripts/          four POSIX sh helpers
 ```
 
 **No runtime to install.** The helpers need `git`, a POSIX shell and `awk` — nothing else. `python3` is a stub on a stock macOS, so it was disqualified; hashing rides on `git hash-object`, which the skill already depends on.
@@ -89,7 +89,9 @@ skills/stackgraft/
 
 ## Honest limits
 
-- **Overlays are now instrumented, and nothing reaps yet.** Every container this version launches carries its ownership labels, and host-run overlays are registered in a per-repository sidecar, so an overlay that outlives its worktree can be identified later. Identifying is all that ships here: nothing is stopped, removed or signalled, by any flag, and there is no reap command to run. The instrumentation is deliberately first, because anything that reclaims can only ever see overlays launched after it — so this looks inert on purpose, and reading it as a shipped feature that does nothing would be reading it wrong.
+- **Reaping ships, and it reports by default.** Every run now says which of this repository's overlays outlived their worktree; stopping one takes an explicit flag, and removing it takes a second flag on top of that. Nothing is stopped, removed or signalled without both an orphan classification and a matching recorded identity.
+- **The base stack is outside the candidate set by construction. The port test on top of that is only as good as what the caller passes.** Only an overlay launch writes the ownership label, so a base-stack container is never a candidate to begin with — that half is structural and holds under every flag. The shape that gets past it — a container hand-labelled with this repository's id — is tested against the base-stack ports the run passes in, and **that test is caller-supplied and caller-defeatable**: the helpers parse no JSON, so nothing can check a passed port against the manifest it came from, and a run that passes the wrong one reaps the container. A mutation given no port at all refuses rather than guessing, and no flag stands in for one. A value that is not a port in 1–65535 is a usage error, which removes typos and closes nothing — `1` is a valid port. So the limit is stated rather than covered, here as in `references/reaping.md` and in the requirement itself: a hand-labelled container whose worktree is unlisted and whose published port is not among the values passed **is reaped**. Nothing else on a running container tells a base-stack service apart from an overlay.
+- **It sees only overlays launched after the labels shipped**, so the first run legitimately reports nothing to act on. A container started before that carries no ownership label, which means nothing distinguishes it from any other container on the machine — there is no query that finds it, so the report names the category, says the gap is structural, and prints the command to look by hand rather than widening a query into a neighbouring repository. An accepted coverage loss, stated out loud.
 - **The verification is real but young.** Schema negatives, script runs and body budgets are checked in CI; the shared-state gate has never been exercised against a production-shaped repository.
 - **Needs a POSIX shell.** macOS, Linux, WSL and Git Bash on Windows, each exercised in CI. PowerShell and cmd are out of scope.
 - **`git` is required and is not present in minimal container images** — alpine, debian-slim and distroless ship none.

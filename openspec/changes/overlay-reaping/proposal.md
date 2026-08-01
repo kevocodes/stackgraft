@@ -222,6 +222,24 @@ That is the project's own forbidden shape wearing a new hat: **emptiness is a cl
 
 **The process failure is the part worth naming.** Pass 1 rejected C2 for being a contract change without an amendment, and C2 was then fixed by changing code to match the spec. C3's second clause took the opposite route — a skill file was changed and the spec was never told — leaving `spec.md:177` saying MUST while `reaping.md:193` says unbuildable. A limit that A7 was required to declare with a numbered amendment and absorbing spec text cannot be declared for C3 with a narrative bullet in `tasks.md`.
 
+**A10 — the absolute base-stack guarantee is not buildable. Narrow the contract to what is true, and stop pretending three fixes closed it.**
+
+A9 removed `-B` and the hole moved into the value: `-b 0` — a decimal, so it passes validation, sets `base_given`, and enters a list where it can never match — stops a hand-labelled base-stack container. `acted 1`, exit 0, verbatim the C3-R CRITICAL with a different spelling. `-b 1` does it too, and **`1` is a valid TCP port**, so a range check does not close this. Nothing does.
+
+**The reason is structural, and three rounds of code fixes were the wrong instrument.** `scripts parse no JSON` is locked, so `reap.sh` cannot read the manifest. It knows only what the caller passes. A caller that passes a wrong port — by typo, by a stale manifest, by malice — defeats the port exclusion, always. `specs/orphan-reclamation/spec.md:177`'s *"No flag, flag combination, or code path MAY reach a base-stack service"* is a promise this architecture cannot keep, and the spec now contradicts itself: `:202` demands every shape supplying no base port refuse, while `:208` says a container whose port is none of those passed is an orphan and not a defect. `-b 0` satisfies both, and the code takes the permissive branch — inverting the change's own central principle.
+
+**Decision: no fourth attempt at the guarantee. Make the contract true.**
+
+- The **non-defeatable** protection is the positive allowlist, and it is genuinely structural: a container is a candidate only if it carries the complete five-label set with this repository's `hash8`. A base-stack container does not carry those labels unless a human put them there.
+- The **port exclusion is caller-supplied and caller-defeatable**, and the spec must say so in those words. Narrow `:177` and `:202` to what holds: a run supplying **no** `-b` argument refuses.
+- The residual is one named shape: a container hand-labelled with this repository's complete label set, whose worktree is unlisted, and whose published port is not among the values passed. Write it into the contract, not only into `references/reaping.md`.
+- `README.md:93` ("one narrow case") and `reaping.md:195` ("not a second way in") are **false as shipped** and must be corrected rather than softened.
+- `tasks.md` task 3.1 carries the falsified criterion as a success condition; it cannot be closed as written and must be restated against the allowlist.
+
+**Port-range validation still lands, and must not be sold as the fix.** `-b 0`, `-b 99999999` and `-b 018103` are not valid ports, and the last one — a manifest value typed with a leading zero — silently loses all protection today. `scripts/pick-port.sh` already validates 1–65535 with a leading-zero strip in `port_arg()`; `reap.sh` should reuse that shape for consistency. It removes footguns. It closes nothing, and no document may imply otherwise.
+
+**The verification must assert the true behaviour.** `verify.sh:1143`'s A9 negative control never pairs a wrong port with the base-stack container, which is precisely why the suite stayed green through this. The new row must execute the declared residual and assert that the container **is** stopped — a row that documents the limit instead of one that wishes it away. A suite that only tests the shapes we hoped were safe is how three rounds shipped green with a hole in each.
+
 **Resolved, not amended:** the design flagged one blocking unknown — whether `docker compose run` accepts `--label`, the premise the whole D2 mechanism rests on. It does: `-l, --label stringArray  Add or override a label`. Verified against the installed binary.
 
 ### Q1 — RESOLVED: stop by default, remove behind a second explicit flag

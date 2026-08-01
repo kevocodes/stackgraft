@@ -19,7 +19,11 @@
 #         -b  one host port the manifest records as a baseStack port, repeated
 #             once per port. This script parses no JSON, so the caller reads
 #             them out of the manifest; the decision they drive stays here.
-#             At least one is MANDATORY for a container mutation.
+#             At least one is MANDATORY for a container mutation. Each value is
+#             a decimal port in 1-65535 with leading zeros stripped, exactly as
+#             pick-port.sh validates its own port arguments - so 018103 means
+#             18103 rather than a string that matches no published port. That
+#             rejects typos and nothing more; see the declared limit below.
 #
 # A container mutation needs at least one real base port, and its absence is
 # unknown rather than none. A caller that passes no -b has told this script
@@ -41,17 +45,33 @@
 # exists to overlay onto a running base stack whose ports the overlay must
 # avoid - pick-port.sh already needs those same ports.
 #
-# Declared limit, past the ports: a base-stack service is not identifiable from
-# here. stackgraft.service holds a manifest service key and the base stack runs
-# those same services, so refusing on the name would refuse every overlay this
-# script exists to reclaim. Exactly one shape falls outside the port test - a
-# container carrying this repository's complete label set, whose worktree is
-# unlisted, and whose published port is none of those passed.
+# Declared limit, and it is the whole of the port test rather than an edge of
+# it: THE PORT EXCLUSION IS CALLER-SUPPLIED AND CALLER-DEFEATABLE. This script
+# parses no JSON, so it never sees the manifest the values came from and cannot
+# tell a wrong port from a right one. A caller that passes the wrong value - by
+# typo, by a stale manifest, or on purpose - reaches the container the right
+# value would have excluded. Validating the range removes typos and closes
+# nothing: 1 is a valid port. Refusing on the service NAME is not available
+# either, because stackgraft.service holds a manifest service key and the base
+# stack runs those same services, so a name test would refuse every overlay
+# this script exists to reclaim.
+#
+# What DOES hold structurally is the allowlist above: only an overlay launch
+# writes stackgraft.repo, so a base-stack container is outside the candidate
+# set under every flag unless a human hand-labelled it with this repository's
+# complete label set. Exactly one shape is left over, and it is accepted rather
+# than guarded - a container hand-labelled that way, whose worktree is
+# unlisted, and whose published port is not among the values passed.
 #
 # target: c:<container-id>            one argument
 #         p:<pid> <recorded-lstart>   TWO arguments, the second verbatim as it
 #                                     was recorded. remove has no meaning for a
-#                                     process and is a usage error.
+#                                     process, so a p: target under remove is
+#                                     refused by name as malformed-target at
+#                                     exit 3 like any other target that will
+#                                     not parse - not a usage error, which
+#                                     would end the whole invocation and take
+#                                     the proven targets beside it down too.
 #
 # stdout: tab-separated records, one per line, the first field naming the kind:
 #         worktree   a worktree entry and whether it is live
@@ -127,6 +147,28 @@ usage() {
     printf '       -b one baseStack port, repeated once per port; a container mutation needs at least one\n' >&2
     printf '       target: c:<container-id>  or  p:<pid> <recorded-lstart>\n' >&2
     exit 2
+}
+
+# Validates one port argument into port_val: decimal, 1-65535, leading zeros
+# stripped. Same shape as pick-port.sh's port_arg, deliberately - two spellings
+# of one rule drift, and this one is about the same manifest values. Sets a
+# global instead of printing, because usage() ends the script and an exit
+# inside a command substitution would only leave the subshell. $2 is the label
+# the argument is reported under when it is rejected.
+#
+# The strip is the half that matters in practice: 018103 read as a string
+# matches no stackgraft.port label, so a manifest value typed with a leading
+# zero would silently protect nothing. This rejects what cannot be a port. It
+# does NOT make the exclusion sound - see the declared limit in the header.
+port_arg() {
+    case ${1:-} in
+        '') usage "missing ${2:-port argument}" ;;
+        *[!0-9]*) usage "${2:-port argument} is not a decimal port: '$1'" ;;
+    esac
+    port_val=$1
+    while [ "${port_val#0}" != "$port_val" ]; do port_val=${port_val#0}; done
+    [ -n "$port_val" ] && [ "${#port_val}" -le 5 ] && [ "$port_val" -le 65535 ] \
+        || usage "${2:-port argument} is outside 1-65535: '$1'"
 }
 
 # Builds one tab-separated record. Values reaching here never contain a tab: a
@@ -249,10 +291,8 @@ while [ "$#" -gt 0 ]; do
             repo_root=$2
             shift 2 ;;
         -b) [ "$#" -ge 2 ] || usage 'missing port after -b'
-            case ${2:-} in
-                '' | *[!0-9]*) usage "base port is not a decimal port: '${2:-}'" ;;
-            esac
-            base_ports="$base_ports$2 "
+            port_arg "$2" 'base port'
+            base_ports="$base_ports$port_val "
             base_given=1
             shift 2 ;;
         -m) mutate=1
@@ -343,9 +383,10 @@ split_row() {
 # refusal reason or a report line, and `orphan` is the sole actionable answer.
 #
 # The base-port branch is the second, independent condition, for a repository
-# that writes the label itself: a container publishing a port the manifest
-# records as a base-stack port is never a target, however it is labelled, and
-# the anomaly is reported.
+# that writes the label itself: a container publishing a port THE RUN PASSED as
+# a base-stack port is never a target, however it is labelled, and the anomaly
+# is reported. It compares against the supplied values and nothing else - the
+# manifest is never read here - so it excludes exactly what the caller named.
 classify() {
     if [ "$r_ver" != "$LABELS_VERSION" ]; then
         printf 'unrecognised-label-version\n'
@@ -434,7 +475,7 @@ report_containers() {
                 ;;
             base-stack-port)
                 emit refused "c:$r_id" base-stack-port \
-                    "publishes $r_port, which the manifest records as a base-stack port - an anomaly, and never a target"
+                    "publishes $r_port, which this run supplied as a base-stack port - an anomaly, and never a target"
                 ;;
             worktree-still-listed)
                 emit container "$r_id" "$r_state" "$r_svc" "$r_port" "$r_wt" live
@@ -548,7 +589,7 @@ prove_container() {
         orphan) ;;
         base-stack-port)
             refuse "c:$_id" base-stack-port \
-                "publishes $r_port, which the manifest records as a base-stack port"
+                "publishes $r_port, which this run supplied as a base-stack port"
             return 0 ;;
         worktree-still-listed)
             refuse "c:$_id" worktree-still-listed \

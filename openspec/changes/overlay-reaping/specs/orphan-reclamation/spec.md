@@ -172,14 +172,14 @@ Every container query, on the report path and the mutation path alike, MUST carr
 - WHEN they are listed
 - THEN each carries the `stackgraft.repo` label filter
 
-### Requirement: Nothing in the base stack is reachable as a reap target
+### Requirement: The base stack is outside the candidate set by construction, and the port exclusion on top of it is caller-supplied
 
-Candidacy MUST be positive and closed: a container is a candidate only if it carries the full label set with `stackgraft.repo` equal to this repository's `hash8`, so every base-stack container is outside the candidate set by construction rather than by exclusion.
+Candidacy MUST be positive and closed: a container is a candidate only if it carries the full label set with `stackgraft.repo` equal to this repository's `hash8`, so every base-stack container is outside the candidate set by construction rather than by exclusion. **This allowlist is the only unconditional protection this requirement states, and it is the only one that holds structurally**: nothing but an overlay launch writes that label, so no flag, no flag combination, and no code path reaches a base-stack container unless a human has hand-labelled it with this repository's complete label set.
 
-Exclusion beyond that allowlist MUST be **by supplied port**. A container publishing a port the run supplied as a base-stack port MUST be excluded even when it carries a matching label set, and the anomaly MUST be reported. Those ports MUST reach the actuator as supplied values, one per port, because the scripts parse no JSON. A container mutation MUST therefore refuse until at least one base-stack port has been supplied — absent information is unknown rather than none, and a gate keyed on an optional input is no gate. **No flag, flag combination, or code path MAY stand in for that supply, and none MAY reach a container the supplied ports exclude.** The refusal MUST NOT name an override, because there MUST NOT be one: an assertion that there is nothing to exclude cannot be checked by a runtime that parses no JSON, and an unverifiable assertion that switches the exclusion off is the same absent gate under another name.
+Exclusion beyond that allowlist MUST be **by supplied port**, and the contract MUST describe it as what it is: **caller-supplied and caller-defeatable**. A container publishing a port the run supplied as a base-stack port MUST be excluded even when it carries a matching label set, and the anomaly MUST be reported. Those ports MUST reach the actuator as supplied values, one per port, because the scripts parse no JSON — which is the same reason nothing in the actuator can check a supplied port against the manifest it was read out of. A container mutation MUST therefore refuse while the run **supplies no `-b` argument at all** — absent information is unknown rather than none, and a gate keyed on an optional input is no gate — and no flag, flag combination, or code path MAY stand in for that supply. Nothing stronger MAY be claimed: a run that supplies a *wrong* port, by typo, by a stale manifest, or deliberately, reaches the container the right port would have excluded, and no test available here separates the two. Each supplied value MUST be a decimal port in 1–65535 with leading zeros stripped, so a manifest value typed `018103` excludes the container publishing 18103 instead of silently matching nothing; that validation removes typos and closes nothing, because `1` is a valid port. The refusal MUST NOT name an override, because there MUST NOT be one: an assertion that there is nothing to exclude cannot be checked by a runtime that parses no JSON, and an unverifiable assertion that switches the exclusion off is the same absent gate under another name.
 
-Refusing on the **name** of a service MUST NOT be attempted, and the blind spot that leaves MUST be recorded in this requirement rather than only in a reference file. `stackgraft.service` holds a manifest service key and the base stack runs those same services, so a name test would refuse every overlay this capability exists to reclaim; a compose project name would have to come from the manifest the scripts do not parse. **The residual is therefore exactly one shape, and it is accepted: a container carrying this repository's complete label set, whose worktree is unlisted, and whose published port is none of those passed.** Nothing narrower is buildable under the zero-JSON constraint, so the limit is part of the contract and not a note beside it.
-(Verify: file review that candidacy is an allowlist; run a reap with the base stack up; hand-label a base-stack container and confirm it is excluded when its port is supplied and that the mutation refuses outright when no port is supplied; enumerate the flag surface and confirm no shape reaches it.)
+Refusing on the **name** of a service MUST NOT be attempted, and the blind spot that leaves MUST be recorded in this requirement rather than only in a reference file. `stackgraft.service` holds a manifest service key and the base stack runs those same services, so a name test would refuse every overlay this capability exists to reclaim; a compose project name would have to come from the manifest the scripts do not parse. **The residual is therefore exactly one shape, and it is accepted: a container hand-labelled with this repository's complete label set, whose worktree is unlisted, and whose published port is not among the values the run passed — whether the run passed the wrong values or simply not that one.** Nothing narrower is buildable under the zero-JSON constraint, so the limit is part of the contract and not a note beside it, and no shipped document MAY describe the port exclusion as closed, complete, or unbypassable.
+(Verify: file review that candidacy is an allowlist; run a reap with the base stack up; hand-label a base-stack container and confirm it is excluded when its port is supplied and that the mutation refuses while no `-b` is supplied; enumerate every shape that supplies no `-b` and confirm each refuses; execute the residual — a valid port that is not that container's — and confirm the container IS stopped; confirm a base-stack container carrying no label set is unreachable at every `-b` value; confirm a `-b` value outside 1–65535 is a usage error.)
 
 #### Scenario: Base stack running
 
@@ -199,17 +199,30 @@ Refusing on the **name** of a service MUST NOT be attempted, and the blind spot 
 - WHEN the target is proven
 - THEN the target is refused as unknown rather than decided against an empty port set, the container is untouched, and the refusal names the missing port information without naming a way around it
 
-#### Scenario: No flag stands in for a supplied port
+#### Scenario: No flag stands in for a missing base-port argument
 
 - GIVEN the whole flag surface of the actuator
-- WHEN every shape that supplies no base-stack port is exercised against a hand-labelled base-stack container
+- WHEN every shape that supplies no `-b` argument at all is exercised against a hand-labelled base-stack container
 - THEN every one of them refuses and the container is still running
 
 #### Scenario: The accepted residual
 
-- GIVEN a container carrying this repository's complete label set, whose worktree is unlisted, and whose published port is none of those the run passed
+- GIVEN a container hand-labelled with this repository's complete label set, whose worktree is unlisted, and whose published port is not among the values the run passed — the run having passed a wrong value, or simply not that one
 - WHEN it is classified
-- THEN it is treated as an orphan, which is the declared limit of exclusion-by-supplied-port and not a defect to be fixed by widening the test
+- THEN it is treated as an orphan and is acted on, which is the declared limit of exclusion-by-supplied-port and not a defect to be fixed by widening the test
+
+#### Scenario: A base-stack container carrying no label set
+
+- GIVEN a base-stack container that carries no stackgraft label set
+- WHEN a container mutation names it and any base-stack port value is supplied
+- THEN it is refused as not a labelled overlay of this repository, whatever value was supplied, because the allowlist is what excludes it and no supplied port can widen the candidate set
+
+#### Scenario: A base-port value that is not a port
+
+- GIVEN a `-b` value outside 1–65535, `0` and `99999999` included
+- WHEN the run is parsed
+- THEN it is a usage error, the rejected value is named, and nothing is mutated
+- AND a value carrying leading zeros is read as the port it spells, so `018103` excludes the container publishing 18103 rather than matching nothing
 
 #### Scenario: Only the base stack is running
 

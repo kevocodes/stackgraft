@@ -960,12 +960,58 @@ fi
 
 # The usage text must not advertise it either. An agent reads the usage line
 # before it reads anything else.
+#
+# The assertion is that a usage line EXISTS and names no override, not merely
+# that no override appears: an absence test on its own passes on a script that
+# printed no usage at all, so its positive evidence would also be produced by a
+# worse failure than the one it is looking for.
 reap_run
-if ! offers_an_out "$reap_out"; then
-    ok "the usage text names no base-port override"
+if [ "$reap_rc" -eq 2 ] \
+   && printf '%s' "$reap_out" | grep -q -- '-b <basePort>' \
+   && ! offers_an_out "$reap_out"; then
+    ok "the usage text names -b and names no base-port override"
 else
-    fail "the usage text still advertises an override: '$reap_out'"
+    fail "the usage text: exit $reap_rc, said '$reap_out'"
 fi
+
+# --- A10  a -b value is validated as a port, and that removes typos only -----
+# 0, 65536 and 99999999 are not ports. Rejecting them kills three real
+# footguns, the third being a manifest value typed with a leading zero: 018103
+# kept as a string matches no stackgraft.port label, so it silently protects
+# nothing. This row exists as much to state what it is NOT. It does not close
+# the residual the rows further down execute, because 1 is a valid port and a
+# wrong valid port is exactly what defeats the exclusion.
+#
+# The last two entries are the control: a real port - leading zeros and all -
+# must still parse and reach the target proof (exit 3 here, the id being
+# fictional). Without them a script that rejected every -b would pass the three
+# above and prove nothing at all.
+#
+# Runtime-free: option parsing ends the run before any container is consulted.
+bp_bad=''
+bp_try() {
+    reap_run -b "$1" -m stop 00c0ffee 'c:deadbeefcafe'
+    [ "$reap_rc" -eq "$2" ] && return 0
+    bp_bad="$bp_bad [-b $1: wanted exit $2, got $reap_rc]"
+}
+bp_try 0        2
+bp_try 65536    2
+bp_try 99999999 2
+bp_try 18103    3
+bp_try 018103   3
+if [ -z "$bp_bad" ]; then
+    ok "a -b value outside 1-65535 is a usage error, and a valid one - leading zeros included - still parses"
+else
+    fail "base-port validation:$bp_bad"
+fi
+
+# ...and the rejection names the value it rejected. A usage error that does not
+# is the least useful half of the answer, and it is how a caller reads a typo
+# as the tool being broken.
+reap_run -b 0 -m stop 00c0ffee 'c:deadbeefcafe'
+printf '%s' "$reap_out" | grep -q "outside 1-65535: '0'" \
+    && ok "the rejected base port is quoted back by name" \
+    || fail "the base-port rejection named nothing: '$reap_out'"
 
 # --- W5  a malformed target is one target's problem, not the invocation's ----
 # C2's shape, one layer up: a target that would not parse ended the whole run
@@ -982,12 +1028,16 @@ else
     fail "malformed target shapes: exit $reap_rc, said '$reap_out'"
 fi
 
-# ...and the reason is not handed out to targets that parse.
+# ...and the reason is not handed out to targets that parse. The row demands a
+# refusal record as well as the absence of that reason: "no malformed-target in
+# the output" is equally true of no output at all, so without the first half its
+# positive evidence could come from the run producing nothing.
 reap_run -b 18103 -m stop 00c0ffee 'c:deadbeefcafe'
-if printf '%s' "$reap_out" | grep -q 'malformed-target'; then
-    fail "a well-formed c: target was refused as malformed"
+if printf '%s' "$reap_out" | grep -q "^refused${TAB}" \
+   && ! printf '%s' "$reap_out" | grep -q 'malformed-target'; then
+    ok "rejected: the malformed-target reason on a target that parses - it is refused, under another reason"
 else
-    ok "rejected: the malformed-target reason on a target that parses"
+    fail "a well-formed c: target: said '$reap_out'"
 fi
 
 # --- V14, V19, V20, V22  the refusal fixtures --------------------------------
@@ -1038,6 +1088,15 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     fixture_container "$RH" "$gone_wt" worker 18107 ; residual=$cid
     fixture_container "$RH" "$gone_wt" storefront 18108 ; w5a=$cid
     fixture_container "$RH" "$gone_wt" storefront 18109 ; w5b=$cid
+
+    # Three more of the hand-labelled base-stack shape, one per invalid -b
+    # value the A10 row exercises. They are separate containers on purpose: at
+    # the tip this row is written against, each of those values reached its
+    # target and stopped it, so sharing one fixture would leave the second and
+    # third legs measuring a container the first had already stopped.
+    fixture_container "$RH" "$gone_wt" catalog-api 18103 ; bp_zero=$cid
+    fixture_container "$RH" "$gone_wt" catalog-api 18103 ; bp_big=$cid
+    fixture_container "$RH" "$gone_wt" catalog-api 18103 ; bp_lead=$cid
 
     # 18103 is this fixture repository's one base-stack port throughout, so
     # every mutation row carries it - which is what the requirement asks for
@@ -1145,6 +1204,81 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         ok "rejected: the enumeration coming back silent for a shape that reached its target"
     else
         fail "the flag-surface enumeration cannot report a container it failed to protect"
+    fi
+
+    # --- A10  the declared residual, executed against the very container the -
+    # --- five shapes above could not reach ----------------------------------
+    # The enumeration proves those five shapes refuse. It cannot prove the
+    # container was reachable at all: a fixture that never entered the
+    # candidate set - a wrong id, a lost label - produces the same five
+    # refusals, and the row would read green over a check that had stopped
+    # checking. So the same container is now reached, deliberately, by the one
+    # shape that reaches it: a VALID base port that is simply not this
+    # container's. It is stopped, and the row asserts that it is.
+    #
+    # That is the accepted limit executed rather than asserted. The port
+    # exclusion is caller-supplied and caller-defeatable, and a suite that only
+    # exercised the shapes we hoped were safe is how three rounds shipped green
+    # with a hole in each.
+    #
+    # The three legs after it say what the new validation is worth and what it
+    # is not. 0 and 99999999 are not ports and no longer reach anything; 018103
+    # is read as 18103, so the container it names is excluded instead of
+    # silently reaped. None of that narrows the first leg - 1 is a valid port,
+    # and no range test can tell a wrong one from a right one.
+    a10_bad=''
+    a10_try() {
+        _label=$1; _rc=$2; _state=$3; _says=$4; _cid=$5
+        shift 5
+        reap_run -C "$repo" "$@" -m stop "$RH" "c:$_cid"
+        _st=$(docker inspect --format '{{.State.Status}}' "$_cid" 2>/dev/null)
+        if [ "$reap_rc" -eq "$_rc" ] && [ "$_st" = "$_state" ] \
+           && printf '%s' "$reap_out" | grep -q "$_says"; then
+            return 0
+        fi
+        a10_bad="$a10_bad [$_label: wanted exit $_rc, '$_state', saying '$_says'; got exit $reap_rc, '${_st:-gone}', said '$reap_out']"
+    }
+
+    a10_try 'a valid port that is not this container-s' \
+        0 exited  "^acted${TAB}1\$" "$handlabelled" -b 1
+    a10_try 'a value that is not a port at all' \
+        2 running 'outside 1-65535' "$bp_zero" -b 0
+    a10_try 'a value far outside the port range' \
+        2 running 'outside 1-65535' "$bp_big" -b 99999999
+    a10_try 'a manifest value typed with a leading zero' \
+        3 running 'base-stack-port' "$bp_lead" -b 018103
+    if [ -z "$a10_bad" ]; then
+        ok "the declared residual, executed: a valid wrong port DOES reach the hand-labelled base-stack container and stops it, while a value that is not a port reaches nothing"
+    else
+        fail "the declared residual:$a10_bad"
+    fi
+
+    # --- A10  the half that is NOT caller-defeatable ------------------------
+    # Candidacy is a positive, closed allowlist: only an overlay launch writes
+    # stackgraft.repo, so a base-stack container carrying no label set is
+    # outside the candidate set whatever ports are passed. Enumerated with the
+    # port that would exclude it, one that would not, and the top of the range.
+    # Each must refuse for the ALLOWLIST reason rather than for a missing port,
+    # which is why the reason is asserted and not only the exit code.
+    #
+    # -b 1 is in the list deliberately: the row above proves that same value
+    # reaches a labelled container, so a refusal here is about the labels and
+    # not about the value. This is the half the contract may still promise
+    # without a condition, and it is the half that was never the defect.
+    allow_bad=''
+    for bp in 18103 1 65535; do
+        reap_run -C "$repo" -b "$bp" -m stop "$RH" "c:$bare"
+        allow_st=$(docker inspect --format '{{.State.Status}}' "$bare" 2>/dev/null)
+        if [ "$reap_rc" -eq 3 ] && [ "$allow_st" = running ] \
+           && printf '%s' "$reap_out" | grep -q 'not-a-labelled-overlay-of-this-repository'; then
+            continue
+        fi
+        allow_bad="$allow_bad [-b $bp: exit $reap_rc, '${allow_st:-gone}', said '$reap_out']"
+    done
+    if [ -z "$allow_bad" ]; then
+        ok "a base-stack container carrying no label set is outside the candidate set at every -b value: the allowlist is what excludes it, and no port widens it"
+    else
+        fail "an unlabelled base-stack container was reachable:$allow_bad"
     fi
 
     # --- C2  a refusal refuses its own target, not the invocation -----------

@@ -167,7 +167,7 @@ The manifest and the sidecar are written under one discipline, through one scrip
 
 Staleness is decided by liveness first and by the clock only where liveness cannot answer. A holder whose pid is gone, or whose recorded start time no longer matches, is provably dead and its lock is reclaimed at once and the reclamation reported. A holder that is provably alive is never stolen from. Only an unprovable holder reaches the time bound, and that asymmetry is the argument: reclaiming from a live holder degrades to last-writer-wins, which the compare-and-swap guard still refuses, while never reclaiming turns one crash into a permanent outage. `SIGKILL` cannot be trapped, which is why a staleness policy is mandatory rather than a refinement.
 
-The script writes exactly three things: its lock directory, one empty staleness reference beside the destination, and the rename of the payload into place. It composes no content and parses no JSON — the agent owns the bytes, and the script owns only the moment they land.
+The script writes exactly four things: its lock directory, the transient name that directory is renamed to while it is being reclaimed — the rename is what elects one waiter out of many, so the name lives for the length of one reclaim and goes with it — one empty staleness reference beside the destination, and the rename of the payload into place. It composes no content and parses no JSON — the agent owns the bytes, and the script owns only the moment they land.
 
 ## 8. The two verdicts
 

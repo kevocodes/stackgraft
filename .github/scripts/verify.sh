@@ -78,9 +78,19 @@ case $port in
     *)                     fail "pick-port emitted '$port'" ;;
 esac
 
+# Both sides are `$(...)` over a script that may print nothing, and '' = '' is
+# true - so a pick-port that emitted NOTHING AT ALL for every call reported
+# itself stable across spellings. Equality still covers a script that answers
+# differently for the two; only the non-empty half covers one that answers
+# neither. Same reason the exclusion row below asserts `-n "$excl"` and the lock
+# rows assert `-n "$before"`.
 a=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" 2>/dev/null)
 b=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt/" 2>/dev/null)
-[ "$a" = "$b" ] && ok "pick-port is stable across path spellings" || fail "pick-port gave $a then $b for one worktree"
+if [ -n "$a" ] && [ "$a" = "$b" ]; then
+    ok "pick-port is stable across path spellings"
+else
+    fail "pick-port gave '$a' then '$b' for one worktree"
+fi
 
 # The inequality alone is satisfied by EMPTY, so a pick-port that emitted
 # nothing for every call carrying an exclusion passed this row: '' is not $a.

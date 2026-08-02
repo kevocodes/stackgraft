@@ -464,10 +464,22 @@ if [ "$(id -u)" -ne 0 ]; then
         chmod -R 700 "$w1c" 2>/dev/null
         kill "$holdpid" 2>/dev/null
         wait "$holdpid" 2>/dev/null
+        # The control is `not accepted`, and that is satisfied by the exit code
+        # ALONE: aside_row_accepts 3 '' h h is already false, so if the debris
+        # allowance drifted back to excusing <dest>.lock the row would print ok
+        # while proving only one of the two blind spots its own comment names.
+        # Both halves are therefore pinned to the values this fixture must
+        # produce - refused at 3, with the lock directory reported as debris.
+        case $left in
+            *w1c.json.lock*) left_names_lock=1 ;;
+            *)               left_names_lock=0 ;;
+        esac
         if aside_row_accepts "$rc" "$left" "$before" "$after"; then
             fail "ACCEPTED but must be rejected: a live holder read as the unremovable-aside failure (exit $rc, unreported '$left')"
-        else
+        elif [ "$rc" -eq 3 ] && [ "$left_names_lock" -eq 1 ]; then
             ok "rejected: a live holder is not that failure - exit $rc, and the lock it left is reported ('$left')"
+        else
+            fail "the live-holder control reproduced neither blind spot on its own terms: exit $rc (wanted 3), unreported '$left' (wanted w1c.json.lock)"
         fi
         rm -rf "$w1c"
     else

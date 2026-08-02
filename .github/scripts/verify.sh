@@ -923,9 +923,17 @@ grep -vF 'up catalog-api' "$REAPING" > "$ph/reaping.md"
 rm -rf "$ph"
 
 # --- V29  the portability grep is intent-blind, and must be able to fire -----
+# One pattern, named once, for the fixture here and for the shipped check in the
+# portability section at the bottom of this file - the same reason $GNUISM below
+# is a variable rather than two copies of one regex. With two copies, editing
+# the shipped check left this fixture proving an expression that no longer runs:
+# it went on reporting "the portability grep can fail" about a pattern the
+# shipped row had stopped using.
+PORTABILITY='~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData'
+
 pf=$(mktemp -d)
 printf 'a fixture that names an unavailable tool: jq\n' > "$pf/fixture.md"
-if grep -rniE '~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData' "$pf" >/dev/null 2>&1; then
+if grep -rniE "$PORTABILITY" "$pf" >/dev/null 2>&1; then
     ok "rejected: a file naming an unavailable tool, even in prose"
 else
     fail "the portability grep cannot fail"
@@ -2122,7 +2130,10 @@ fi
 # ------------------------------------------------------------ portability ---
 section "portability"
 
-if grep -rniE '~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData' "$SKILL" >/dev/null 2>&1; then
+# $PORTABILITY is the pattern the V29 fixture in the instrumentation section
+# proves can fire. One variable, two uses, so the fixture and the shipped check
+# can never be asking about different things.
+if grep -rniE "$PORTABILITY" "$SKILL" >/dev/null 2>&1; then
     fail "an agent-specific path or an unavailable tool is named in a shipped file"
 else
     ok "no agent-specific coupling and no unavailable tool"

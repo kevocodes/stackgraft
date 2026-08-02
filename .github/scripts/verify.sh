@@ -2084,14 +2084,32 @@ rm -rf "$wf"
 # --- V18, V28, V30  scoping, availability, and a real run on a minimal image -
 if [ "$docker_ready" -eq 1 ]; then
     out=$(sh "$REAP" report 00c0ffee 2>/dev/null)
-    if printf '%s' "$out" | grep -q "^degraded${TAB}docker-unavailable"; then
+
+    # One expression for the checked-zero line, read once and used by both rows
+    # below rather than grepped twice, exactly as $host_checked is above.
+    if printf '%s' "$out" | grep -q "^container${TAB}checked${TAB}none"; then
+        container_checked=1
+    else
+        container_checked=0
+    fi
+    [ "$container_checked" -eq 1 ] \
+        && ok "a runtime that answered and matched nothing reports a checked zero" \
+        || fail "the runtime answered and the report stated no checked zero"
+
+    # The row below is an ABSENCE, and an absence is also what no output at all
+    # produces: a reap.sh that printed nothing has no `degraded docker-unavailable`
+    # line either, so the row said "the runtime answers here" over a report that
+    # answered nothing. It was correct only because the checked-zero row happened
+    # to sit two lines away and prove $out is a real report - adjacency, not an
+    # assertion. That premise is a branch of its own now, the way the held-port
+    # and A7 absences above state theirs.
+    if [ "$container_checked" -ne 1 ]; then
+        fail "the report never said it checked the container runtime, so a missing docker-unavailable line proves nothing"
+    elif printf '%s' "$out" | grep -q "^degraded${TAB}docker-unavailable"; then
         fail "the report claims the runtime is unavailable on a host where it answers"
     else
         ok "rejected: the docker-unavailable line on a host that has docker"
     fi
-    printf '%s' "$out" | grep -q "^container${TAB}checked${TAB}none" \
-        && ok "a runtime that answered and matched nothing reports a checked zero" \
-        || fail "the runtime answered and the report stated no checked zero"
 fi
 
 if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then

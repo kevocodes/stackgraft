@@ -33,6 +33,33 @@ section "scripts"
 # an interpreter that is not on the box read as a shebang naming one that is.
 has_shebang() { head -1 "$1" | grep -q '^#!/bin/sh$'; }
 
+# The loop below asserts no INVENTORY: it runs once per file the glob finds, so
+# a script deleted from the skill costs two rows and produces no FAIL at all -
+# fewer checks read exactly like fewer problems. The four are named, and the
+# number of them that is missing must be zero, which is the shape the anchor
+# fixtures in reaping.md are already checked with.
+SHIPPED_SCRIPTS='pick-port.sh fingerprint.sh with-lock.sh reap.sh'
+scripts_missing() {
+    _n=0
+    for _s in $SHIPPED_SCRIPTS; do
+        [ -f "$1/$_s" ] || _n=$((_n + 1))
+    done
+    printf '%s\n' "$_n"
+}
+[ "$(scripts_missing "$SKILL/scripts")" -eq 0 ] \
+    && ok "all four shipped scripts are present: $SHIPPED_SCRIPTS" \
+    || fail "$(scripts_missing "$SKILL/scripts") of the four shipped scripts are missing from $SKILL/scripts"
+
+# ...and the inventory can notice one going away, the same way the anchor
+# fixture check is proven: a copy with one entry removed.
+si=$(mktemp -d)
+cp "$SKILL"/scripts/*.sh "$si/"
+rm -f "$si/reap.sh"
+[ "$(scripts_missing "$si")" -ge 1 ] \
+    && ok "rejected: a scripts directory with reap.sh deleted" \
+    || fail "the script inventory cannot notice a deleted script"
+rm -rf "$si"
+
 for f in "$SKILL"/scripts/*.sh; do
     name=$(basename "$f")
     if command -v dash >/dev/null 2>&1; then

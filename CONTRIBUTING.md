@@ -32,7 +32,7 @@ CI runs these on every push and pull request, and you can run them locally:
 .github/scripts/verify.sh
 ```
 
-It checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, the four release version strings agree, and no agent-specific coupling crept in.
+It checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, the four release version strings agree, the released version has a `CHANGELOG.md` entry that extracts to a usable release body, and no agent-specific coupling crept in.
 
 Two things worth doing before you trust a green run:
 
@@ -54,7 +54,29 @@ Keep pull requests under roughly 400 changed lines. If a change is genuinely lar
 
 ## Releasing
 
-One release, one number, in **four** places. Bump all four in the same commit, then add a `CHANGELOG.md` entry.
+One `CHANGELOG.md` entry, one number in **four** places, one tag — in that order. Pushing the tag is what publishes: `.github/workflows/release.yml` builds the GitHub release out of the changelog section for that version.
+
+### 1. Write the entry, with its link definition
+
+Newest section first, definitions at the foot of the file:
+
+````md
+## [1.2.0] — 2026-09-14
+
+What changed, in prose.
+
+### Added
+
+- ...
+
+[1.2.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.2.0
+````
+
+Both halves. The heading is what the release workflow looks for; the definition is what makes `[1.2.0]` render as a link rather than as literal brackets, and a heading shipped without one is a mistake this project has already made.
+
+Write the section as the release notes, because that is what it becomes — `.github/scripts/changelog-section.sh` prints it verbatim with the heading removed. Do not repeat the version inside the body: GitHub renders it as the release title and shows the tag beside it, so a heading there says the same thing a third time.
+
+### 2. Bump the version in four places, in the same commit
 
 | Where | Why it is there |
 |---|---|
@@ -64,3 +86,21 @@ One release, one number, in **four** places. Bump all four in the same commit, t
 | `SKILL.md`, `metadata.version` | the skill's own record of the same number |
 
 **CI enforces their agreement.** The `release version` section of `.github/scripts/verify.sh` compares the other three against `plugin.json` and rejects a value that is not semver, so a partial bump is a red run rather than a drift nobody notices until an install fails. Remembering four files is exactly the ritual that already drifted once, which is why it is a check and not a paragraph.
+
+### 3. Merge, then push the signed tag
+
+```sh
+git tag -s v1.2.0 -m 'stackgraft 1.2.0'
+git push origin v1.2.0
+```
+
+### What the tag push checks, and what it cannot
+
+The workflow refuses to publish — loudly, and before creating anything — when:
+
+- **the tag disagrees with `.claude-plugin/plugin.json`.** Pushing `v1.2.0` while the manifest still says `1.1.0` fails the job and names both numbers.
+- **`CHANGELOG.md` has no entry for that version.** The extractor exits non-zero naming the version, and a heading with an empty body under it is refused the same way rather than published as a release with no notes.
+
+`verify.sh` covers the rest on every pull request: that the four numbers agree and are semver, that the version `plugin.json` declares has both an entry and a link definition, and that the extracted body carries neither the `## [` heading nor a link-reference line.
+
+**What none of it can see is whether the number is the right one.** All four places agreeing on `1.0.0` is exactly what this repository looked like while `main` had gained 1456 lines of shipped skill since that entry was written — agreement, and stale. Deciding that what shipped is a patch, a minor or a major, and that the entry describes it honestly, is the human half, and it is the half that has actually gone wrong here. The release title is human too: the workflow titles the release with the tag and does not invent the phrase beside it.

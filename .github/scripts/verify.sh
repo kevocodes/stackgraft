@@ -1022,6 +1022,11 @@ else
     printf '  skip  compose label-flag rows (no docker daemon)\n'
 fi
 
+# How many containers carry stackgraft.repo=$1. Used by the V17 rows below for
+# this repository's hash8 and for a foreign one, so the two are one query asked
+# twice rather than two queries that could drift apart.
+overlay_count() { docker ps --filter "label=stackgraft.repo=$1" --quiet | wc -l | tr -d ' '; }
+
 if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
     # V17: all five labels, read back, with a worktree path holding a space.
     h=deadbeef
@@ -1041,12 +1046,20 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         [ "$bad" -eq 0 ] \
             && ok "a launched overlay carries all five labels, spaced worktree path included" \
             || fail "$bad of the five labels did not read back"
-        [ "$(docker ps --filter "label=stackgraft.repo=$h" --quiet | wc -l | tr -d ' ')" = 1 ] \
+        # One expression for both queries, and the negative carries the positive
+        # as its stated premise. Zero for a foreign hash8 is also what a listing
+        # with nothing to find returns - a fixture that lost its repo label, a
+        # container that never started - so the second row said "scoped" over a
+        # query that matched nothing whatever it was asked. It was correct only
+        # because the row above it had proven otherwise; it says so itself now.
+        own_n=$(overlay_count "$h")
+        foreign_n=$(overlay_count 0000none)
+        [ "$own_n" = 1 ] \
             && ok "the hash8-filtered query finds it" \
             || fail "the hash8-filtered query did not find the labelled overlay"
-        [ "$(docker ps --filter 'label=stackgraft.repo=0000none' --quiet | wc -l | tr -d ' ')" = 0 ] \
+        [ "$own_n" = 1 ] && [ "$foreign_n" = 0 ] \
             && ok "rejected: a query scoped to another repository's hash8 returns nothing" \
-            || fail "a foreign hash8 matched this repository's overlay"
+            || fail "a foreign hash8 matched this repository's overlay (own $own_n, foreign $foreign_n)"
         docker rm -f "$cid" >/dev/null 2>&1
     else
         fail "could not launch the labelled overlay fixture"

@@ -40,8 +40,8 @@ Skip for single-service repos, cheap `up`, or full isolation.
 
 ## Execution Steps
 
-1. At the worktree top, derive `gitCommonDir` and `repoRoot` — the **main** worktree, never this checkout — per `references/discovery.md` §0.
-2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`; derive `hash8` and discard per `references/discovery.md` §0 and §5. If unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
+1. At the worktree top, derive `gitCommonDir` and `repoRoot` — the **main** worktree, never this checkout — per `references/discovery.md` section 0.
+2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`; derive `hash8` and discard per `references/discovery.md` sections 0 and 5. If unwritable, run manifest-less and say so. Fingerprint `sources[].path` with `sh scripts/fingerprint.sh -C "$repoRoot"`.
 3. Report overlays of this repository per `references/reaping.md`; exclude their ports.
 4. Discover or refresh per Decision Gates (`references/discovery.md`).
 5. Diff the worktree against its base branch; map changes through `paths`.

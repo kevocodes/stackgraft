@@ -11,6 +11,7 @@
   <a href="docs/INSTALLATION.md">Installation</a> &bull;
   <a href="docs/HOW-IT-WORKS.md">How it works</a> &bull;
   <a href="docs/SHARED-STATE.md">Shared state</a> &bull;
+  <a href="SECURITY.md">Security</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a> &bull;
   <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -93,6 +94,14 @@ skills/stackgraft/
 **Topology is cached, not re-derived.** A per-repository manifest under `XDG_CACHE_HOME`, keyed by the git common dir so every worktree shares one. Each source records the manifest keys it owns, so a drifted file re-derives only its slice. The manifest is a cache, never truth — on conflict the repository wins.
 
 **Discovery prefers your ecosystem's own resolver** over hand-parsing, and degrades to a marked static parse instead of failing when the resolver is unavailable.
+
+## Creating the worktree is a different job
+
+stackgraft does not create worktrees and does not install dependencies. It starts where that work ends.
+
+[`using-git-worktrees`](https://www.skills.sh/obra/superpowers/using-git-worktrees) covers the creating half — where the worktree should live, gitignore safety, installing dependencies for npm, cargo, pip or go, and a baseline test run — and says so itself: it *"does not start services, manage ports, or handle databases."* That is the half stackgraft does. **The two compose**: use it to create the worktree, then stackgraft to run only what you changed in it.
+
+They meet on one question, where a worktree should live, which is why stackgraft carries a hard rule against placing one under `/tmp` or `/var/tmp` — both are reaped.
 
 ## Honest limits
 

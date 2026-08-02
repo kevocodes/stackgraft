@@ -32,7 +32,7 @@ CI runs these on every push and pull request, and you can run them locally:
 .github/scripts/verify.sh
 ```
 
-It checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, and no agent-specific coupling crept in.
+It checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, the four release version strings agree, and no agent-specific coupling crept in.
 
 Two things worth doing before you trust a green run:
 
@@ -54,4 +54,13 @@ Keep pull requests under roughly 400 changed lines. If a change is genuinely lar
 
 ## Releasing
 
-The plugin version lives in `.claude-plugin/plugin.json`. Users receive an update only when it changes, so bump it on release and add a `CHANGELOG.md` entry. The skill's own `metadata.version` in `SKILL.md` tracks the same number.
+One release, one number, in **four** places. Bump all four in the same commit, then add a `CHANGELOG.md` entry.
+
+| Where | Why it is there |
+|---|---|
+| `.claude-plugin/plugin.json` | the source of truth — a Claude Code user receives an update only when this changes |
+| `.claude-plugin/marketplace.json` | the version the marketplace lists |
+| `SKILL.md`, top-level `version` | what the skill package managers read; `paks` refuses a skill that has no top-level semver `version` |
+| `SKILL.md`, `metadata.version` | the skill's own record of the same number |
+
+**CI enforces their agreement.** The `release version` section of `.github/scripts/verify.sh` compares the other three against `plugin.json` and rejects a value that is not semver, so a partial bump is a red run rather than a drift nobody notices until an install fails. Remembering four files is exactly the ritual that already drifted once, which is why it is a check and not a paragraph.

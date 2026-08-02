@@ -46,8 +46,21 @@ a=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" 2>/dev/null)
 b=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt/" 2>/dev/null)
 [ "$a" = "$b" ] && ok "pick-port is stable across path spellings" || fail "pick-port gave $a then $b for one worktree"
 
+# The inequality alone is satisfied by EMPTY, so a pick-port that emitted
+# nothing for every call carrying an exclusion passed this row: '' is not $a.
+# What the row means is three things - a port, in range, and not the excluded
+# one - and it asks for all three, in the same `case` shape the range row above
+# uses for the same value.
 excl=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" "$a" 2>/dev/null)
-[ "$excl" != "$a" ] && ok "pick-port honours an exclusion" || fail "pick-port returned an excluded port"
+case ${excl:-} in
+    1[8-9][0-9][0-9][0-9]) excl_ranged=1 ;;
+    *)                     excl_ranged=0 ;;
+esac
+if [ -n "$excl" ] && [ "$excl_ranged" -eq 1 ] && [ "$excl" != "$a" ]; then
+    ok "pick-port honours an exclusion (emitted $excl, not the excluded $a)"
+else
+    fail "pick-port emitted '$excl' with $a excluded"
+fi
 
 sh "$SKILL/scripts/pick-port.sh" 18000 18000 "$wt" 18000 >/dev/null 2>&1
 [ $? -eq 3 ] && ok "pick-port exits 3 when the range is exhausted" || fail "pick-port did not signal exhaustion"
@@ -55,8 +68,18 @@ sh "$SKILL/scripts/pick-port.sh" 18000 18000 "$wt" 18000 >/dev/null 2>&1
 sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" "3000,5173" >/dev/null 2>&1
 [ $? -eq 2 ] && ok "pick-port rejects a comma-joined exclusion list" || fail "pick-port accepted a comma list"
 
-sh "$SKILL/scripts/pick-port.sh" 18000 18999 18500 >/dev/null 2>&1
-[ $? -eq 2 ] && ok "pick-port rejects a port in the worktree slot" || fail "pick-port swallowed an exclusion as the worktree"
+# Exit 2 alone cannot say WHICH refusal fired. An all-digit path that got past
+# the guard this row exists to prove reaches the directory test one line later
+# and refuses at 2 as well, so deleting the guard leaves the row green. The
+# message is asserted for the same reason the -b rejection further down is
+# quoted back by name: "rejected" without "rejected by what" is half a check.
+ws=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 18500 2>&1 >/dev/null)
+ws_rc=$?
+if [ "$ws_rc" -eq 2 ] && printf '%s' "$ws" | grep -q "all digits: '18500'"; then
+    ok "pick-port rejects a port in the worktree slot, naming it as all digits"
+else
+    fail "the worktree-slot refusal: exit $ws_rc, said '$ws'"
+fi
 
 lines=$(printf 'README.md\nLICENSE' | sh "$SKILL/scripts/fingerprint.sh" - 2>/dev/null | wc -l | tr -d ' ')
 [ "$lines" = "2" ] && ok "fingerprint keeps a final unterminated line" || fail "fingerprint emitted $lines lines for 2 paths"
@@ -113,6 +136,14 @@ await_owner() {
 # Every fixture below asserts the destination's BYTES as well as the exit code.
 # A refusal that replaced the file anyway is not a refusal, and an exit code on
 # its own cannot tell those two apart.
+#
+# `before` is required to be NON-EMPTY as well as equal to `after`. Both sides
+# are `git hash-object --stdin < "$d"`, and that prints nothing at all when the
+# redirect finds no file - so `'' = ''` reported "bytes unchanged" over a
+# destination that was not there to change, in every row of this shape,
+# including the live-holder one, which is a safety assertion. Equality alone
+# still covers a destination the run DELETED; only the non-empty half covers
+# one that never existed.
 
 # --- V7  compare-and-swap: the lock alone does not close the write window ----
 d="$lockdir/manifest.json"
@@ -198,7 +229,8 @@ if [ "$lstart_here" -eq 1 ]; then
     kill "$livepid" 2>/dev/null
     wait "$livepid" 2>/dev/null
     rm -rf "$d.lock"
-    if [ "$rc" -eq 3 ] && [ "$before" = "$after" ] && printf '%s' "$msg" | grep -q "$livepid"; then
+    if [ "$rc" -eq 3 ] && [ -n "$before" ] && [ "$before" = "$after" ] \
+       && printf '%s' "$msg" | grep -q "$livepid"; then
         ok "a provably live holder is never stolen from (exit 3, bytes unchanged, pid named)"
     else
         fail "live-holder lock: exit $rc, bytes $before -> $after, said '$msg'"
@@ -237,7 +269,7 @@ el=$(( $(date +%s) - t0 ))
 wait "$churn" 2>/dev/null
 after=$(git hash-object --stdin < "$d")
 rm -rf "$d.lock"
-if [ "$rc" -eq 3 ] && [ "$before" = "$after" ]; then
+if [ "$rc" -eq 3 ] && [ -n "$before" ] && [ "$before" = "$after" ]; then
     ok "a lock created during the wait is not stolen (exit 3 after ${el}s)"
 else
     fail "lock created during the wait: exit $rc after ${el}s, bytes $before -> $after"
@@ -376,7 +408,11 @@ rm -rf "$w1"
 # reclaimed nothing and left the whole lock directory. Sharing the function is
 # what makes the control exercise the condition the row really uses instead of
 # a restatement of it that could drift.
-aside_row_accepts() { [ "$1" -eq 4 ] && [ -z "$2" ] && [ "$3" = "$4" ]; }
+#
+# The non-empty test on $3 is the same one the V8 and V9 rows carry, for the
+# same reason: two empty fingerprints compare equal, so without it "the bytes
+# did not change" was also true of a destination that was never there.
+aside_row_accepts() { [ "$1" -eq 4 ] && [ -z "$2" ] && [ -n "$3" ] && [ "$3" = "$4" ]; }
 
 if [ "$(id -u)" -ne 0 ]; then
     w1b=$(mktemp -d)
@@ -428,10 +464,22 @@ if [ "$(id -u)" -ne 0 ]; then
         chmod -R 700 "$w1c" 2>/dev/null
         kill "$holdpid" 2>/dev/null
         wait "$holdpid" 2>/dev/null
+        # The control is `not accepted`, and that is satisfied by the exit code
+        # ALONE: aside_row_accepts 3 '' h h is already false, so if the debris
+        # allowance drifted back to excusing <dest>.lock the row would print ok
+        # while proving only one of the two blind spots its own comment names.
+        # Both halves are therefore pinned to the values this fixture must
+        # produce - refused at 3, with the lock directory reported as debris.
+        case $left in
+            *w1c.json.lock*) left_names_lock=1 ;;
+            *)               left_names_lock=0 ;;
+        esac
         if aside_row_accepts "$rc" "$left" "$before" "$after"; then
             fail "ACCEPTED but must be rejected: a live holder read as the unremovable-aside failure (exit $rc, unreported '$left')"
-        else
+        elif [ "$rc" -eq 3 ] && [ "$left_names_lock" -eq 1 ]; then
             ok "rejected: a live holder is not that failure - exit $rc, and the lock it left is reported ('$left')"
+        else
+            fail "the live-holder control reproduced neither blind spot on its own terms: exit $rc (wanted 3), unreported '$left' (wanted w1c.json.lock)"
         fi
         rm -rf "$w1c"
     else
@@ -724,14 +772,29 @@ section "instrumentation"
 # The block under test is the SHIPPED one, lifted out of with-lock.sh between
 # its sentinels, so this exercises the bytes that run rather than a restatement
 # of them.
+#
+# One extractor, used by every row that needs the block: this one, the minimal
+# image row further down, and the byte-identity comparison in the reap section.
+# Three copies of one awk program is how they drift into asking three subtly
+# different questions.
+extract_probe() {
+    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$1" 2>/dev/null
+}
+
 ph=$(mktemp -d)
+lock_probe=$(extract_probe "$LOCK")
 {
     printf '#!/bin/sh\n'
-    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$LOCK"
+    printf '%s\n' "$lock_probe"
     printf 'lstart_probe\nprintf "%%s\\n" "$lstart_supported"\n'
 } > "$ph/probe.sh"
 
-if [ -s "$ph/probe.sh" ] && grep -q lstart_probe "$ph/probe.sh"; then
+# What is guarded is the EXTRACTION, not the assembled file. The shebang and
+# the trailer this block writes itself satisfy both `-s` and a grep for
+# lstart_probe, so with the sentinels stripped from with-lock.sh the row
+# reported the block extractable over zero extracted bytes - an assertion its
+# own harness answered. V6 below already guards its extraction this way.
+if [ -n "$lock_probe" ] && [ -s "$ph/probe.sh" ] && grep -q lstart_probe "$ph/probe.sh"; then
     ok "the lstart probe block is delimited and extractable from with-lock.sh"
 else
     fail "the lstart probe block could not be lifted out of with-lock.sh"
@@ -844,9 +907,20 @@ if [ "$docker_ready" -eq 1 ]; then
     docker compose run --help 2>&1 | grep -qE '^[[:space:]]*-l, --label' \
         && ok "docker compose run advertises -l/--label" \
         || fail "docker compose run does not advertise --label, which the anchor rests on"
-    docker compose up --help 2>&1 | grep -qE '^[[:space:]]*-l, --label' \
-        && fail "docker compose up advertises --label, so the up refusal has no ground" \
-        || ok "rejected: docker compose up, which takes no label flag - the up refusal's ground"
+    # `up` has no --label, so the grep for it misses whatever happened - which
+    # is exactly what NO help output produces too. The row could not tell a
+    # real answer from none, and `docker compose up --help` failing outright
+    # read as "up correctly takes no --label". So the output is required to be
+    # up's own help first, by a flag `up` really does carry, and only then is
+    # --label required to be absent from it.
+    up_help=$(docker compose up --help 2>&1)
+    if ! printf '%s\n' "$up_help" | grep -qE '^[[:space:]]*-d, --detach'; then
+        fail "docker compose up --help did not answer with its own flags, so a missing --label proves nothing"
+    elif printf '%s\n' "$up_help" | grep -qE '^[[:space:]]*-l, --label'; then
+        fail "docker compose up advertises --label, so the up refusal has no ground"
+    else
+        ok "rejected: docker compose up, which takes no label flag - the up refusal's ground"
+    fi
 else
     printf '  skip  compose label-flag rows (no docker daemon)\n'
 fi
@@ -900,7 +974,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     pp=$(mktemp -d)
     {
         printf '#!/bin/sh\n'
-        awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$LOCK"
+        extract_probe "$LOCK"
         printf 'lstart_probe\nprintf "%%s\\n" "$lstart_supported"\n'
     } > "$pp/probe.sh"
     [ "$(docker run --rm --entrypoint sh -v "$pp":/probe alpine/git -c 'sh /probe/probe.sh' 2>/dev/null | tail -1)" = 0 ] \
@@ -982,9 +1056,8 @@ reap_run() {
 }
 
 # --- V6  one probe, two scripts, and a byte is enough to notice --------------
-extract_probe() {
-    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$1" 2>/dev/null
-}
+# extract_probe() is defined once, with the V13 block in the instrumentation
+# section above, and this row's `-n` guard is the shape V13 now uses too.
 p_lock=$(extract_probe "$LOCK" | git hash-object --stdin)
 p_reap=$(extract_probe "$REAP" | git hash-object --stdin)
 if [ -n "$(extract_probe "$REAP")" ] && [ "$p_lock" = "$p_reap" ]; then
@@ -2450,10 +2523,18 @@ else
     cp -R "$SKILL"/. "$sf/skills/stackgraft/"
     printf '\nA fixture token that is no manifest field: `notAManifestField`\n' \
         >> "$sf/skills/stackgraft/references/reaping.md"
-    if ( cd "$sf" && python3 "$ROOT/.github/scripts/check_schema.py" >/dev/null 2>&1 ); then
+    # The OUTPUT decides, not the exit code alone: any nonzero exit passed this
+    # row, so a scratch copy missing manifest.example.json printed ok over a
+    # FileNotFoundError - a negative rejected for a reason that has nothing to
+    # do with what it is testing. The token has to be named back.
+    sf_out=$( cd "$sf" && python3 "$ROOT/.github/scripts/check_schema.py" 2>&1 )
+    sf_rc=$?
+    if [ "$sf_rc" -eq 0 ]; then
         fail "ACCEPTED but must be rejected: a camelCase non-field backticked in reaping.md"
-    else
+    elif printf '%s' "$sf_out" | grep -q 'notAManifestField'; then
         ok "rejected: a camelCase non-field backticked in reaping.md"
+    else
+        fail "the scratch run failed for some other reason than the fixture token: '$sf_out'"
     fi
     rm -rf "$sf"
 fi

@@ -48,14 +48,40 @@ else:
     ok("the shipped example validates")
 
 
-def rejects(label, mutate):
-    """A fixture that must be rejected. If it validates, the rule is not enforced."""
+def schema_rule(error):
+    """The one rule that produced an error, as its absolute schema path.
+
+    The last element is the validator keyword and everything before it names
+    where in the schema that keyword sits, so two rules spelled with the same
+    keyword - and this schema has several `required` and two `minItems` - are
+    still told apart.
+    """
+    return "/" + "/".join(str(part) for part in error.absolute_schema_path)
+
+
+def rejects(label, mutate, rule):
+    """A fixture that must be rejected BY THE NAMED RULE.
+
+    Asserting that SOME error fired is not enough, because several of these
+    fixtures trip two rules at once and either one satisfies "some". "a source
+    covering nothing" violates the covers minItems rule and, having emptied the
+    only covering source, the contains rule that every manifest carry a source
+    covering backingStores; "an empty sources array" violates sources minItems
+    and that same contains rule. With only "some error" asserted, deleting the
+    rule the fixture is about left its row green under the other one - the
+    fixture stopped exercising anything and said so nowhere.
+    """
     doc = copy.deepcopy(example)
     mutate(doc)
-    if list(validator.iter_errors(doc)):
-        ok(f"rejected: {label}")
-    else:
+    errors = list(validator.iter_errors(doc))
+    if not errors:
         fail(f"ACCEPTED but must be rejected: {label}")
+        return
+    fired = sorted({schema_rule(error) for error in errors})
+    if rule in fired:
+        ok(f"rejected by {rule}: {label}")
+    else:
+        fail(f"rejected by the wrong rule: {label} :: wanted {rule}, got {fired}")
 
 
 def accepts(label, mutate):
@@ -68,29 +94,49 @@ def accepts(label, mutate):
         ok(f"accepted: {label}")
 
 
+# The isolation rules all live under one long path. Named once so the rule each
+# fixture is about stays readable at its call site.
+ISOLATION = "/properties/backingStores/additionalProperties/properties/isolation"
+
 # --- the shared-state gate must not be satisfiable by declaring nothing ------
-rejects("a manifest with no backingStores at all", lambda d: d.pop("backingStores"))
+rejects(
+    "a manifest with no backingStores at all",
+    lambda d: d.pop("backingStores"),
+    "/required",
+)
 rejects(
     "an empty backingStores with no root stateReview",
     lambda d: d.update(backingStores={}),
+    "/allOf/0/then/required",
 )
 rejects(
     "a populated backingStores that no source covers",
     lambda d: d.update(
         sources=[{"path": "compose.yaml", "fingerprint": "h", "covers": ["services"]}]
     ),
+    "/allOf/1/then/properties/sources/contains",
 )
-rejects("a source covering nothing", lambda d: d["sources"][0].update(covers=[]))
-rejects("an empty sources array", lambda d: d.update(sources=[]))
+rejects(
+    "a source covering nothing",
+    lambda d: d["sources"][0].update(covers=[]),
+    "/properties/sources/items/properties/covers/minItems",
+)
+rejects(
+    "an empty sources array",
+    lambda d: d.update(sources=[]),
+    "/properties/sources/minItems",
+)
 
 # --- evidence must be falsifiable ------------------------------------------
 rejects(
     "a classification with no fingerprint baseline",
     lambda d: d["services"]["catalog-api"]["stateReview"].pop("serviceFingerprint"),
+    "/properties/services/additionalProperties/properties/stateReview/required",
 )
 rejects(
     "an accepted risk naming nobody",
     lambda d: [e.pop("acceptedBy", None) for e in d["acceptedRisks"].values()],
+    "/properties/acceptedRisks/additionalProperties/required",
 )
 rejects(
     "an isolation approval with no source to measure drift against",
@@ -100,6 +146,7 @@ rejects(
         ),
         d["backingStores"]["postgres"]["isolation"].pop("discoveredFrom"),
     ),
+    f"{ISOLATION}/allOf/0/then/required",
 )
 
 # --- a mechanism must be able to do something -------------------------------
@@ -112,26 +159,32 @@ rejects(
             for k in ("command", "env")
         ],
     ),
+    f"{ISOLATION}/allOf/1/then/anyOf",
 )
 rejects(
     "a namespace that is created and never dropped",
     lambda d: d["backingStores"]["postgres"]["isolation"].pop("teardownCommand"),
+    f"{ISOLATION}/allOf/2/then/required",
 )
 rejects(
     "a distinct consumer identity with no channel to the process",
     lambda d: d["services"]["search-indexer"]["competesOn"][0].update(
         overlayIdentity="sg-x"
     ),
+    "/properties/services/additionalProperties/properties/competesOn"
+    "/items/allOf/0/then/required",
 )
 
 # --- untrusted repository data stays constrained ----------------------------
 rejects(
     "a store name carrying a shell metacharacter",
     lambda d: d["backingStores"].update({"pg;rm -rf /": d["backingStores"]["postgres"]}),
+    "/properties/backingStores/propertyNames/pattern",
 )
 rejects(
     "a source claiming authority over the gate's own bypass",
     lambda d: d["sources"][0]["covers"].append("acceptedRisks"),
+    "/properties/sources/items/properties/covers/items/not",
 )
 
 # --- and the legitimate shapes still pass -----------------------------------
@@ -165,7 +218,25 @@ def storeless_unevidenced(doc):
     doc["stateReview"].pop("confidence")
 
 
-rejects("a storeless claim with no confidence recorded", storeless_unevidenced)
+rejects(
+    "a storeless claim with no confidence recorded",
+    storeless_unevidenced,
+    "/properties/stateReview/required",
+)
+
+# ...and the rule match can tell one rule from another. Without this every row
+# above could be pointed at a rule no fixture ever trips and they would all
+# still print ok, which is the same defect in a new place: `rejects` gained a
+# way to fail, so it needs a fixture that makes it fail. Removing backingStores
+# is rejected by the ROOT required rule; naming portPolicy's own required rule
+# instead must not match it.
+_probe = copy.deepcopy(example)
+_probe.pop("backingStores")
+_probe_rules = {schema_rule(error) for error in validator.iter_errors(_probe)}
+if "/properties/portPolicy/required" in _probe_rules:
+    fail("the rule match accepts a rule the fixture never tripped")
+else:
+    ok("the rule match tells one validator rule from another")
 
 # --- every field the documents name must exist ------------------------------
 names = set()

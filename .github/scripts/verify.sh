@@ -792,10 +792,10 @@ rm -rf "$lf"
 # derivation with no truncation in it and stayed green.
 #
 # So the recipe is FOLLOWED here rather than reviewed: the hashing command is
-# taken out of §0, the cut length is taken out of §0, and the result is what
-# the body's own `<repo-basename>-<hash8>.json` template gets built from. The
-# length is read from the prose instead of hard-coded, because a hard-coded 8
-# would supply the very step whose absence is the defect.
+# taken out of section 0, the cut length is taken out of section 0, and the
+# result is what the body's own `<repo-basename>-<hash8>.json` template gets
+# built from. The length is read from the prose instead of hard-coded, because
+# a hard-coded 8 would supply the very step whose absence is the defect.
 DISCOVERY="$SKILL/references/discovery.md"
 
 section_zero()  { awk '/^## 0\./ { on = 1; next } /^## / { if (on) exit } on' "$1"; }
@@ -815,10 +815,10 @@ hash8_cut() {
         print substr($0, RSTART + 6, RLENGTH - 17); exit }'
 }
 
-# Follows $1's §0 against the common dir $2 and prints what it yields. A file
-# stating no truncation does not get 8 assumed for it: it gets the recipe as it
-# actually reads, which is the whole digest - precisely what the shipped body
-# produced, and precisely what this row has to be able to see.
+# Follows $1's section 0 against the common dir $2 and prints what it yields.
+# A file stating no truncation does not get 8 assumed for it: it gets the
+# recipe as it actually reads, which is the whole digest - precisely what the
+# shipped body produced, and precisely what this row has to be able to see.
 hash8_derive() {
     _cmd=$(hash8_command "$1")
     [ -n "$_cmd" ] || return 0
@@ -835,23 +835,56 @@ h8_common=$(CDPATH= cd -- "$(git rev-parse --git-common-dir)" && pwd -P)
 h8=$(hash8_derive "$DISCOVERY" "$h8_common")
 case ${h8:-} in
     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
-        ok "the body's hash8 pointer resolves: §0 yields '$h8', eight lowercase hex" ;;
+        ok "the body's hash8 pointer resolves: section 0 yields '$h8', eight lowercase hex" ;;
     *)
-        fail "SKILL.md plus discovery.md §0 yields '${h8:-nothing}' (${#h8} chars), not eight lowercase hex" ;;
+        fail "SKILL.md plus discovery.md section 0 yields '${h8:-nothing}' (${#h8} chars), not eight lowercase hex" ;;
 esac
 
 # ...and the row goes red the moment the recipe loses that step. The fixture is
 # the shipped file with its truncation paragraph deleted - which is the state
 # that shipped, and the state every other check in this file reads as healthy.
+#
+# One expression for lowercase hex, used by both the eight-character arm and the
+# whole-digest premise below rather than spelled twice. A whole object id is 40
+# characters or 64 - never a hard-coded 40, because a repository with
+# `extensions.objectFormat=sha256` digests to 64, and this project's own design
+# record (DS11) refused to put a length `pattern` on a fingerprint for exactly
+# that reason. Measured on git 2.50.1: one input, 40 characters from a sha1
+# repository and 64 from a sha256 one.
+lower_hex() {
+    case ${1:-} in
+        '' | *[!0-9a-f]*) return 1 ;;
+        *)                return 0 ;;
+    esac
+}
+whole_object_id() {
+    lower_hex "${1:-}" || return 1
+    case ${#1} in
+        40 | 64) return 0 ;;
+        *)       return 1 ;;
+    esac
+}
+
 hf=$(mktemp -d)
 awk '!/first 8 characters/' "$DISCOVERY" > "$hf/discovery.md"
 h8bad=$(hash8_derive "$hf/discovery.md" "$h8_common")
-case ${h8bad:-} in
-    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
-        fail "ACCEPTED but must be rejected: §0 with no truncation still resolved to eight hex" ;;
-    *)
-        ok "rejected: §0 with the truncation removed - the pointer resolves to ${#h8bad} characters, not 8" ;;
-esac
+
+# The row below concludes from a LENGTH, and "not 8" is equally satisfied by a
+# derivation that produced nothing at all: with git off the PATH neither the
+# common-dir line above nor the recipe's own hashing command produces anything,
+# hash8_derive yields the empty string, and the row printed
+# `ok ... resolves to 0 characters, not 8` - a total failure of git reading as
+# the truncation guard working. It was correct only because the positive row
+# above happened to prove the derivation runs at all - adjacency, not an
+# assertion. That premise is a branch of its own now, the way the held-port, A7
+# and docker-availability absences state theirs.
+if [ "${#h8bad}" -eq 8 ] && lower_hex "$h8bad"; then
+    fail "ACCEPTED but must be rejected: section 0 with no truncation still resolved to eight hex"
+elif whole_object_id "$h8bad"; then
+    ok "rejected: section 0 with the truncation removed - the pointer resolves to the whole ${#h8bad}-character object id, not 8"
+else
+    fail "the truncation-removed recipe yielded '${h8bad:-nothing}' (${#h8bad} chars), which is no whole object id, so a length that is not 8 proves nothing about truncation"
+fi
 rm -rf "$hf"
 
 # ------------------------------------------------- instrumentation ----------

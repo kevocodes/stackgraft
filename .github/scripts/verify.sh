@@ -772,14 +772,29 @@ section "instrumentation"
 # The block under test is the SHIPPED one, lifted out of with-lock.sh between
 # its sentinels, so this exercises the bytes that run rather than a restatement
 # of them.
+#
+# One extractor, used by every row that needs the block: this one, the minimal
+# image row further down, and the byte-identity comparison in the reap section.
+# Three copies of one awk program is how they drift into asking three subtly
+# different questions.
+extract_probe() {
+    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$1" 2>/dev/null
+}
+
 ph=$(mktemp -d)
+lock_probe=$(extract_probe "$LOCK")
 {
     printf '#!/bin/sh\n'
-    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$LOCK"
+    printf '%s\n' "$lock_probe"
     printf 'lstart_probe\nprintf "%%s\\n" "$lstart_supported"\n'
 } > "$ph/probe.sh"
 
-if [ -s "$ph/probe.sh" ] && grep -q lstart_probe "$ph/probe.sh"; then
+# What is guarded is the EXTRACTION, not the assembled file. The shebang and
+# the trailer this block writes itself satisfy both `-s` and a grep for
+# lstart_probe, so with the sentinels stripped from with-lock.sh the row
+# reported the block extractable over zero extracted bytes - an assertion its
+# own harness answered. V6 below already guards its extraction this way.
+if [ -n "$lock_probe" ] && [ -s "$ph/probe.sh" ] && grep -q lstart_probe "$ph/probe.sh"; then
     ok "the lstart probe block is delimited and extractable from with-lock.sh"
 else
     fail "the lstart probe block could not be lifted out of with-lock.sh"
@@ -948,7 +963,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     pp=$(mktemp -d)
     {
         printf '#!/bin/sh\n'
-        awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$LOCK"
+        extract_probe "$LOCK"
         printf 'lstart_probe\nprintf "%%s\\n" "$lstart_supported"\n'
     } > "$pp/probe.sh"
     [ "$(docker run --rm --entrypoint sh -v "$pp":/probe alpine/git -c 'sh /probe/probe.sh' 2>/dev/null | tail -1)" = 0 ] \
@@ -1030,9 +1045,8 @@ reap_run() {
 }
 
 # --- V6  one probe, two scripts, and a byte is enough to notice --------------
-extract_probe() {
-    awk '/BEGIN lstart probe/ { on = 1; next } /END lstart probe/ { on = 0 } on { print }' "$1" 2>/dev/null
-}
+# extract_probe() is defined once, with the V13 block in the instrumentation
+# section above, and this row's `-n` guard is the shape V13 now uses too.
 p_lock=$(extract_probe "$LOCK" | git hash-object --stdin)
 p_reap=$(extract_probe "$REAP" | git hash-object --stdin)
 if [ -n "$(extract_probe "$REAP")" ] && [ "$p_lock" = "$p_reap" ]; then

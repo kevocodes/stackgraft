@@ -1228,11 +1228,18 @@ fi
 
 # ...and that exit 2 is about the retired flag, not about any flag: a real port
 # in the same position parses and gets as far as the target proof.
+#
+# The exit code is PINNED to 3 rather than merely tested for "not 2". A reap.sh
+# that is absent, unreadable or dead on its first line answers 127, which is not
+# 2 either - so a total failure of the script under test produced this row's own
+# positive evidence. 3 is the target proof being reached and refused for an id
+# that does not exist, which is what `bp_try 18103 3` a few lines below already
+# asserts for this very invocation shape.
 reap_run -b 18103 -m stop 00c0ffee 'c:deadbeefcafe'
-if [ "$reap_rc" -ne 2 ]; then
+if [ "$reap_rc" -eq 3 ]; then
     ok "rejected: a usage error for a supplied base port, which the parser must accept ($reap_rc)"
 else
-    fail "a supplied -b was rejected as a usage error, so the row above proves nothing"
+    fail "a supplied -b did not reach the target proof: exit $reap_rc (wanted 3), said '$reap_out'"
 fi
 
 # The usage text must not advertise it either. An agent reads the usage line

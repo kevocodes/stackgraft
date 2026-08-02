@@ -745,16 +745,34 @@ verdict_hits() {
     && ok "rejected: a body line naming the REAP verdict" \
     || fail "the verdict-term loop cannot report a term it should catch"
 
-for p in $(grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$SKILL/SKILL.md" | tr -d '`' | sort -u); do
+# One expression for the pointer set, used by the rows below and by the negative
+# fixture, so the two cannot drift into keying on differently spelled things.
+link_targets() {
+    grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$1" | tr -d '`' | sort -u
+}
+
+# The COUNT is asserted as well as each pointer, because a loop over nothing
+# emits no rows and no FAIL: a SKILL.md that had lost every backticked pointer -
+# the body-budget donor cut the C1 block below already worries about, taken one
+# step further - read exactly like one whose pointers all resolve. A floor, not
+# an exact count, and for the same reason the release-notes block takes
+# `notes_n >= 2`: enough to say the set is really there, never a number a
+# legitimate addition or removal would break.
+link_n=0
+for p in $(link_targets "$SKILL/SKILL.md"); do
+    link_n=$((link_n + 1))
     [ -e "$SKILL/$p" ] && ok "link resolves: $p" || fail "link is broken: $p"
 done
+[ "$link_n" -ge 2 ] \
+    && ok "the body names $link_n backticked skill paths, so the rows above resolved something" \
+    || fail "the body names $link_n backticked skill path(s), so the link rows above proved nothing"
 
 # ...and the loop can report a break. Note the pattern it matches: grepping for
 # the literal string "references/" would miss it, because what the loop keys on
 # is the backticked form.
 link_unresolved() {
     _n=0
-    for _p in $(grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$1" | tr -d '`' | sort -u); do
+    for _p in $(link_targets "$1"); do
         [ -e "$SKILL/$_p" ] || _n=$((_n + 1))
     done
     printf '%s\n' "$_n"

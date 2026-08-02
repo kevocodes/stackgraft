@@ -1834,25 +1834,64 @@ fi
 # repository's containers, which are not ours to enumerate or to kill.
 #
 # Comment lines and the manual command the legacy record PRINTS are skipped by
-# name: they are text, not invocations. The fixture below proves the detector
+# name: they are text, not invocations. The fixtures below prove the detector
 # still fires on a real one.
-unfiltered_ps() {
+#
+# Both numbers are counted - the listings SEEN and, of those, how many carry no
+# hash8 filter - because an unfiltered count of zero is equally true of a script
+# that lists no containers at all. A shipped script that had dropped its
+# listings, or a glob that matched no scripts, read exactly like one whose every
+# listing is scoped: `-eq 0` was a gate absence satisfied. And `docker container
+# ls` is the same command under its other spelling, so keying on `docker ps`
+# alone left the detector blind to a listing that simply used the long form.
+ps_listings() {
     awk '
         /^[ \t]*#/                   { next }
         /Inspect them yourself with/ { next }
-        /docker ps/ && !/label=stackgraft\.repo=/ { n++ }
-        END { print n + 0 }
+        /docker ps|docker container ls/ {
+            seen++
+            if ($0 !~ /label=stackgraft\.repo=/) unfiltered++
+        }
+        END { print (seen + 0) " " (unfiltered + 0) }
     ' "$@"
 }
-[ "$(unfiltered_ps "$SKILL"/scripts/*.sh)" -eq 0 ] \
-    && ok "every container listing in a shipped script carries the hash8 label filter" \
-    || fail "$(unfiltered_ps "$SKILL"/scripts/*.sh) unfiltered container listing(s) in shipped scripts"
 
+# One decision, shared by the shipped row and by every fixture below, so the
+# fixtures exercise the rule that actually runs rather than a restatement of it.
+listing_verdict() {
+    _c=$(ps_listings "$@")
+    _seen=${_c%% *}
+    _unf=${_c##* }
+    if [ "$_seen" -eq 0 ]; then
+        printf 'none-seen\n'
+    elif [ "$_unf" -gt 0 ]; then
+        printf 'unfiltered-%s\n' "$_unf"
+    else
+        printf 'pass\n'
+    fi
+}
+
+[ "$(listing_verdict "$SKILL"/scripts/*.sh)" = pass ] \
+    && ok "every container listing in a shipped script carries the hash8 label filter" \
+    || fail "container listings in shipped scripts: $(listing_verdict "$SKILL"/scripts/*.sh)"
+
+# ...and the verdict can fire on each of the three shapes it exists to catch, in
+# the `nv_try` shape the release-notes block below uses for the same job.
 qf=$(mktemp -d)
-printf '#!/bin/sh\nlegacy=$(docker ps --all --format "{{.ID}}")\n' > "$qf/fixture.sh"
-[ "$(unfiltered_ps "$qf/fixture.sh")" -ge 1 ] \
-    && ok "rejected: a repository-wide container listing, the query A7 keeps dropped" \
-    || fail "the unfiltered-listing detector cannot fire"
+printf '#!/bin/sh\nlegacy=$(docker ps --all --format "{{.ID}}")\n'           > "$qf/short.sh"
+printf '#!/bin/sh\nlegacy=$(docker container ls --all --format "{{.ID}}")\n' > "$qf/long.sh"
+printf '#!/bin/sh\nprintf "this script lists no containers at all\\n"\n'     > "$qf/none.sh"
+lv_bad=''
+lv_try() {
+    _got=$(listing_verdict "$2")
+    [ "$_got" = "$3" ] || lv_bad="$lv_bad [$1: $_got, wanted $3]"
+}
+lv_try 'a repository-wide listing, the query A7 keeps dropped' "$qf/short.sh" unfiltered-1
+lv_try 'the same listing under its `docker container ls` name' "$qf/long.sh"  unfiltered-1
+lv_try 'a script that lists nothing at all'                    "$qf/none.sh"  none-seen
+[ -z "$lv_bad" ] \
+    && ok "rejected: an unfiltered listing in either spelling, and a file that lists nothing reported as that rather than as compliance" \
+    || fail "the unfiltered-listing detector could not see a shape it exists to catch:$lv_bad"
 rm -rf "$qf"
 
 # --- V33  A7: the legacy statement IS the deliverable ------------------------

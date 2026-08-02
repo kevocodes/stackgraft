@@ -705,12 +705,29 @@ else
 fi
 rm -rf "$cf"
 
+# One decision and one term list, shared by the shipped rows and by the negative
+# below, so the fixture exercises the test that actually runs rather than a
+# second copy of it that could drift away from it - the shape the compat,
+# version, A7 and notes blocks all use.
+VERDICT_TERMS='REUSE ISOLATE REAP'
+names_verdict_term() { printf '%s' "$1" | grep -q "$2"; }
+
 body=$(awk 'f; /^---$/{c++; if(c==2) f=1}' "$SKILL/SKILL.md")
-for term in REUSE ISOLATE REAP; do
-    printf '%s' "$body" | grep -q "$term" \
-        && fail "body contains the permitting term $term" \
-        || ok "body states no $term"
-done
+
+# An EMPTY body satisfies all three rows at once: grep finds no term in nothing.
+# So the frontmatter delimiters changing - the extraction above coming back with
+# no bytes - printed three oks and no FAIL, which is a gate satisfied by absence
+# and therefore no gate. The extraction is required to have produced something
+# before what it produced is judged.
+if [ -z "$body" ]; then
+    fail "the body extraction returned nothing, so the three verdict-term rows would pass on an empty string"
+else
+    for term in $VERDICT_TERMS; do
+        names_verdict_term "$body" "$term" \
+            && fail "body contains the permitting term $term" \
+            || ok "body states no $term"
+    done
+fi
 
 # ...and the loop can fire on the term this change adds. The body never
 # spelling REAP is what leaves an agent holding only the body able to reach
@@ -718,8 +735,8 @@ done
 # read from here exactly like a body that is clean.
 verdict_hits() {
     _n=0
-    for _t in REUSE ISOLATE REAP; do
-        printf '%s' "$1" | grep -q "$_t" && _n=$((_n + 1))
+    for _t in $VERDICT_TERMS; do
+        names_verdict_term "$1" "$_t" && _n=$((_n + 1))
     done
     printf '%s\n' "$_n"
 }

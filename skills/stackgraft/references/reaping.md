@@ -12,13 +12,13 @@ Every container started as an overlay carries all five labels, and they are supp
 |---|---|
 | `stackgraft.labels` | `1` — the version of this contract |
 | `stackgraft.repo` | this repository's `hash8`, derived exactly as the manifest filename derives it |
-| `stackgraft.worktree` | the overlay worktree's absolute physical path, normalised per §5 |
+| `stackgraft.worktree` | the overlay worktree's absolute physical path, normalised per *Path normalisation* (section 6) |
 | `stackgraft.service` | the manifest service key |
 | `stackgraft.port` | the published host port |
 
 **Fewer than five is not ownership.** A container carrying `stackgraft.repo` but missing `stackgraft.worktree` is not owned by any run: it is excluded from every candidate set and reported as unowned. Partial labelling is the shape of a launch that went wrong, and reading it as ownership is how a run acts on something it never started.
 
-**Every value is passed as one shell word.** A worktree path holds whitespace routinely, so a raw substitution splits `stackgraft.worktree` into a label and a stray operand. Same discipline as `references/discovery.md` §6: one argv element, or one single-quoted word.
+**Every value is passed as one shell word.** A worktree path holds whitespace routinely, so a raw substitution splits `stackgraft.worktree` into a label and a stray operand. Same discipline as `references/discovery.md` section 6: one argv element, or one single-quoted word.
 
 **`stackgraft.labels` is versioned independently of `schemaVersion`.** Raising it takes effect on the next launch and invalidates no cache, because the label text is never written into a manifest. A live container whose `stackgraft.labels` value this run does not recognise is unproven: reported, never acted on — the same fail-safe direction an unrecognised `schemaVersion` takes.
 
@@ -35,7 +35,7 @@ Labels are **inserted at an anchor inside the command**, never appended to it. T
 | `… docker compose … up …` | none — `up` takes no label flag | **refuse the launch** |
 | recognised launcher, no anchor token after it | none | **refuse the launch** |
 | container kind naming no recognised launcher at all, quoted launcher text included | none | **refuse the launch** |
-| host kind | — | outside this table: no labels; register in the sidecar (§4) |
+| host kind | — | outside this table: no labels; register in the sidecar (section 4) |
 
 Recognised launcher tokens are `docker`, and by CLI compatibility `podman` and `nerdctl`.
 
@@ -69,12 +69,12 @@ One row per rule above. A template that is not in the accepted shapes is refused
 
 | Template | Why |
 |---|---|
-| `docker compose --project-directory {{worktree}} up catalog-api` | `up` is whole-stack and takes no label flag, so there is no anchor. `references/discovery.md` §3 already forbids `up` here; the remedy is the single-unit run form it would have produced anyway |
+| `docker compose --project-directory {{worktree}} up catalog-api` | `up` is whole-stack and takes no label flag, so there is no anchor. `references/discovery.md` section 3 already forbids `up` here; the remedy is the single-unit run form it would have produced anyway |
 | `docker --context remote catalog-api` | a recognised launcher with no `run` or `create` token after it: nothing to insert against |
 | `cd {{worktree}} && ./serve-catalog --port {{port}}` on a **container** kind | no recognised launcher token at all, so no anchor. A container this skill cannot label is one it can never reclaim, so it is refused rather than launched bare |
 | `echo "docker run x" \| sh` | the only launcher text sits inside a quoted string. No anchor is found, nothing is written into the string literal, and the launch is refused rather than run bare |
 
-A host kind is in neither table. `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` names no launcher because there is no container to name one for: it launches, carries no labels, and is recorded in the sidecar (§4). Refusing it would refuse the ordinary case. The `./serve-catalog` row above is the same launcher-less shape on a **container** kind, and that one is refused — which is why the entry's `kind` decides and the launcher token does not.
+A host kind is in neither table. `cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}}` names no launcher because there is no container to name one for: it launches, carries no labels, and is recorded in the sidecar (section 4). Refusing it would refuse the ordinary case. The `./serve-catalog` row above is the same launcher-less shape on a **container** kind, and that one is refused — which is why the entry's `kind` decides and the launcher token does not.
 
 ## 4. Host kinds: the sidecar
 
@@ -176,26 +176,26 @@ Every overlay this run can see resolves to exactly one of two words.
 | Verdict | Meaning |
 |---|---|
 | **`REPORT`** | Say what is there and change nothing. The default, and the only verdict any run reaches without an explicit flag from the user. |
-| **`REAP`** | Act on it — stop, or stop and remove. Reachable only for a candidate that cleared §9, §10 and §11, and only under the flags in §12. |
+| **`REAP`** | Act on it — stop, or stop and remove. Reachable only for a candidate that cleared candidacy, liveness and reconciliation — sections 9, 10 and 11 — and only under the flags in section 12. |
 
 There is no third verdict and no "probably". Everything a run cannot prove is `REPORT`, which is why an unreadable store, an absent start time, a prunable worktree and an unrecognised label version all land in the same place: they are different reasons for the same answer.
 
 ## 9. Candidacy is a closed allowlist
 
-A container is a **candidate** only if it carries the full five-label set of §1 with `stackgraft.repo` equal to this repository's `hash8`. That is a positive test, and it is what puts every base-stack container outside the candidate set **by construction** rather than by exclusion: only an overlay launch ever writes `stackgraft.repo`, so a base-stack container was never in the set to be removed from it.
+A container is a **candidate** only if it carries the full five-label set of the label contract in section 1 with `stackgraft.repo` equal to this repository's `hash8`. That is a positive test, and it is what puts every base-stack container outside the candidate set **by construction** rather than by exclusion: only an overlay launch ever writes `stackgraft.repo`, so a base-stack container was never in the set to be removed from it.
 
 The difference matters because a deny-list has to be complete to be safe and an allowlist does not. A base-stack service this skill has never heard of is outside the set for free.
 
 A second, independent condition covers the repository that writes the label itself — a compose file that hard-codes `stackgraft.repo`, or a hand-labelled container:
 
 - A candidate publishing a port **the run passed** as a `basePort` is never a target, and the anomaly is reported. The script parses no JSON, so those ports are read out of the manifest by the run and passed as `-b <port>`, once per port; the decision they drive lives in the actuator, which sees the values and never the manifest.
-- A candidate whose `stackgraft.worktree` is **present** in the worktree list is live, and live is never a target — §10.
+- A candidate whose `stackgraft.worktree` is **present** in the worktree list is live, and live is never a target — section 10.
 
 Each `-b` value is validated as a decimal port in 1–65535 with leading zeros stripped, the same rule `scripts/pick-port.sh` applies to its own port arguments. That is worth having on its own terms: `-b 0` and `-b 99999999` are not ports at all, and `018103` — a manifest value typed with a leading zero — would otherwise be kept as a string that matches no published port, so the container it was meant to protect would be reaped while the run looked correct. It removes typos. **It closes nothing else, and nothing below is any narrower because of it**: `1` is a valid port, so no range test can tell a wrong port from a right one.
 
 **Those ports are evidence, and not having them is *unknown* rather than *none*.** A mutation run that passed no `-b` at all has told the actuator nothing about the base stack, and a port set nobody supplied answers *no base port matches* for every container on the host. That is a gate keyed on an optional input, which is no gate: omit the flag and the condition above silently stops applying. So a `c:` target under `stop` or `remove` is **refused outright until the run supplies at least one `-b <port>`**, and that refusal has **no override**. Its message names what is missing and nothing else, because a refusal that advertises its own bypass is not a refusal. The report path decides nothing and needs no `-b`, which keeps the benefit every invocation gets free of the requirement only a mutation carries.
 
-**A flag asserting that the manifest records none was tried here, and removed.** Nothing in the actuator can check such a claim, so it was an unverifiable assertion that switched the whole exclusion off — the same gate-keyed-on-an-optional-input shape wearing a different name, and executed it stopped a hand-labelled base-stack container. It is not the *checked-and-none* of §14 either: §14's zeros are claims about the very store the report speaks of, while that flag was checked-and-none about the **manifest** when the decision is about the base stack's **real ports** — and those two diverge in the manifest-less mode `SKILL.md` supports, where a truthful assertion would still have reaped a base-stack container.
+**A flag asserting that the manifest records none was tried here, and removed.** Nothing in the actuator can check such a claim, so it was an unverifiable assertion that switched the whole exclusion off — the same gate-keyed-on-an-optional-input shape wearing a different name, and executed it stopped a hand-labelled base-stack container. It is not the *checked-and-none* of section 14 either: those zeros are claims about the very store the report speaks of, while that flag was checked-and-none about the **manifest** when the decision is about the base stack's **real ports** — and those two diverge in the manifest-less mode `SKILL.md` supports, where a truthful assertion would still have reaped a base-stack container.
 
 The cost of having no override is real, accepted, and stated: a repository whose manifest records no `basePort` cannot mutate a container target until one is supplied. It is a small cost. This skill exists to overlay onto a running base stack whose ports the overlay must avoid, and `scripts/pick-port.sh` already needs those same ports, so a repository with none of them is degenerate here.
 
@@ -212,12 +212,12 @@ The recorded worktree path is compared against `git -c core.quotePath=false work
 | Recorded path | Verdict |
 |---|---|
 | listed, and the entry is ordinary | **live** — `REPORT`, and never a target under any flag |
-| absent from the list | **orphan candidate** — the only state §12 can escalate |
+| absent from the list | **orphan candidate** — the only state the flags in section 12 can escalate |
 | listed, and the entry is marked prunable | **unknown** — proof of neither liveness nor absence |
 | the list could not be read at all | **unknown**, for every overlay at once |
 | some entry in the list will not resolve | **unknown** — a path nobody can spell might be the one being looked for |
 
-Normalisation is §6's, and it applies to the **porcelain side**. The recorded value was already written physically at launch, so it is compared whole and never re-resolved — an orphan's directory is gone by definition, and re-resolving it would turn the single case this exists for into "unproven". A path git still C-quotes is unresolvable, which makes every `absent` answer in that run unknown instead.
+Normalisation is the rule in section 6, and it applies to the **porcelain side**. The recorded value was already written physically at launch, so it is compared whole and never re-resolved — an orphan's directory is gone by definition, and re-resolving it would turn the single case this exists for into "unproven". A path git still C-quotes is unresolvable, which makes every `absent` answer in that run unknown instead.
 
 Neither archiving nor sleeping a workspace removes its directory, so both leave the worktree listed and both read as live. Deleting one removes it, and that is the case this file exists for.
 
@@ -233,9 +233,9 @@ Neither archiving nor sleeping a workspace removes its directory, so both leave 
 | no record, container labelled | — | container kind; the label *is* the record |
 | store absent or unparseable | — | `unknown`, plus a damaged-registry line |
 
-**The pid re-read is the run's, not the script's.** `scripts/reap.sh` cannot open the registry, so the run reads it, batches every recorded pid into the single `ps -o pid=,lstart= -p <comma-separated list>` of §5, and hands each proven identity back as a `p:<pid> <recorded-lstart>` target — which the actuator then re-verifies for itself before it signals anything. Two reads of the same fact, and the second one is the one that is allowed to matter.
+**The pid re-read is the run's, not the script's.** `scripts/reap.sh` cannot open the registry, so the run reads it, batches every recorded pid into the single `ps -o pid=,lstart= -p <comma-separated list>` of section 5, and hands each proven identity back as a `p:<pid> <recorded-lstart>` target — which the actuator then re-verifies for itself before it signals anything. Two reads of the same fact, and the second one is the one that is allowed to matter.
 
-**The report computes this and persists nothing.** The next legitimate write — a launch registration, or a completed mutation — commits the reconciled set through §7. A pass that rewrote a file on every invocation would need the lock on every invocation, and "the report acquires no lock" would stop being true.
+**The report computes this and persists nothing.** The next legitimate write — a launch registration, or a completed mutation — commits the reconciled set through the write discipline of section 7. A pass that rewrote a file on every invocation would need the lock on every invocation, and "the report acquires no lock" would stop being true.
 
 That is safe because every reader re-runs the reconciliation: **a registry that is never rewritten still cannot cause a wrong action**, since a stale row is re-tested against the runtime before it means anything.
 
@@ -302,9 +302,9 @@ And it applies **before** the proof, at the parsing layer, where the same shape 
 | the worktree is still listed | the overlay is live; archiving and sleeping both leave it listed |
 | the worktree list could not be read | liveness is unestablished, so nothing is an orphan |
 | the recorded path will not resolve, or git C-quotes it | unproven, and unproven is never orphaned |
-| a port **the run passed** as a `basePort` | excluded however the container is labelled, and the anomaly is reported. Only the values actually passed exclude anything — §9 |
-| no `-b` was given at all | absent is unknown, never none; the exclusion cannot be applied against a port set nobody supplied, and no flag stands in for one — §9 |
-| a `-b` value outside 1–65535 | not a port, so it is a usage error naming the value. This catches typos; it does not narrow the limit in §9 |
+| a port **the run passed** as a `basePort` | excluded however the container is labelled, and the anomaly is reported. Only the values actually passed exclude anything — section 9 |
+| no `-b` was given at all | absent is unknown, never none; the exclusion cannot be applied against a port set nobody supplied, and no flag stands in for one — section 9 |
+| a `-b` value outside 1–65535 | not a port, so it is a usage error naming the value. This catches typos; it does not narrow the declared limit in section 9 |
 | fewer than five labels | partial labelling is a launch that went wrong, not ownership |
 | an unrecognised `stackgraft.labels` value | the same fail-safe direction an unrecognised `schemaVersion` takes |
 | the recorded `lstart` is `null` or absent | permanently unproven on this host |

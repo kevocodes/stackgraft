@@ -24,6 +24,42 @@ section() { printf '\n%s\n' "$1"; }
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
+# One expression for both shebang rows - the shipped scripts here and
+# changelog-section.sh at the bottom of this file - so the two cannot drift into
+# accepting different things.
+#
+# The end anchor is the repair. `^#!/bin/sh` alone also matches `#!/bin/shell`,
+# `#!/bin/shenanigans` and anything else beginning that way, so a shebang naming
+# an interpreter that is not on the box read as a shebang naming one that is.
+has_shebang() { head -1 "$1" | grep -q '^#!/bin/sh$'; }
+
+# The loop below asserts no INVENTORY: it runs once per file the glob finds, so
+# a script deleted from the skill costs two rows and produces no FAIL at all -
+# fewer checks read exactly like fewer problems. The four are named, and the
+# number of them that is missing must be zero, which is the shape the anchor
+# fixtures in reaping.md are already checked with.
+SHIPPED_SCRIPTS='pick-port.sh fingerprint.sh with-lock.sh reap.sh'
+scripts_missing() {
+    _n=0
+    for _s in $SHIPPED_SCRIPTS; do
+        [ -f "$1/$_s" ] || _n=$((_n + 1))
+    done
+    printf '%s\n' "$_n"
+}
+[ "$(scripts_missing "$SKILL/scripts")" -eq 0 ] \
+    && ok "all four shipped scripts are present: $SHIPPED_SCRIPTS" \
+    || fail "$(scripts_missing "$SKILL/scripts") of the four shipped scripts are missing from $SKILL/scripts"
+
+# ...and the inventory can notice one going away, the same way the anchor
+# fixture check is proven: a copy with one entry removed.
+si=$(mktemp -d)
+cp "$SKILL"/scripts/*.sh "$si/"
+rm -f "$si/reap.sh"
+[ "$(scripts_missing "$si")" -ge 1 ] \
+    && ok "rejected: a scripts directory with reap.sh deleted" \
+    || fail "the script inventory cannot notice a deleted script"
+rm -rf "$si"
+
 for f in "$SKILL"/scripts/*.sh; do
     name=$(basename "$f")
     if command -v dash >/dev/null 2>&1; then
@@ -31,7 +67,7 @@ for f in "$SKILL"/scripts/*.sh; do
     else
         sh -n "$f" 2>/dev/null && ok "$name parses under sh" || fail "$name fails sh -n"
     fi
-    head -1 "$f" | grep -q '^#!/bin/sh' && ok "$name carries a shebang" || fail "$name has no shebang"
+    has_shebang "$f" && ok "$name carries a shebang" || fail "$name has no shebang"
 done
 
 wt=$(mktemp -d)
@@ -42,9 +78,19 @@ case $port in
     *)                     fail "pick-port emitted '$port'" ;;
 esac
 
+# Both sides are `$(...)` over a script that may print nothing, and '' = '' is
+# true - so a pick-port that emitted NOTHING AT ALL for every call reported
+# itself stable across spellings. Equality still covers a script that answers
+# differently for the two; only the non-empty half covers one that answers
+# neither. Same reason the exclusion row below asserts `-n "$excl"` and the lock
+# rows assert `-n "$before"`.
 a=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" 2>/dev/null)
 b=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt/" 2>/dev/null)
-[ "$a" = "$b" ] && ok "pick-port is stable across path spellings" || fail "pick-port gave $a then $b for one worktree"
+if [ -n "$a" ] && [ "$a" = "$b" ]; then
+    ok "pick-port is stable across path spellings"
+else
+    fail "pick-port gave '$a' then '$b' for one worktree"
+fi
 
 # The inequality alone is satisfied by EMPTY, so a pick-port that emitted
 # nothing for every call carrying an exclusion passed this row: '' is not $a.
@@ -309,15 +355,23 @@ done
 
 # The lock the killed holder left names a pid that is now gone, so the next
 # writer reclaims it. This is the half of the policy SIGKILL makes mandatory.
+#
+# That lock being there is this row's PREMISE, and it is recorded before the run
+# rather than assumed. With nothing left to reclaim the write below is an
+# ordinary commit that takes and releases a lock of its own, exits 0 and leaves
+# no directory - so the row printed "reclaims the lock a killed holder left
+# behind" over a KILL case that left no lock at all. Captured before the action
+# for the same reason the V8, V9 and W1 rows capture the destination's bytes.
 d="$lockdir/v10-KILL"
+[ -d "$d.lock" ] && kill_left_lock=1 || kill_left_lock=0
 printf 'v10\n' > "$d"
 fp=$(git hash-object --stdin < "$d")
 sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 0 ] && [ ! -d "$d.lock" ]; then
+if [ "$kill_left_lock" -eq 1 ] && [ "$rc" -eq 0 ] && [ ! -d "$d.lock" ]; then
     ok "the next writer reclaims the lock a killed holder left behind"
 else
-    fail "the lock a killed holder left wedged the next writer (exit $rc)"
+    fail "the lock a killed holder left wedged the next writer (exit $rc, a lock was there to reclaim: $kill_left_lock)"
 fi
 rm -rf "$lockdir"
 
@@ -651,12 +705,29 @@ else
 fi
 rm -rf "$cf"
 
+# One decision and one term list, shared by the shipped rows and by the negative
+# below, so the fixture exercises the test that actually runs rather than a
+# second copy of it that could drift away from it - the shape the compat,
+# version, A7 and notes blocks all use.
+VERDICT_TERMS='REUSE ISOLATE REAP'
+names_verdict_term() { printf '%s' "$1" | grep -q "$2"; }
+
 body=$(awk 'f; /^---$/{c++; if(c==2) f=1}' "$SKILL/SKILL.md")
-for term in REUSE ISOLATE REAP; do
-    printf '%s' "$body" | grep -q "$term" \
-        && fail "body contains the permitting term $term" \
-        || ok "body states no $term"
-done
+
+# An EMPTY body satisfies all three rows at once: grep finds no term in nothing.
+# So the frontmatter delimiters changing - the extraction above coming back with
+# no bytes - printed three oks and no FAIL, which is a gate satisfied by absence
+# and therefore no gate. The extraction is required to have produced something
+# before what it produced is judged.
+if [ -z "$body" ]; then
+    fail "the body extraction returned nothing, so the three verdict-term rows would pass on an empty string"
+else
+    for term in $VERDICT_TERMS; do
+        names_verdict_term "$body" "$term" \
+            && fail "body contains the permitting term $term" \
+            || ok "body states no $term"
+    done
+fi
 
 # ...and the loop can fire on the term this change adds. The body never
 # spelling REAP is what leaves an agent holding only the body able to reach
@@ -664,8 +735,8 @@ done
 # read from here exactly like a body that is clean.
 verdict_hits() {
     _n=0
-    for _t in REUSE ISOLATE REAP; do
-        printf '%s' "$1" | grep -q "$_t" && _n=$((_n + 1))
+    for _t in $VERDICT_TERMS; do
+        names_verdict_term "$1" "$_t" && _n=$((_n + 1))
     done
     printf '%s\n' "$_n"
 }
@@ -674,16 +745,34 @@ verdict_hits() {
     && ok "rejected: a body line naming the REAP verdict" \
     || fail "the verdict-term loop cannot report a term it should catch"
 
-for p in $(grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$SKILL/SKILL.md" | tr -d '`' | sort -u); do
+# One expression for the pointer set, used by the rows below and by the negative
+# fixture, so the two cannot drift into keying on differently spelled things.
+link_targets() {
+    grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$1" | tr -d '`' | sort -u
+}
+
+# The COUNT is asserted as well as each pointer, because a loop over nothing
+# emits no rows and no FAIL: a SKILL.md that had lost every backticked pointer -
+# the body-budget donor cut the C1 block below already worries about, taken one
+# step further - read exactly like one whose pointers all resolve. A floor, not
+# an exact count, and for the same reason the release-notes block takes
+# `notes_n >= 2`: enough to say the set is really there, never a number a
+# legitimate addition or removal would break.
+link_n=0
+for p in $(link_targets "$SKILL/SKILL.md"); do
+    link_n=$((link_n + 1))
     [ -e "$SKILL/$p" ] && ok "link resolves: $p" || fail "link is broken: $p"
 done
+[ "$link_n" -ge 2 ] \
+    && ok "the body names $link_n backticked skill paths, so the rows above resolved something" \
+    || fail "the body names $link_n backticked skill path(s), so the link rows above proved nothing"
 
 # ...and the loop can report a break. Note the pattern it matches: grepping for
 # the literal string "references/" would miss it, because what the loop keys on
 # is the backticked form.
 link_unresolved() {
     _n=0
-    for _p in $(grep -o '`\(references\|assets\|scripts\)/[a-z.-]*`' "$1" | tr -d '`' | sort -u); do
+    for _p in $(link_targets "$1"); do
         [ -e "$SKILL/$_p" ] || _n=$((_n + 1))
     done
     printf '%s\n' "$_n"
@@ -834,9 +923,17 @@ grep -vF 'up catalog-api' "$REAPING" > "$ph/reaping.md"
 rm -rf "$ph"
 
 # --- V29  the portability grep is intent-blind, and must be able to fire -----
+# One pattern, named once, for the fixture here and for the shipped check in the
+# portability section at the bottom of this file - the same reason $GNUISM below
+# is a variable rather than two copies of one regex. With two copies, editing
+# the shipped check left this fixture proving an expression that no longer runs:
+# it went on reporting "the portability grep can fail" about a pattern the
+# shipped row had stopped using.
+PORTABILITY='~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData'
+
 pf=$(mktemp -d)
 printf 'a fixture that names an unavailable tool: jq\n' > "$pf/fixture.md"
-if grep -rniE '~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData' "$pf" >/dev/null 2>&1; then
+if grep -rniE "$PORTABILITY" "$pf" >/dev/null 2>&1; then
     ok "rejected: a file naming an unavailable tool, even in prose"
 else
     fail "the portability grep cannot fail"
@@ -925,6 +1022,11 @@ else
     printf '  skip  compose label-flag rows (no docker daemon)\n'
 fi
 
+# How many containers carry stackgraft.repo=$1. Used by the V17 rows below for
+# this repository's hash8 and for a foreign one, so the two are one query asked
+# twice rather than two queries that could drift apart.
+overlay_count() { docker ps --filter "label=stackgraft.repo=$1" --quiet | wc -l | tr -d ' '; }
+
 if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
     # V17: all five labels, read back, with a worktree path holding a space.
     h=deadbeef
@@ -944,12 +1046,20 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         [ "$bad" -eq 0 ] \
             && ok "a launched overlay carries all five labels, spaced worktree path included" \
             || fail "$bad of the five labels did not read back"
-        [ "$(docker ps --filter "label=stackgraft.repo=$h" --quiet | wc -l | tr -d ' ')" = 1 ] \
+        # One expression for both queries, and the negative carries the positive
+        # as its stated premise. Zero for a foreign hash8 is also what a listing
+        # with nothing to find returns - a fixture that lost its repo label, a
+        # container that never started - so the second row said "scoped" over a
+        # query that matched nothing whatever it was asked. It was correct only
+        # because the row above it had proven otherwise; it says so itself now.
+        own_n=$(overlay_count "$h")
+        foreign_n=$(overlay_count 0000none)
+        [ "$own_n" = 1 ] \
             && ok "the hash8-filtered query finds it" \
             || fail "the hash8-filtered query did not find the labelled overlay"
-        [ "$(docker ps --filter 'label=stackgraft.repo=0000none' --quiet | wc -l | tr -d ' ')" = 0 ] \
+        [ "$own_n" = 1 ] && [ "$foreign_n" = 0 ] \
             && ok "rejected: a query scoped to another repository's hash8 returns nothing" \
-            || fail "a foreign hash8 matched this repository's overlay"
+            || fail "a foreign hash8 matched this repository's overlay (own $own_n, foreign $foreign_n)"
         docker rm -f "$cid" >/dev/null 2>&1
     else
         fail "could not launch the labelled overlay fixture"
@@ -1118,11 +1228,18 @@ fi
 
 # ...and that exit 2 is about the retired flag, not about any flag: a real port
 # in the same position parses and gets as far as the target proof.
+#
+# The exit code is PINNED to 3 rather than merely tested for "not 2". A reap.sh
+# that is absent, unreadable or dead on its first line answers 127, which is not
+# 2 either - so a total failure of the script under test produced this row's own
+# positive evidence. 3 is the target proof being reached and refused for an id
+# that does not exist, which is what `bp_try 18103 3` a few lines below already
+# asserts for this very invocation shape.
 reap_run -b 18103 -m stop 00c0ffee 'c:deadbeefcafe'
-if [ "$reap_rc" -ne 2 ]; then
+if [ "$reap_rc" -eq 3 ]; then
     ok "rejected: a usage error for a supplied base port, which the parser must accept ($reap_rc)"
 else
-    fail "a supplied -b was rejected as a usage error, so the row above proves nothing"
+    fail "a supplied -b did not reach the target proof: exit $reap_rc (wanted 3), said '$reap_out'"
 fi
 
 # The usage text must not advertise it either. An agent reads the usage line
@@ -1298,11 +1415,18 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         fail "unlabelled target: exit $reap_rc, said '$reap_out'"
     fi
 
+    # The container's STATE is read as well as the exit code and the reason, the
+    # way the -b omitted row below and the flag-surface enumeration after it
+    # already do. A refusal that returned 3, named the right reason and stopped
+    # the container anyway is not a refusal, and $future was the one fixture in
+    # this block whose State.Status no row ever looked at.
     reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$future"
-    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
+    future_state=$(docker inspect --format '{{.State.Status}}' "$future" 2>/dev/null)
+    if [ "$reap_rc" -eq 3 ] && [ "$future_state" = running ] \
+       && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
         ok "rejected: a label contract version this run does not recognise"
     else
-        fail "unrecognised-version target: exit $reap_rc, said '$reap_out'"
+        fail "unrecognised-version target: exit $reap_rc, state '${future_state:-gone}', said '$reap_out'"
     fi
 
     reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$handlabelled"
@@ -1710,25 +1834,64 @@ fi
 # repository's containers, which are not ours to enumerate or to kill.
 #
 # Comment lines and the manual command the legacy record PRINTS are skipped by
-# name: they are text, not invocations. The fixture below proves the detector
+# name: they are text, not invocations. The fixtures below prove the detector
 # still fires on a real one.
-unfiltered_ps() {
+#
+# Both numbers are counted - the listings SEEN and, of those, how many carry no
+# hash8 filter - because an unfiltered count of zero is equally true of a script
+# that lists no containers at all. A shipped script that had dropped its
+# listings, or a glob that matched no scripts, read exactly like one whose every
+# listing is scoped: `-eq 0` was a gate absence satisfied. And `docker container
+# ls` is the same command under its other spelling, so keying on `docker ps`
+# alone left the detector blind to a listing that simply used the long form.
+ps_listings() {
     awk '
         /^[ \t]*#/                   { next }
         /Inspect them yourself with/ { next }
-        /docker ps/ && !/label=stackgraft\.repo=/ { n++ }
-        END { print n + 0 }
+        /docker ps|docker container ls/ {
+            seen++
+            if ($0 !~ /label=stackgraft\.repo=/) unfiltered++
+        }
+        END { print (seen + 0) " " (unfiltered + 0) }
     ' "$@"
 }
-[ "$(unfiltered_ps "$SKILL"/scripts/*.sh)" -eq 0 ] \
-    && ok "every container listing in a shipped script carries the hash8 label filter" \
-    || fail "$(unfiltered_ps "$SKILL"/scripts/*.sh) unfiltered container listing(s) in shipped scripts"
 
+# One decision, shared by the shipped row and by every fixture below, so the
+# fixtures exercise the rule that actually runs rather than a restatement of it.
+listing_verdict() {
+    _c=$(ps_listings "$@")
+    _seen=${_c%% *}
+    _unf=${_c##* }
+    if [ "$_seen" -eq 0 ]; then
+        printf 'none-seen\n'
+    elif [ "$_unf" -gt 0 ]; then
+        printf 'unfiltered-%s\n' "$_unf"
+    else
+        printf 'pass\n'
+    fi
+}
+
+[ "$(listing_verdict "$SKILL"/scripts/*.sh)" = pass ] \
+    && ok "every container listing in a shipped script carries the hash8 label filter" \
+    || fail "container listings in shipped scripts: $(listing_verdict "$SKILL"/scripts/*.sh)"
+
+# ...and the verdict can fire on each of the three shapes it exists to catch, in
+# the `nv_try` shape the release-notes block below uses for the same job.
 qf=$(mktemp -d)
-printf '#!/bin/sh\nlegacy=$(docker ps --all --format "{{.ID}}")\n' > "$qf/fixture.sh"
-[ "$(unfiltered_ps "$qf/fixture.sh")" -ge 1 ] \
-    && ok "rejected: a repository-wide container listing, the query A7 keeps dropped" \
-    || fail "the unfiltered-listing detector cannot fire"
+printf '#!/bin/sh\nlegacy=$(docker ps --all --format "{{.ID}}")\n'           > "$qf/short.sh"
+printf '#!/bin/sh\nlegacy=$(docker container ls --all --format "{{.ID}}")\n' > "$qf/long.sh"
+printf '#!/bin/sh\nprintf "this script lists no containers at all\\n"\n'     > "$qf/none.sh"
+lv_bad=''
+lv_try() {
+    _got=$(listing_verdict "$2")
+    [ "$_got" = "$3" ] || lv_bad="$lv_bad [$1: $_got, wanted $3]"
+}
+lv_try 'a repository-wide listing, the query A7 keeps dropped' "$qf/short.sh" unfiltered-1
+lv_try 'the same listing under its `docker container ls` name' "$qf/long.sh"  unfiltered-1
+lv_try 'a script that lists nothing at all'                    "$qf/none.sh"  none-seen
+[ -z "$lv_bad" ] \
+    && ok "rejected: an unfiltered listing in either spelling, and a file that lists nothing reported as that rather than as compliance" \
+    || fail "the unfiltered-listing detector could not see a shape it exists to catch:$lv_bad"
 rm -rf "$qf"
 
 # --- V33  A7: the legacy statement IS the deliverable ------------------------
@@ -1756,16 +1919,26 @@ a7_verdict() {
 af=$(mktemp -d)
 sh "$REAP" report 00c0ffee > "$af/report.txt" 2>/dev/null
 rc=$?
-if [ "$rc" -eq 0 ] && [ "$(a7_verdict "$af/report.txt")" = pass ]; then
+a7_state=$(a7_verdict "$af/report.txt")
+if [ "$rc" -eq 0 ] && [ "$a7_state" = pass ]; then
     ok "the report names the legacy category, calls it structural, and prints the manual command"
 else
-    fail "the report's legacy statement: exit $rc, verdict $(a7_verdict "$af/report.txt")"
+    fail "the report's legacy statement: exit $rc, verdict $a7_state"
 fi
 
+# This fixture REMOVES the legacy line, so it only says anything while the line
+# was there to remove. `no-legacy-record` is also what an EMPTY report verdicts
+# to - a reap.sh that printed nothing at all - and the row read that as the
+# fixture doing its job. It was correct only because the row above had proven
+# the report is a real one; the premise is stated here instead, the way the
+# removed-entry and removed-definition fixtures in the release-notes block name
+# theirs.
 grep -v "^legacy${TAB}" "$af/report.txt" > "$af/silent.txt"
-[ "$(a7_verdict "$af/silent.txt")" = no-legacy-record ] \
-    && ok "rejected: a report with the legacy statement absent - silence reads as nothing to see" \
-    || fail "ACCEPTED but must be rejected: a report that says nothing about legacy overlays"
+if [ "$a7_state" = pass ] && [ "$(a7_verdict "$af/silent.txt")" = no-legacy-record ]; then
+    ok "rejected: a report with the legacy statement absent - silence reads as nothing to see"
+else
+    fail "ACCEPTED but must be rejected: a report that says nothing about legacy overlays"
+fi
 
 awk -v t="$TAB" '
     $0 ~ "^legacy" t "undetectable" {
@@ -1821,11 +1994,28 @@ sc2="$sf2/stackgraft/stackgraft-00c0ffee.processes.json"
 
 printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc2"
 out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
-printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none" \
+
+# One expression for the checked-zero line, read once and used by both rows
+# below rather than grepped twice.
+if printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none"; then
+    host_checked=1
+else
+    host_checked=0
+fi
+[ "$host_checked" -eq 1 ] \
     && ok "an empty registry reports zero host overlays, checked" \
     || fail "an empty registry did not report a checked zero"
+
+# The row below is an ABSENCE, and an absence is also what no output at all
+# produces: a reap.sh that printed nothing has no `held incomplete` line either,
+# so the row said "every store answered" over a report that answered nothing. It
+# was correct only because the row above proved $out is a real report; that
+# premise is a branch of its own now, the way the compose `up` row requires up's
+# own help before concluding anything from a missing flag.
 if [ "$docker_ready" -eq 1 ]; then
-    if printf '%s' "$out" | grep -q "^held${TAB}incomplete"; then
+    if [ "$host_checked" -ne 1 ]; then
+        fail "the report never said it checked the host registry, so a missing held-port shortfall line proves nothing"
+    elif printf '%s' "$out" | grep -q "^held${TAB}incomplete"; then
         fail "the held-port set reported itself short with every store readable"
     else
         ok "rejected: the held-port shortfall line when every store answered"
@@ -2033,7 +2223,10 @@ fi
 # ------------------------------------------------------------ portability ---
 section "portability"
 
-if grep -rniE '~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData' "$SKILL" >/dev/null 2>&1; then
+# $PORTABILITY is the pattern the V29 fixture in the instrumentation section
+# proves can fire. One variable, two uses, so the fixture and the shipped check
+# can never be asking about different things.
+if grep -rniE "$PORTABILITY" "$SKILL" >/dev/null 2>&1; then
     fail "an agent-specific path or an unavailable tool is named in a shipped file"
 else
     ok "no agent-specific coupling and no unavailable tool"
@@ -2298,7 +2491,9 @@ fi
     || fail "the parse check accepted an unterminated case statement"
 rm -rf "$pf2"
 
-head -1 "$SECTION" | grep -q '^#!/bin/sh' \
+# has_shebang() is defined once, with the shipped-script rows at the top of this
+# file, so both shebang rows accept the same thing.
+has_shebang "$SECTION" \
     && ok "changelog-section.sh carries a shebang" \
     || fail "changelog-section.sh has no shebang"
 

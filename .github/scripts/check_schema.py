@@ -278,8 +278,26 @@ referenced = {
     for t in re.findall(r"`([a-z][A-Za-z0-9]*)`", prose)
     if re.search(r"[A-Z]", t)
 } - FOREIGN
+# The comparison is only worth its sentence while there is something in it.
+# Prose carrying no backticked camelCase at all - a rewrite that dropped the
+# backticks, a references directory that stopped being read - gives an empty
+# `referenced`, so `missing` is empty too and the row printed ok while covering
+# nothing. That is a gate satisfied by absence, which is the same defect this
+# file was written against, in a new place.
+#
+# A floor rather than an exact count, for the same reason verify.sh takes
+# `notes_n >= 2` on the CHANGELOG sections and a floor on the body's skill
+# pointers: enough to say the set is really there, never a number that a
+# legitimate edit to the prose would break.
+REFERENCED_FLOOR = 20
+
 missing = sorted(referenced - names)
-if missing:
+if len(referenced) < REFERENCED_FLOOR:
+    fail(
+        f"the documents name only {len(referenced)} backticked field(s), under the "
+        f"floor of {REFERENCED_FLOOR}: the cross-check is covering nothing"
+    )
+elif missing:
     fail(f"documents name fields absent from the schema: {missing}")
 else:
     ok(f"every field the documents name exists in the schema ({len(referenced)} checked)")

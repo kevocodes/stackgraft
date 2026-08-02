@@ -24,6 +24,15 @@ section() { printf '\n%s\n' "$1"; }
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
+# One expression for both shebang rows - the shipped scripts here and
+# changelog-section.sh at the bottom of this file - so the two cannot drift into
+# accepting different things.
+#
+# The end anchor is the repair. `^#!/bin/sh` alone also matches `#!/bin/shell`,
+# `#!/bin/shenanigans` and anything else beginning that way, so a shebang naming
+# an interpreter that is not on the box read as a shebang naming one that is.
+has_shebang() { head -1 "$1" | grep -q '^#!/bin/sh$'; }
+
 for f in "$SKILL"/scripts/*.sh; do
     name=$(basename "$f")
     if command -v dash >/dev/null 2>&1; then
@@ -31,7 +40,7 @@ for f in "$SKILL"/scripts/*.sh; do
     else
         sh -n "$f" 2>/dev/null && ok "$name parses under sh" || fail "$name fails sh -n"
     fi
-    head -1 "$f" | grep -q '^#!/bin/sh' && ok "$name carries a shebang" || fail "$name has no shebang"
+    has_shebang "$f" && ok "$name carries a shebang" || fail "$name has no shebang"
 done
 
 wt=$(mktemp -d)
@@ -2298,7 +2307,9 @@ fi
     || fail "the parse check accepted an unterminated case statement"
 rm -rf "$pf2"
 
-head -1 "$SECTION" | grep -q '^#!/bin/sh' \
+# has_shebang() is defined once, with the shipped-script rows at the top of this
+# file, so both shebang rows accept the same thing.
+has_shebang "$SECTION" \
     && ok "changelog-section.sh carries a shebang" \
     || fail "changelog-section.sh has no shebang"
 

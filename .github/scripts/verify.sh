@@ -2523,10 +2523,18 @@ else
     cp -R "$SKILL"/. "$sf/skills/stackgraft/"
     printf '\nA fixture token that is no manifest field: `notAManifestField`\n' \
         >> "$sf/skills/stackgraft/references/reaping.md"
-    if ( cd "$sf" && python3 "$ROOT/.github/scripts/check_schema.py" >/dev/null 2>&1 ); then
+    # The OUTPUT decides, not the exit code alone: any nonzero exit passed this
+    # row, so a scratch copy missing manifest.example.json printed ok over a
+    # FileNotFoundError - a negative rejected for a reason that has nothing to
+    # do with what it is testing. The token has to be named back.
+    sf_out=$( cd "$sf" && python3 "$ROOT/.github/scripts/check_schema.py" 2>&1 )
+    sf_rc=$?
+    if [ "$sf_rc" -eq 0 ]; then
         fail "ACCEPTED but must be rejected: a camelCase non-field backticked in reaping.md"
-    else
+    elif printf '%s' "$sf_out" | grep -q 'notAManifestField'; then
         ok "rejected: a camelCase non-field backticked in reaping.md"
+    else
+        fail "the scratch run failed for some other reason than the fixture token: '$sf_out'"
     fi
     rm -rf "$sf"
 fi

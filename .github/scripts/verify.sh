@@ -68,8 +68,18 @@ sh "$SKILL/scripts/pick-port.sh" 18000 18000 "$wt" 18000 >/dev/null 2>&1
 sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" "3000,5173" >/dev/null 2>&1
 [ $? -eq 2 ] && ok "pick-port rejects a comma-joined exclusion list" || fail "pick-port accepted a comma list"
 
-sh "$SKILL/scripts/pick-port.sh" 18000 18999 18500 >/dev/null 2>&1
-[ $? -eq 2 ] && ok "pick-port rejects a port in the worktree slot" || fail "pick-port swallowed an exclusion as the worktree"
+# Exit 2 alone cannot say WHICH refusal fired. An all-digit path that got past
+# the guard this row exists to prove reaches the directory test one line later
+# and refuses at 2 as well, so deleting the guard leaves the row green. The
+# message is asserted for the same reason the -b rejection further down is
+# quoted back by name: "rejected" without "rejected by what" is half a check.
+ws=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 18500 2>&1 >/dev/null)
+ws_rc=$?
+if [ "$ws_rc" -eq 2 ] && printf '%s' "$ws" | grep -q "all digits: '18500'"; then
+    ok "pick-port rejects a port in the worktree slot, naming it as all digits"
+else
+    fail "the worktree-slot refusal: exit $ws_rc, said '$ws'"
+fi
 
 lines=$(printf 'README.md\nLICENSE' | sh "$SKILL/scripts/fingerprint.sh" - 2>/dev/null | wc -l | tr -d ' ')
 [ "$lines" = "2" ] && ok "fingerprint keeps a final unterminated line" || fail "fingerprint emitted $lines lines for 2 paths"

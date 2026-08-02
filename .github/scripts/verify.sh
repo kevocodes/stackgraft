@@ -136,6 +136,14 @@ await_owner() {
 # Every fixture below asserts the destination's BYTES as well as the exit code.
 # A refusal that replaced the file anyway is not a refusal, and an exit code on
 # its own cannot tell those two apart.
+#
+# `before` is required to be NON-EMPTY as well as equal to `after`. Both sides
+# are `git hash-object --stdin < "$d"`, and that prints nothing at all when the
+# redirect finds no file - so `'' = ''` reported "bytes unchanged" over a
+# destination that was not there to change, in every row of this shape,
+# including the live-holder one, which is a safety assertion. Equality alone
+# still covers a destination the run DELETED; only the non-empty half covers
+# one that never existed.
 
 # --- V7  compare-and-swap: the lock alone does not close the write window ----
 d="$lockdir/manifest.json"
@@ -221,7 +229,8 @@ if [ "$lstart_here" -eq 1 ]; then
     kill "$livepid" 2>/dev/null
     wait "$livepid" 2>/dev/null
     rm -rf "$d.lock"
-    if [ "$rc" -eq 3 ] && [ "$before" = "$after" ] && printf '%s' "$msg" | grep -q "$livepid"; then
+    if [ "$rc" -eq 3 ] && [ -n "$before" ] && [ "$before" = "$after" ] \
+       && printf '%s' "$msg" | grep -q "$livepid"; then
         ok "a provably live holder is never stolen from (exit 3, bytes unchanged, pid named)"
     else
         fail "live-holder lock: exit $rc, bytes $before -> $after, said '$msg'"
@@ -260,7 +269,7 @@ el=$(( $(date +%s) - t0 ))
 wait "$churn" 2>/dev/null
 after=$(git hash-object --stdin < "$d")
 rm -rf "$d.lock"
-if [ "$rc" -eq 3 ] && [ "$before" = "$after" ]; then
+if [ "$rc" -eq 3 ] && [ -n "$before" ] && [ "$before" = "$after" ]; then
     ok "a lock created during the wait is not stolen (exit 3 after ${el}s)"
 else
     fail "lock created during the wait: exit $rc after ${el}s, bytes $before -> $after"
@@ -399,7 +408,11 @@ rm -rf "$w1"
 # reclaimed nothing and left the whole lock directory. Sharing the function is
 # what makes the control exercise the condition the row really uses instead of
 # a restatement of it that could drift.
-aside_row_accepts() { [ "$1" -eq 4 ] && [ -z "$2" ] && [ "$3" = "$4" ]; }
+#
+# The non-empty test on $3 is the same one the V8 and V9 rows carry, for the
+# same reason: two empty fingerprints compare equal, so without it "the bytes
+# did not change" was also true of a destination that was never there.
+aside_row_accepts() { [ "$1" -eq 4 ] && [ -z "$2" ] && [ -n "$3" ] && [ "$3" = "$4" ]; }
 
 if [ "$(id -u)" -ne 0 ]; then
     w1b=$(mktemp -d)

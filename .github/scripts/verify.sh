@@ -355,15 +355,23 @@ done
 
 # The lock the killed holder left names a pid that is now gone, so the next
 # writer reclaims it. This is the half of the policy SIGKILL makes mandatory.
+#
+# That lock being there is this row's PREMISE, and it is recorded before the run
+# rather than assumed. With nothing left to reclaim the write below is an
+# ordinary commit that takes and releases a lock of its own, exits 0 and leaves
+# no directory - so the row printed "reclaims the lock a killed holder left
+# behind" over a KILL case that left no lock at all. Captured before the action
+# for the same reason the V8, V9 and W1 rows capture the destination's bytes.
 d="$lockdir/v10-KILL"
+[ -d "$d.lock" ] && kill_left_lock=1 || kill_left_lock=0
 printf 'v10\n' > "$d"
 fp=$(git hash-object --stdin < "$d")
 sh "$LOCK" "$d" "$lockdir/payload" "$fp" >/dev/null 2>&1
 rc=$?
-if [ "$rc" -eq 0 ] && [ ! -d "$d.lock" ]; then
+if [ "$kill_left_lock" -eq 1 ] && [ "$rc" -eq 0 ] && [ ! -d "$d.lock" ]; then
     ok "the next writer reclaims the lock a killed holder left behind"
 else
-    fail "the lock a killed holder left wedged the next writer (exit $rc)"
+    fail "the lock a killed holder left wedged the next writer (exit $rc, a lock was there to reclaim: $kill_left_lock)"
 fi
 rm -rf "$lockdir"
 

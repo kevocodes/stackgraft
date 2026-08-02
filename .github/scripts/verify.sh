@@ -843,15 +843,48 @@ esac
 # ...and the row goes red the moment the recipe loses that step. The fixture is
 # the shipped file with its truncation paragraph deleted - which is the state
 # that shipped, and the state every other check in this file reads as healthy.
+#
+# One expression for lowercase hex, used by both the eight-character arm and the
+# whole-digest premise below rather than spelled twice. A whole object id is 40
+# characters or 64 - never a hard-coded 40, because a repository with
+# `extensions.objectFormat=sha256` digests to 64, and this project's own design
+# record (DS11) refused to put a length `pattern` on a fingerprint for exactly
+# that reason. Measured on git 2.50.1: one input, 40 characters from a sha1
+# repository and 64 from a sha256 one.
+lower_hex() {
+    case ${1:-} in
+        '' | *[!0-9a-f]*) return 1 ;;
+        *)                return 0 ;;
+    esac
+}
+whole_object_id() {
+    lower_hex "${1:-}" || return 1
+    case ${#1} in
+        40 | 64) return 0 ;;
+        *)       return 1 ;;
+    esac
+}
+
 hf=$(mktemp -d)
 awk '!/first 8 characters/' "$DISCOVERY" > "$hf/discovery.md"
 h8bad=$(hash8_derive "$hf/discovery.md" "$h8_common")
-case ${h8bad:-} in
-    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
-        fail "ACCEPTED but must be rejected: §0 with no truncation still resolved to eight hex" ;;
-    *)
-        ok "rejected: §0 with the truncation removed - the pointer resolves to ${#h8bad} characters, not 8" ;;
-esac
+
+# The row below concludes from a LENGTH, and "not 8" is equally satisfied by a
+# derivation that produced nothing at all: with git off the PATH neither the
+# common-dir line above nor the recipe's own hashing command produces anything,
+# hash8_derive yields the empty string, and the row printed
+# `ok ... resolves to 0 characters, not 8` - a total failure of git reading as
+# the truncation guard working. It was correct only because the positive row
+# above happened to prove the derivation runs at all - adjacency, not an
+# assertion. That premise is a branch of its own now, the way the held-port, A7
+# and docker-availability absences state theirs.
+if [ "${#h8bad}" -eq 8 ] && lower_hex "$h8bad"; then
+    fail "ACCEPTED but must be rejected: §0 with no truncation still resolved to eight hex"
+elif whole_object_id "$h8bad"; then
+    ok "rejected: §0 with the truncation removed - the pointer resolves to the whole ${#h8bad}-character object id, not 8"
+else
+    fail "the truncation-removed recipe yielded '${h8bad:-nothing}' (${#h8bad} chars), which is no whole object id, so a length that is not 8 proves nothing about truncation"
+fi
 rm -rf "$hf"
 
 # ------------------------------------------------- instrumentation ----------

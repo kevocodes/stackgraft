@@ -1760,6 +1760,217 @@ else
     ok "no agent-specific coupling and no unavailable tool"
 fi
 
+# ------------------------------------------------------- release version ----
+section "release version"
+
+# One release, one number, in four places: SKILL.md's top-level `version`,
+# SKILL.md's `metadata.version`, .claude-plugin/plugin.json and
+# .claude-plugin/marketplace.json. plugin.json is the source of truth for
+# release purposes - it is the file whose change is what makes an update reach
+# an installed user - so the other three are compared to IT rather than to each
+# other, which also gives the failure message a direction to name.
+#
+# Checked, not generated: generation needs a build step and this project ships
+# none. Read with awk for the same reason everything else here is - jq and
+# python3 are each missing from at least one supported platform.
+#
+# The top-level field is not decoration. `paks` refuses a skill that has no
+# top-level semver `version`, and the copy `npx skills add` writes is built from
+# this same frontmatter, so a number that drifted or a field that went missing
+# is an install failure rather than a cosmetic one. Both are fixtures below,
+# and so is the state this check was added to end: a `metadata.version` of
+# "1.0" that no equality test would ever have called wrong.
+
+PLUGIN=.claude-plugin/plugin.json
+MARKET=.claude-plugin/marketplace.json
+
+# Prints the first "version" string value in a JSON file, or `absent`. Matched
+# on the quoted pair rather than by splitting fields: marketplace.json carries
+# its version nested inside plugins[] and indented, on a line a whitespace
+# split would read differently from plugin.json's.
+json_version() {
+    [ -f "$1" ] || { printf 'no-such-file\n'; return 0; }
+    awk '
+        found { next }
+        match($0, /"version"[ \t]*:[ \t]*"[^"]*"/) {
+            s = substr($0, RSTART, RLENGTH)
+            match(s, /"[^"]*"$/)
+            print substr(s, RSTART + 1, RLENGTH - 2)
+            found = 1
+        }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+# Prints SKILL.md's top-level `version` ($2 = top) or its `metadata.version`
+# ($2 = metadata), or `absent`. Only the frontmatter is read - the scan stops
+# at the closing delimiter - so a line in the body can never stand in for a
+# field missing from the header.
+#
+# Quotes are required rather than merely tolerated, and an unquoted value
+# reports as unmeasurable instead of as a number: to YAML an unquoted 1.0.0 is
+# a string but an unquoted 1.0 is a float, so a reader that accepted both would
+# accept the exact shape this change exists to remove.
+skill_version() {
+    [ -f "$1" ] || { printf 'no-such-file\n'; return 0; }
+    awk -v want="$2" '
+        /^---[ \t]*$/ { c++; if (c >= 2) exit; next }
+        c != 1 || found { next }
+        {
+            if (want == "top") { if ($0 !~ /^version:/)       next }
+            else               { if ($0 !~ /^[ \t]+version:/) next }
+            rest = substr($0, index($0, ":") + 1)
+            sub(/^[ \t]+/, "", rest)
+            sub(/[ \t]+$/, "", rest)
+            found = 1
+            if (rest !~ /^"[^"]*"$/) { print "unquoted"; next }
+            print substr(rest, 2, length(rest) - 2)
+        }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+# X.Y.Z with the optional prerelease/build tail semver allows, so a future
+# 1.1.0-rc.1 is not blocked by a rule that only meant to reject "1.0".
+is_semver() { printf '%s\n' "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; }
+
+# One decision, shared by the shipped row and by every fixture below, so the
+# fixtures exercise the rule that actually runs rather than a restatement of it
+# that could drift away from it.
+version_verdict() {
+    _p=$(json_version "$1")
+    _m=$(json_version "$2")
+    _t=$(skill_version "$3" top)
+    _n=$(skill_version "$3" metadata)
+    for _v in "$_p" "$_m" "$_t" "$_n"; do
+        case $_v in
+            absent | unquoted | no-such-file) printf 'unreadable-%s\n' "$_v"; return 0 ;;
+        esac
+    done
+    is_semver "$_p" || { printf 'source-not-semver\n'; return 0; }
+    if [ "$_m" = "$_p" ] && [ "$_t" = "$_p" ] && [ "$_n" = "$_p" ]; then
+        printf 'pass\n'
+    else
+        printf 'mismatch\n'
+    fi
+}
+
+version_seen() {
+    printf 'plugin.json=%s marketplace.json=%s SKILL.md=%s SKILL.md/metadata=%s' \
+        "$(json_version "$1")" "$(json_version "$2")" \
+        "$(skill_version "$3" top)" "$(skill_version "$3" metadata)"
+}
+
+vv=$(version_verdict "$PLUGIN" "$MARKET" "$SKILL/SKILL.md")
+vs=$(version_seen "$PLUGIN" "$MARKET" "$SKILL/SKILL.md")
+[ "$vv" = pass ] \
+    && ok "one version in four places: $vs" \
+    || fail "the four version strings do not agree ($vv): $vs"
+
+# Every fixture is a COPY of the three real files with exactly one number
+# moved, because that is the drift this row exists to catch: bumping
+# plugin.json for a release and forgetting SKILL.md ships an installed skill
+# declaring a version it is not.
+vf=$(mktemp -d)
+
+bump_json() {
+    awk -v v="$2" '
+        !done && match($0, /"version"[ \t]*:[ \t]*"[^"]*"/) {
+            print substr($0, 1, RSTART - 1) "\"version\": \"" v "\"" substr($0, RSTART + RLENGTH)
+            done = 1
+            next
+        }
+        { print }
+    ' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+# An empty $3 DELETES the field rather than writing an empty one, because the
+# state worth a fixture is the field being gone.
+bump_skill() {
+    awk -v want="$2" -v v="$3" '
+        BEGIN {
+            pat = (want == "top") ? "^version:" : "^[ \t]+version:"
+            pad = (want == "top") ? ""          : "  "
+        }
+        !done && $0 ~ pat {
+            done = 1
+            if (v != "") print pad "version: \"" v "\""
+            next
+        }
+        { print }
+    ' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+version_leg() {
+    _d="$vf/$1"
+    mkdir -p "$_d/.claude-plugin" "$_d/skill"
+    cp "$PLUGIN" "$_d/.claude-plugin/plugin.json"
+    cp "$MARKET" "$_d/.claude-plugin/marketplace.json"
+    cp "$SKILL/SKILL.md" "$_d/skill/SKILL.md"
+    case $1 in
+        plugin)      bump_json  "$_d/.claude-plugin/plugin.json"      "$2" ;;
+        marketplace) bump_json  "$_d/.claude-plugin/marketplace.json" "$2" ;;
+        skill)       bump_skill "$_d/skill/SKILL.md" top      "$2" ;;
+        metadata)    bump_skill "$_d/skill/SKILL.md" metadata "$2" ;;
+        deleted)     bump_skill "$_d/skill/SKILL.md" top      '' ;;
+        all)
+            bump_json  "$_d/.claude-plugin/plugin.json"      "$2"
+            bump_json  "$_d/.claude-plugin/marketplace.json" "$2"
+            bump_skill "$_d/skill/SKILL.md" top      "$2"
+            bump_skill "$_d/skill/SKILL.md" metadata "$2"
+            ;;
+    esac
+    version_verdict "$_d/.claude-plugin/plugin.json" \
+        "$_d/.claude-plugin/marketplace.json" "$_d/skill/SKILL.md"
+}
+
+# Every fixture below is DERIVED from the three shipped files, so they only
+# mean anything while those files read. Standing down loudly when they do not
+# beats four more failures restating the one above in different words - and
+# beats the worse half of that: the lone-bump fixtures all report
+# `unreadable-absent` when the top-level field is missing, which is a rejection
+# arrived at for a reason that has nothing to do with the number moving alone.
+if [ "$vv" = pass ]; then
+    v_bad=''
+    for leg in plugin marketplace skill metadata; do
+        got=$(version_leg "$leg" 9.9.9)
+        [ "$got" = mismatch ] && continue
+        v_bad="$v_bad [$leg bumped alone: $got]"
+    done
+    if [ -z "$v_bad" ]; then
+        ok "rejected: each of the four places bumped on its own - one number moving alone is a red run"
+    else
+        fail "ACCEPTED but must be rejected: a lone bump read as agreement:$v_bad"
+    fi
+
+    # ...and the row is not "every fixture is bad", nor a builder that quietly
+    # rewrote nothing: a release IS four edits, so moving all four together
+    # passes. This row polices their agreement, never their value.
+    [ "$(version_leg all 9.9.9)" = pass ] \
+        && ok "four numbers moved together is the shape of a release, and it passes" \
+        || fail "four agreeing versions were read as a disagreement"
+
+    # The field a package manager refuses without, deleted. This is the state
+    # the change repaired - SKILL.md carried only a nested metadata.version -
+    # and a gate keyed on a field that may simply be absent is no gate, so
+    # absence gets its own verdict rather than an empty string compared against
+    # three real ones.
+    [ "$(version_leg deleted '')" = unreadable-absent ] \
+        && ok "rejected: the top-level version deleted, which no equality test would notice" \
+        || fail "ACCEPTED but must be rejected: a missing top-level version"
+
+    # Agreement alone is not enough, and this is the value that proves it:
+    # "1.0" in all four places is what metadata.version actually carried, and it
+    # is not semver, so paks would refuse the skill while every equality test
+    # called it agreement.
+    [ "$(version_leg all 1.0)" = source-not-semver ] \
+        && ok "rejected: four agreeing versions that are not semver" \
+        || fail "ACCEPTED but must be rejected: an agreeing version that no installer can read"
+else
+    printf '  skip  the version fixtures (they are derived from the shipped files, which failed above)\n'
+fi
+rm -rf "$vf"
+
 # ---------------------------------------------------------------- schema ----
 section "schema"
 

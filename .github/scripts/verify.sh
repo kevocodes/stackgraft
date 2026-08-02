@@ -800,6 +800,45 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     docker_ready=1
 fi
 
+# The rows below prove the SHIPPED SCRIPTS run on a minimal image. They used to
+# hand that image a repository by bind-mounting this checkout at /w, which
+# silently assumed a PRIMARY checkout: in a linked worktree `.git` is a FILE
+# reading `gitdir: <absolute host path>`, and that path does not exist inside
+# the container. git then aborts with `not a git repository: (null)` before a
+# script under test is ever read - so the suite could not pass from a worktree,
+# which is the one thing this skill exists to work in. It went unseen because
+# CI and every local run happened in the main checkout.
+#
+# The container is given its own repository instead. Only the scripts directory
+# is mounted, READ-ONLY, and /w is built and `git init`ed in the container's own
+# writable layer. Three things follow, and the third is why this shape was
+# chosen over mounting the git common directory at the absolute path the gitdir
+# pointer names:
+#
+#   - the rows keep testing exactly what they claim. A real git answers inside
+#     the container, `git worktree list` succeeds as it did before, and the
+#     scripts run for real on busybox. Nothing was relaxed to make git quiet.
+#   - both kinds of checkout now traverse ONE arrangement. The alternative
+#     needed a branch on checkout kind, and the rarely-taken branch is exactly
+#     the one that just broke.
+#   - a test container can no longer write into the repository it is verifying.
+#     Mounting the real common directory would hand it the object store, and on
+#     Linux CI that container is root.
+#
+# The repository layout is reproduced under /w so a caller writes the same
+# invocation path the skill documents. The program arrives through the
+# environment, so the caller's quoting survives whole.
+ALPINE_SRC="$ROOT/$SKILL/scripts"
+alpine_scripts() {
+    docker run --rm --entrypoint sh -e PROG="$1" \
+        -v "$ALPINE_SRC":/src:ro alpine/git -c '
+            mkdir -p /w/skills/stackgraft/scripts || exit 1
+            cp -R /src/. /w/skills/stackgraft/scripts/ || exit 1
+            cd /w || exit 1
+            git init -q . >/dev/null 2>&1 || exit 1
+            eval "$PROG"'
+}
+
 if [ "$docker_ready" -eq 1 ]; then
     # V15: this is the premise the whole anchor mechanism rests on.
     docker compose run --help 2>&1 | grep -qE '^[[:space:]]*-l, --label' \
@@ -843,7 +882,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     fi
 
     # V30 positive: the scripts RUN on a minimal Linux image, not only parse.
-    lin=$(docker run --rm --entrypoint sh -v "$ROOT":/w -w /w alpine/git -c '
+    lin=$(alpine_scripts '
         d=/tmp/d.json; p=/tmp/p
         printf a > "$d"; printf b > "$p"
         fp=$(git hash-object --stdin < "$d")
@@ -868,6 +907,61 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         && ok "alpine busybox ps: the probe reports unsupported, as declared" \
         || fail "the probe claimed lstart support on busybox"
     rm -rf "$pp"
+
+    # --- V34  the container rows must not depend on the KIND of checkout -----
+    # Every row above runs from whatever checkout the suite was invoked in, so
+    # on a developer machine and in CI that is always the main one, and the
+    # worktree case stayed unexercised until it broke. This row supplies the
+    # missing kind: a throwaway repository with a real linked worktree beside
+    # it, driving the SAME alpine_scripts the rows above use, with its source
+    # pointed at the worktree. It fails if the harness ever goes back to
+    # needing a primary checkout.
+    ck=$(mktemp -d)
+    (
+        mkdir -p "$ck/main/skills/stackgraft/scripts" \
+        && cp "$ROOT/$SKILL/scripts"/*.sh "$ck/main/skills/stackgraft/scripts/" \
+        && cd "$ck/main" \
+        && git init -q . \
+        && git add -A \
+        && git -c user.email=verify@invalid -c user.name=verify commit -q -m scripts \
+        && git worktree add -q --detach "$ck/linked" HEAD
+    ) >/dev/null 2>&1
+
+    # The fixture proves nothing unless it really holds both kinds: the linked
+    # worktree keeps `.git` as a gitdir FILE, the checkout it came from keeps it
+    # as a directory. That difference IS the defect.
+    [ -f "$ck/linked/.git" ] && [ -d "$ck/main/.git" ] \
+        && ok "the checkout-kind fixture holds a gitdir file beside a real .git directory" \
+        || fail "the checkout-kind fixture is not one of each, so it proves nothing"
+
+    # A shipped git-dependent path, not bare git: fingerprint.sh reports `-` for
+    # anything it could not hash, so a digest is proof git answered for real.
+    _src=$ALPINE_SRC
+    ALPINE_SRC="$ck/linked/skills/stackgraft/scripts"
+    ckr=$(alpine_scripts '
+        [ "$(git rev-parse --show-toplevel)" = /w ] || exit 1
+        git worktree list --porcelain >/dev/null 2>&1 || exit 1
+        out=$(sh skills/stackgraft/scripts/fingerprint.sh \
+                  skills/stackgraft/scripts/reap.sh) || exit 1
+        case $out in -*) exit 1 ;; esac
+        echo ok' 2>/dev/null | tail -1)
+    ALPINE_SRC=$_src
+    [ "$ckr" = ok ] \
+        && ok "the minimal-image rows get a working git from a LINKED worktree too" \
+        || fail "the container harness has no git when the checkout is a linked worktree"
+
+    # The negative is the arrangement this row replaced: bind-mounting the
+    # checkout itself. Against a linked worktree it must NOT resolve, because
+    # the gitdir pointer names a host path the container has not got. If it did
+    # resolve, the positive above would be passing for some other reason.
+    [ "$(docker run --rm --entrypoint sh -v "$ck/linked":/w -w /w alpine/git \
+            -c 'git rev-parse --show-toplevel >/dev/null 2>&1 \
+                && echo resolved || echo broken' 2>/dev/null | tail -1)" = broken ] \
+        && ok "rejected: bind-mounting the worktree itself, whose gitdir names a host path" \
+        || fail "the discarded mount resolved a linked worktree, so the positive proves nothing"
+
+    git -C "$ck/main" worktree remove --force "$ck/linked" >/dev/null 2>&1
+    rm -rf "$ck"
 else
     printf '  skip  labelled-launch and minimal-image rows (no docker daemon or alpine/git image)\n'
 fi
@@ -1735,7 +1829,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     # V30 + V28 + V12's refusal half, on the minimal image: reap.sh RUNS there,
     # says docker is unavailable rather than zero, still prints the standing
     # legacy statement, and refuses a mutation because busybox ps has no lstart.
-    alp=$(docker run --rm --entrypoint sh -v "$ROOT":/w -w /w alpine/git -c '
+    alp=$(alpine_scripts '
         t=$(printf "\t")
         R=skills/stackgraft/scripts/reap.sh
         out=$(sh "$R" report 00c0ffee) || exit 1

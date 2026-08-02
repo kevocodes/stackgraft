@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Run only the services your git worktree changed</strong><br>
-  <em>Agent-agnostic. No install step. Refuses before it corrupts.</em>
+  <em>Agent-agnostic. No runtime to install. Refuses before it corrupts.</em>
 </p>
 
 <p align="center">
@@ -54,8 +54,15 @@ stackgraft classifies every `(service, store)` pair before anything launches and
 **Any agent that reads the [Agent Skills](https://agentskills.io) standard** — Claude Code, Codex, Cursor, Gemini CLI, Copilot, OpenCode, Goose, Amp, Kiro and ~30 more:
 
 ```bash
-git clone https://github.com/kevocodes/stackgraft
-cp -R stackgraft/skills/stackgraft ~/.claude/skills/     # or ~/.copilot/skills/, etc.
+npx skills add kevocodes/stackgraft
+```
+
+That is the whole install, and knowing where each agent keeps its skills is now its job rather than yours. One canonical copy lands in `.agents/skills/stackgraft/`; every agent directory it finds gets a **relative symlink** to that one copy, so there is nothing to keep in sync. `skills-lock.json` pins exactly what you installed by sha256 content hash, and `npx skills update` / `npx skills remove` cover the rest of the lifecycle.
+
+Or with **paks**, pointed straight at the skill folder:
+
+```bash
+paks install https://github.com/kevocodes/stackgraft/tree/main/skills/stackgraft
 ```
 
 **Claude Code**, as a plugin that stays updated:
@@ -69,7 +76,7 @@ Then just ask, in whatever words you use:
 
 > *run this worktree against the stack that's already up*
 
-→ [Per-agent paths and troubleshooting](docs/INSTALLATION.md)
+→ [Copying it by hand, per-agent paths and troubleshooting](docs/INSTALLATION.md)
 
 ## What ships
 

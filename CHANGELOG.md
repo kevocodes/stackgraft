@@ -43,4 +43,5 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[1.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.0.0

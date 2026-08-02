@@ -1971,6 +1971,261 @@ else
 fi
 rm -rf "$vf"
 
+# -------------------------------------------------------- release notes ----
+section "release notes"
+
+# A tagged release's body is EXTRACTED from CHANGELOG.md, so what the file says
+# and what a reader sees on the releases page are one artifact rather than two
+# that drift. Four things have to hold for that, and three of them were already
+# false at least once:
+#
+#   - the version plugin.json declares has a section at all;
+#   - that version has a link-reference definition. 1.1.0 shipped without one
+#     while 1.0.0 had one, which is the asymmetry a reader sees as `[1.1.0]`
+#     rendering as literal brackets beside a 1.0.0 that renders as a link;
+#   - the extracted body carries NEITHER the `## [` heading NOR any
+#     link-reference line. The heading is redundant beside a release title that
+#     already spells the version; the link line is the bug. The LAST section in
+#     the file has no `## [` heading after it, so a rule that stopped only at
+#     the next heading ran to EOF and swallowed the definitions into the body;
+#   - a version the file does not carry is refused, by name, rather than
+#     published as an empty release.
+
+CHLOG=CHANGELOG.md
+SECTION=.github/scripts/changelog-section.sh
+
+if command -v dash >/dev/null 2>&1; then
+    dash -n "$SECTION" 2>/dev/null \
+        && ok "changelog-section.sh parses under dash" \
+        || fail "changelog-section.sh fails dash -n"
+else
+    sh -n "$SECTION" 2>/dev/null \
+        && ok "changelog-section.sh parses under sh" \
+        || fail "changelog-section.sh fails sh -n"
+fi
+
+# ...and that parse can fail. The row above is the one place in this file where
+# an external tool decides the verdict, so what is worth proving is that its
+# exit code is still being read rather than swallowed.
+pf2=$(mktemp -d)
+printf '#!/bin/sh\ncase x in\n' > "$pf2/broken.sh"
+if command -v dash >/dev/null 2>&1; then
+    dash -n "$pf2/broken.sh" 2>/dev/null && bad_parses=1 || bad_parses=0
+else
+    sh -n "$pf2/broken.sh" 2>/dev/null && bad_parses=1 || bad_parses=0
+fi
+[ "$bad_parses" -eq 0 ] \
+    && ok "rejected: a script with an unterminated case, so the parse row can still fail" \
+    || fail "the parse check accepted an unterminated case statement"
+rm -rf "$pf2"
+
+head -1 "$SECTION" | grep -q '^#!/bin/sh' \
+    && ok "changelog-section.sh carries a shebang" \
+    || fail "changelog-section.sh has no shebang"
+
+# Reports `present` or `absent`. The bracketed token is compared LITERALLY,
+# exactly as the extractor compares it, so a version whose dots happened to
+# line up with another heading cannot report present.
+changelog_entry() {
+    awk -v want="$2" '
+        /^## \[/ {
+            p = index($0, "]")
+            if (p > 4 && substr($0, 5, p - 5) == want) { print "present"; found = 1; exit }
+        }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+# Reports `present` or `absent`. index() rather than a regex for the same
+# reason: the version is data, and its dots are not wildcards.
+changelog_link() {
+    awk -v want="$2" '
+        index($0, "[" want "]:") == 1 { print "present"; found = 1; exit }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+rel_version=$(json_version "$PLUGIN")
+case $rel_version in
+    absent | no-such-file) rel_readable=0 ;;
+    *)                     rel_readable=1 ;;
+esac
+
+if [ "$rel_readable" -eq 1 ]; then
+    nf=$(mktemp -d)
+
+    entry_state=$(changelog_entry "$CHLOG" "$rel_version")
+    [ "$entry_state" = present ] \
+        && ok "CHANGELOG.md has an entry for $rel_version, the version plugin.json declares" \
+        || fail "CHANGELOG.md has no entry for $rel_version, the version plugin.json declares"
+
+    # Both fixtures below REMOVE something from the shipped file, so each is
+    # only a fixture while the thing it removes is there. Run against a file
+    # that never had it, they report `absent` for a reason that has nothing to
+    # do with the removal and pass while proving nothing - which is the exact
+    # shape of vacuous gate this file exists to keep out. They stand down
+    # loudly instead; the row above already names the real problem.
+    if [ "$entry_state" = present ]; then
+        awk -v want="$rel_version" '
+            /^## \[/ { p = index($0, "]"); if (p > 4 && substr($0, 5, p - 5) == want) next }
+            { print }
+        ' "$CHLOG" > "$nf/no-entry.md"
+        [ "$(changelog_entry "$nf/no-entry.md" "$rel_version")" = absent ] \
+            && ok "rejected: the same file with the released version's heading removed" \
+            || fail "ACCEPTED but must be rejected: a CHANGELOG carrying no entry for the released version"
+    else
+        printf '  skip  the removed-entry fixture (it removes an entry the file does not carry)\n'
+    fi
+
+    link_state=$(changelog_link "$CHLOG" "$rel_version")
+    [ "$link_state" = present ] \
+        && ok "$rel_version has a link-reference definition, so its version renders as a link" \
+        || fail "$rel_version has no link-reference definition, so it renders as literal brackets"
+
+    if [ "$link_state" = present ]; then
+        awk -v want="$rel_version" 'index($0, "[" want "]:") == 1 { next } { print }' \
+            "$CHLOG" > "$nf/no-link.md"
+        [ "$(changelog_link "$nf/no-link.md" "$rel_version")" = absent ] \
+            && ok "rejected: the same file with that definition removed - the state 1.1.0 shipped in" \
+            || fail "ACCEPTED but must be rejected: a released version with no link-reference definition"
+    else
+        printf '  skip  the removed-definition fixture (it removes a definition the file does not carry)\n'
+    fi
+
+    rm -rf "$nf"
+else
+    printf '  skip  the entry and link-definition rows (plugin.json declares no readable version: %s)\n' "$rel_version"
+fi
+
+# The shape a release body must have: non-empty, and carrying neither the
+# heading the release title already spells nor a link-reference line.
+notes_verdict() {
+    case $1 in
+        '') printf 'empty\n'; return 0 ;;
+    esac
+    if printf '%s\n' "$1" | grep -q '^## \['; then
+        printf 'has-heading\n'
+        return 0
+    fi
+    if printf '%s\n' "$1" | grep -qE '^\[[^]]+\]:'; then
+        printf 'has-link-definition\n'
+        return 0
+    fi
+    printf 'pass\n'
+}
+
+# EVERY section is extracted, not only the released one, because the shape that
+# broke belongs to whichever section is LAST - and which section that is
+# changes with every release. The word split is deliberate: a version string is
+# digits and dots, so there is nothing here to split or glob on.
+notes_bad=''
+notes_n=0
+for v in $(awk '/^## \[/ { p = index($0, "]"); if (p > 4) print substr($0, 5, p - 5) }' "$CHLOG"); do
+    notes_n=$((notes_n + 1))
+    got=$(notes_verdict "$(sh "$SECTION" "$v" "$CHLOG" 2>/dev/null)")
+    [ "$got" = pass ] || notes_bad="$notes_bad [$v: $got]"
+done
+if [ "$notes_n" -ge 2 ] && [ -z "$notes_bad" ]; then
+    ok "all $notes_n CHANGELOG sections extract to a body with no heading and no link definition"
+else
+    fail "release notes: $notes_n section(s) seen,$notes_bad"
+fi
+
+# ...and the verdict can fire on each of the three shapes it exists to catch.
+# Without this the row above passes on a function that returned `pass` for
+# anything at all, which is the failure mode the whole file is written against.
+nv_bad=''
+nv_try() {
+    _got=$(notes_verdict "$2")
+    [ "$_got" = "$3" ] || nv_bad="$nv_bad [$1: $_got, wanted $3]"
+}
+nv_try empty   ''                                                      empty
+nv_try heading "$(printf 'prose\n## [9.9.9] — 2026-01-01\nmore\n')"    has-heading
+nv_try link    "$(printf 'prose\n[9.9.9]: https://example.invalid/\n')" has-link-definition
+[ -z "$nv_bad" ] \
+    && ok "rejected: an empty body, a body carrying the heading, and a body carrying a link definition" \
+    || fail "the release-notes verdict could not see a shape it exists to catch:$nv_bad"
+
+# --- the regression fixture: the section that runs to EOF --------------------
+# The bug was never in what the extractor stopped at. It was in what it did NOT
+# stop at, and only the last section can show that, so the fixture puts the
+# requested version last with the definitions below it.
+rf=$(mktemp -d)
+cat > "$rf/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## [2.0.0] — 2026-09-01
+
+A second entry, so the one below it is genuinely the last.
+
+## [1.0.0] — 2026-07-31
+
+First public release.
+
+[2.0.0]: https://example.invalid/releases/tag/v2.0.0
+[1.0.0]: https://example.invalid/releases/tag/v1.0.0
+FIXTURE
+
+last_body=$(sh "$SECTION" 1.0.0 "$rf/CHANGELOG.md" 2>/dev/null)
+if [ "$(notes_verdict "$last_body")" = pass ]; then
+    ok "the last section extracts clean: the definitions below it are not part of the body"
+else
+    fail "the last section came back $(notes_verdict "$last_body"): '$last_body'"
+fi
+
+# ...and the control, which is the rule that shipped: stopping only at the next
+# `## [` heading. It has none to stop at here, runs to EOF, and takes the
+# definitions with it. Without this row the one above passes on a fixture that
+# never exercised the condition at all.
+swallowed=$(awk '
+    /^## \[1\.0\.0\]/ { on = 1; next }
+    on && /^## \[/    { exit }
+    on                { print }
+' "$rf/CHANGELOG.md")
+[ "$(notes_verdict "$swallowed")" = has-link-definition ] \
+    && ok "rejected: the heading-only stop rule, which runs to EOF and swallows the definitions" \
+    || fail "the heading-only stop rule did not reproduce the bug, so the fixture above proves nothing"
+rm -rf "$rf"
+
+# --- refusals: a version that is not there, and a heading with nothing under it
+missing_said=$(sh "$SECTION" 9.9.9 "$CHLOG" 2>&1 >/dev/null)
+sh "$SECTION" 9.9.9 "$CHLOG" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$missing_said" | grep -q '9\.9\.9'; then
+    ok "a version with no section exits $rc and names the version it could not find"
+else
+    fail "a missing version exited $rc and said '$missing_said'"
+fi
+
+# ...and that refusal is about the version, not about every invocation. Without
+# this control a script that failed unconditionally would pass the row above.
+# The version comes from the file's own first heading rather than from
+# plugin.json, so an unreadable manifest cannot make this control fail for a
+# reason that has nothing to do with what it is controlling for.
+first_version=$(awk '/^## \[/ { p = index($0, "]"); if (p > 4) { print substr($0, 5, p - 5); exit } }' "$CHLOG")
+sh "$SECTION" "$first_version" "$CHLOG" >/dev/null 2>&1
+[ $? -eq 0 ] \
+    && ok "rejected: a blanket failure - $first_version exits 0 against the same file" \
+    || fail "$first_version also failed, so the missing-version row proves nothing"
+
+# A heading with an empty body under it would publish a release with no notes
+# at all, and exit 0 is how that reaches the releases page unnoticed.
+ef=$(mktemp -d)
+printf '# Changelog\n\n## [3.0.0] — 2026-09-02\n\n## [1.0.0] — 2026-07-31\n\nFirst.\n' > "$ef/CHANGELOG.md"
+sh "$SECTION" 3.0.0 "$ef/CHANGELOG.md" >/dev/null 2>&1
+[ $? -eq 4 ] \
+    && ok "rejected: a heading with an empty body under it (exit 4)" \
+    || fail "an empty section was extracted as a publishable release body"
+rm -rf "$ef"
+
+# No arguments is a usage error, reached before anything is read. The script an
+# agent or a workflow step calls must never sit waiting on a stdin nobody is
+# going to write to.
+sh "$SECTION" >/dev/null 2>&1
+[ $? -eq 2 ] \
+    && ok "changelog-section fails loudly with no arguments rather than reading stdin" \
+    || fail "changelog-section did not reject an empty invocation"
+
 # ---------------------------------------------------------------- schema ----
 section "schema"
 

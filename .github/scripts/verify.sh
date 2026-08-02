@@ -1145,6 +1145,12 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     RH=00c0ffee
     fixture_ids=''
 
+    # The orphan fixture SPEAKS. The row at the bottom of this block asserts
+    # that a stop preserves the container's account of itself, and a container
+    # that never wrote one cannot show that anything was preserved - so the
+    # marker is written before the sleep and read back after the stop.
+    ORPHAN_SAYS=stackgraft-orphan-log-marker
+
     # No --rm on any fixture: a stop MUST leave the container and its logs in
     # place, and --rm would delete exactly the evidence D8 exists to preserve -
     # so a run with it would report a passing stop for the wrong reason.
@@ -1172,7 +1178,8 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     live_wt=$(CDPATH= cd -- "$rf/wt" 2>/dev/null && pwd -P)
     gone_wt="$rfp/deleted"
 
-    fixture_container "$RH" "$gone_wt" storefront 18101 ; orphan=$cid
+    fixture_container "$RH" "$gone_wt" storefront 18101 1 \
+        "printf '%s\n' $ORPHAN_SAYS; sleep 120"          ; orphan=$cid
     fixture_container "$RH" "$live_wt" storefront 18102 ; livewt=$cid
     fixture_container '' '' '' ''                       ; bare=$cid
     fixture_container "$RH" "$gone_wt" catalog-api 18103 ; handlabelled=$cid
@@ -1182,6 +1189,13 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     fixture_container "$RH" "$gone_wt" worker 18107 ; residual=$cid
     fixture_container "$RH" "$gone_wt" storefront 18108 ; w5a=$cid
     fixture_container "$RH" "$gone_wt" storefront 18109 ; w5b=$cid
+
+    # The negative for the log-preservation row, and it is the fixture that row
+    # USED to run: a bare `sleep 120` that writes nothing at all. 18110 rather
+    # than 18103, so it is an ordinary orphan and takes the same mutation path
+    # the speaking one does - the only difference between the two containers is
+    # whether anything was ever written to stdout.
+    fixture_container "$RH" "$gone_wt" storefront 18110 ; silent=$cid
 
     # Three more of the hand-labelled base-stack shape, one per invalid -b
     # value the A10 row exercises. They are separate containers on purpose: at
@@ -1443,6 +1457,11 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
 
     # ...and the exclusion above is the base-stack test, not a blanket refusal:
     # the same shape without the base-port marker IS a target.
+    #
+    # What the orphan said BEFORE the stop is taken here, because the row below
+    # has to be able to tell a stop that destroyed the account apart from a
+    # fixture that never wrote one.
+    orphan_said=$(docker logs "$orphan" 2>&1)
     reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$orphan"
     if [ "$reap_rc" -eq 0 ] && printf '%s' "$reap_out" | grep -q "^acted${TAB}1\$"; then
         ok "a labelled orphan that is no base-stack service is acted on"
@@ -1452,9 +1471,58 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     [ "$(docker inspect --format '{{.State.Status}}' "$orphan" 2>/dev/null)" = exited ] \
         && ok "the stop left the container in place rather than removing it" \
         || fail "the stopped orphan is not in the exited state"
-    docker logs "$orphan" >/dev/null 2>&1 \
-        && ok "a stopped orphan's logs are still readable" \
-        || fail "the stop destroyed the logs, which are the only account of the orphan"
+
+    # A stop MUST leave the container's account of itself readable. This row
+    # used to assert that with `docker logs >/dev/null 2>&1` over a fixture that
+    # ran a bare `sleep 120` and wrote nothing, and an exit code over no bytes
+    # proves nothing. Measured on that fixture: a silent container answers rc 0
+    # with ZERO bytes both before and after the stop, and only an ABSENT
+    # container answers rc 1 - so the one state the exit code could distinguish
+    # was the container being gone, which the row directly above already proves
+    # by asserting it is `exited`. Preserved logs, destroyed logs and logs that
+    # never existed all read identically, and destroyed logs are the failure the
+    # row's own message names.
+    #
+    # So the fixture speaks a known marker before it sleeps and what is asserted
+    # is that the marker comes back AFTER the stop.
+    #
+    # A missing marker has two causes and they are not the same defect: a stop
+    # that destroyed what the container wrote, and a fixture that never wrote
+    # anything. The pre-stop capture separates them, so this row can never
+    # report the second as the first.
+    #
+    # One decision, shared by this row and by its negative below, so the
+    # negative exercises the assertion that actually runs rather than a second
+    # copy of it that could drift away from it. -F and -- because a marker is
+    # data: its characters are not a pattern and a leading dash is not a flag.
+    logs_carry() { docker logs "$1" 2>&1 | grep -qF -- "$2"; }
+
+    if printf '%s' "$orphan_said" | grep -qF -- "$ORPHAN_SAYS"; then
+        logs_carry "$orphan" "$ORPHAN_SAYS" \
+            && ok "a stopped orphan's logs are still readable: what it said before the stop reads back after it" \
+            || fail "the stop destroyed the logs, which are the only account of the orphan"
+    else
+        fail "the orphan fixture never wrote its marker, so the row above it has no preserved account to find"
+    fi
+
+    # The negative carries the diagnosis rather than only the verdict. It is the
+    # fixture this row USED to run - a container that writes nothing - stopped by
+    # the same invocation shape, and it re-runs the row's ORIGINAL assertion and
+    # requires it to STILL PASS before requiring the new one to fail. One row
+    # therefore proves both halves: that an exit code from `docker logs` was
+    # blind to a container holding no account at all, and that the marker is what
+    # sees it. If a later edit weakens the marker assertion back into an exit-code
+    # test, this row stops printing ok.
+    reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$silent"
+    silent_state=$(docker inspect --format '{{.State.Status}}' "$silent" 2>/dev/null)
+    docker logs "$silent" >/dev/null 2>&1
+    silent_rc=$?
+    if [ "$silent_rc" -eq 0 ] && [ "$silent_state" = exited ] \
+       && ! logs_carry "$silent" "$ORPHAN_SAYS"; then
+        ok "rejected: a stopped container holding no account of itself - the old exit-code assertion still passes over it, the marker assertion does not"
+    else
+        fail "the silent fixture did not reproduce the blind spot: state '${silent_state:-gone}', docker logs exited $silent_rc"
+    fi
 
     # Under remove the same exited container IS a target - D8's corollary is a
     # filter on the state, not a comment about it.

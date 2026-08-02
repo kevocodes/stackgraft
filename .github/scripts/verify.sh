@@ -46,8 +46,21 @@ a=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" 2>/dev/null)
 b=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt/" 2>/dev/null)
 [ "$a" = "$b" ] && ok "pick-port is stable across path spellings" || fail "pick-port gave $a then $b for one worktree"
 
+# The inequality alone is satisfied by EMPTY, so a pick-port that emitted
+# nothing for every call carrying an exclusion passed this row: '' is not $a.
+# What the row means is three things - a port, in range, and not the excluded
+# one - and it asks for all three, in the same `case` shape the range row above
+# uses for the same value.
 excl=$(sh "$SKILL/scripts/pick-port.sh" 18000 18999 "$wt" "$a" 2>/dev/null)
-[ "$excl" != "$a" ] && ok "pick-port honours an exclusion" || fail "pick-port returned an excluded port"
+case ${excl:-} in
+    1[8-9][0-9][0-9][0-9]) excl_ranged=1 ;;
+    *)                     excl_ranged=0 ;;
+esac
+if [ -n "$excl" ] && [ "$excl_ranged" -eq 1 ] && [ "$excl" != "$a" ]; then
+    ok "pick-port honours an exclusion (emitted $excl, not the excluded $a)"
+else
+    fail "pick-port emitted '$excl' with $a excluded"
+fi
 
 sh "$SKILL/scripts/pick-port.sh" 18000 18000 "$wt" 18000 >/dev/null 2>&1
 [ $? -eq 3 ] && ok "pick-port exits 3 when the range is exhausted" || fail "pick-port did not signal exhaustion"

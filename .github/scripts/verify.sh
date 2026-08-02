@@ -1415,11 +1415,18 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         fail "unlabelled target: exit $reap_rc, said '$reap_out'"
     fi
 
+    # The container's STATE is read as well as the exit code and the reason, the
+    # way the -b omitted row below and the flag-surface enumeration after it
+    # already do. A refusal that returned 3, named the right reason and stopped
+    # the container anyway is not a refusal, and $future was the one fixture in
+    # this block whose State.Status no row ever looked at.
     reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$future"
-    if [ "$reap_rc" -eq 3 ] && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
+    future_state=$(docker inspect --format '{{.State.Status}}' "$future" 2>/dev/null)
+    if [ "$reap_rc" -eq 3 ] && [ "$future_state" = running ] \
+       && printf '%s' "$reap_out" | grep -q 'unrecognised-label-version'; then
         ok "rejected: a label contract version this run does not recognise"
     else
-        fail "unrecognised-version target: exit $reap_rc, said '$reap_out'"
+        fail "unrecognised-version target: exit $reap_rc, state '${future_state:-gone}', said '$reap_out'"
     fi
 
     reap_run -C "$repo" -b 18103 -m stop "$RH" "c:$handlabelled"

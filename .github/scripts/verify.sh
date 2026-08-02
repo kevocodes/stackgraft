@@ -1829,6 +1829,18 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     # V30 + V28 + V12's refusal half, on the minimal image: reap.sh RUNS there,
     # says docker is unavailable rather than zero, still prints the standing
     # legacy statement, and refuses a mutation because busybox ps has no lstart.
+    #
+    # The two worktree assertions are what make this row notice git at all.
+    # Every other line here is true whether or not git answers - docker really
+    # is absent in the container, the legacy statement is unconditional, no
+    # sidecar was launched, and busybox ps really has no lstart - so the row
+    # used to pass in a container where git resolved no repository whatsoever.
+    # That is how the worktree defect fixed in #27 survived unremarked. reap.sh
+    # emits a `worktree` record only when `git worktree list --porcelain`
+    # answered, and swaps it for `degraded worktree-list-unavailable` when it
+    # did not; requiring the first and refusing the second ties this row to git
+    # running for real. Both, not one: the presence proves git answered, and
+    # the refusal rejects the degraded path by name rather than by absence.
     alp=$(alpine_scripts '
         t=$(printf "\t")
         R=skills/stackgraft/scripts/reap.sh
@@ -1836,11 +1848,43 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         printf "%s\n" "$out" | grep -q "^degraded${t}docker-unavailable" || exit 1
         printf "%s\n" "$out" | grep -q "^legacy${t}undetectable" || exit 1
         printf "%s\n" "$out" | grep -q "^host${t}checked" && exit 1
+        printf "%s\n" "$out" | grep -q "^worktree${t}" || exit 1
+        printf "%s\n" "$out" | grep -q "^degraded${t}worktree-list-unavailable" && exit 1
         sh "$R" -m stop 00c0ffee p:1 x 2>/dev/null | grep -q lstart-unsupported || exit 1
         echo ok' 2>/dev/null | tail -1)
     [ "$alp" = ok ] \
-        && ok "reap.sh runs on alpine: unavailable is not zero, and an unprovable pid is refused" \
+        && ok "reap.sh runs on alpine: unavailable is not zero, git answered, and an unprovable pid is refused" \
         || fail "reap.sh did not behave on a minimal Linux image"
+
+    # The negative for the row above, and it carries the diagnosis rather than
+    # just the verdict. The SAME helper, the same image and the same shipped
+    # script, in a container whose git resolves no repository at all: `.git` is
+    # replaced by a gitdir pointer naming a path that is not there, which is
+    # byte for byte the state a linked worktree used to hand this harness.
+    #
+    # The program then re-runs the row's ORIGINAL four assertions and requires
+    # every one of them to still pass, before requiring the two new ones to
+    # fail. So this row proves two things at once: that the assertions the row
+    # had were blind to a total loss of git, and that the ones just added are
+    # what sees it. If a later edit weakens either of the two, the positive
+    # above stops being tied to git and this row stops printing ok.
+    neg=$(alpine_scripts '
+        t=$(printf "\t")
+        R=skills/stackgraft/scripts/reap.sh
+        rm -rf .git || exit 1
+        printf "gitdir: /nonexistent/host/path/.git/worktrees/x\n" > .git || exit 1
+        git rev-parse --show-toplevel >/dev/null 2>&1 && exit 1
+        out=$(sh "$R" report 00c0ffee) || exit 1
+        printf "%s\n" "$out" | grep -q "^degraded${t}docker-unavailable" || exit 1
+        printf "%s\n" "$out" | grep -q "^legacy${t}undetectable" || exit 1
+        printf "%s\n" "$out" | grep -q "^host${t}checked" && exit 1
+        sh "$R" -m stop 00c0ffee p:1 x 2>/dev/null | grep -q lstart-unsupported || exit 1
+        printf "%s\n" "$out" | grep -q "^worktree${t}" && exit 1
+        printf "%s\n" "$out" | grep -q "^degraded${t}worktree-list-unavailable" || exit 1
+        echo ok' 2>/dev/null | tail -1)
+    [ "$neg" = ok ] \
+        && ok "rejected: a container whose git resolves nothing - the row's older assertions stay green there, the two worktree ones turn red" \
+        || fail "a container with no working git did not turn the reap row red, so the row still does not prove git ran"
 else
     printf '  skip  the two-repo and minimal-image reap rows (no docker daemon or alpine/git image)\n'
 fi

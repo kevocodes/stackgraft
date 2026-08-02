@@ -907,9 +907,20 @@ if [ "$docker_ready" -eq 1 ]; then
     docker compose run --help 2>&1 | grep -qE '^[[:space:]]*-l, --label' \
         && ok "docker compose run advertises -l/--label" \
         || fail "docker compose run does not advertise --label, which the anchor rests on"
-    docker compose up --help 2>&1 | grep -qE '^[[:space:]]*-l, --label' \
-        && fail "docker compose up advertises --label, so the up refusal has no ground" \
-        || ok "rejected: docker compose up, which takes no label flag - the up refusal's ground"
+    # `up` has no --label, so the grep for it misses whatever happened - which
+    # is exactly what NO help output produces too. The row could not tell a
+    # real answer from none, and `docker compose up --help` failing outright
+    # read as "up correctly takes no --label". So the output is required to be
+    # up's own help first, by a flag `up` really does carry, and only then is
+    # --label required to be absent from it.
+    up_help=$(docker compose up --help 2>&1)
+    if ! printf '%s\n' "$up_help" | grep -qE '^[[:space:]]*-d, --detach'; then
+        fail "docker compose up --help did not answer with its own flags, so a missing --label proves nothing"
+    elif printf '%s\n' "$up_help" | grep -qE '^[[:space:]]*-l, --label'; then
+        fail "docker compose up advertises --label, so the up refusal has no ground"
+    else
+        ok "rejected: docker compose up, which takes no label flag - the up refusal's ground"
+    fi
 else
     printf '  skip  compose label-flag rows (no docker daemon)\n'
 fi

@@ -1919,16 +1919,26 @@ a7_verdict() {
 af=$(mktemp -d)
 sh "$REAP" report 00c0ffee > "$af/report.txt" 2>/dev/null
 rc=$?
-if [ "$rc" -eq 0 ] && [ "$(a7_verdict "$af/report.txt")" = pass ]; then
+a7_state=$(a7_verdict "$af/report.txt")
+if [ "$rc" -eq 0 ] && [ "$a7_state" = pass ]; then
     ok "the report names the legacy category, calls it structural, and prints the manual command"
 else
-    fail "the report's legacy statement: exit $rc, verdict $(a7_verdict "$af/report.txt")"
+    fail "the report's legacy statement: exit $rc, verdict $a7_state"
 fi
 
+# This fixture REMOVES the legacy line, so it only says anything while the line
+# was there to remove. `no-legacy-record` is also what an EMPTY report verdicts
+# to - a reap.sh that printed nothing at all - and the row read that as the
+# fixture doing its job. It was correct only because the row above had proven
+# the report is a real one; the premise is stated here instead, the way the
+# removed-entry and removed-definition fixtures in the release-notes block name
+# theirs.
 grep -v "^legacy${TAB}" "$af/report.txt" > "$af/silent.txt"
-[ "$(a7_verdict "$af/silent.txt")" = no-legacy-record ] \
-    && ok "rejected: a report with the legacy statement absent - silence reads as nothing to see" \
-    || fail "ACCEPTED but must be rejected: a report that says nothing about legacy overlays"
+if [ "$a7_state" = pass ] && [ "$(a7_verdict "$af/silent.txt")" = no-legacy-record ]; then
+    ok "rejected: a report with the legacy statement absent - silence reads as nothing to see"
+else
+    fail "ACCEPTED but must be rejected: a report that says nothing about legacy overlays"
+fi
 
 awk -v t="$TAB" '
     $0 ~ "^legacy" t "undetectable" {
@@ -1984,11 +1994,28 @@ sc2="$sf2/stackgraft/stackgraft-00c0ffee.processes.json"
 
 printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc2"
 out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
-printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none" \
+
+# One expression for the checked-zero line, read once and used by both rows
+# below rather than grepped twice.
+if printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none"; then
+    host_checked=1
+else
+    host_checked=0
+fi
+[ "$host_checked" -eq 1 ] \
     && ok "an empty registry reports zero host overlays, checked" \
     || fail "an empty registry did not report a checked zero"
+
+# The row below is an ABSENCE, and an absence is also what no output at all
+# produces: a reap.sh that printed nothing has no `held incomplete` line either,
+# so the row said "every store answered" over a report that answered nothing. It
+# was correct only because the row above proved $out is a real report; that
+# premise is a branch of its own now, the way the compose `up` row requires up's
+# own help before concluding anything from a missing flag.
 if [ "$docker_ready" -eq 1 ]; then
-    if printf '%s' "$out" | grep -q "^held${TAB}incomplete"; then
+    if [ "$host_checked" -ne 1 ]; then
+        fail "the report never said it checked the host registry, so a missing held-port shortfall line proves nothing"
+    elif printf '%s' "$out" | grep -q "^held${TAB}incomplete"; then
         fail "the held-port set reported itself short with every store readable"
     else
         ok "rejected: the held-port shortfall line when every store answered"

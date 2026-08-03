@@ -1266,13 +1266,40 @@ reap_run() {
 
 # --- V6  one probe, two scripts, and a byte is enough to notice --------------
 # extract_probe() is defined once, with the V13 block in the instrumentation
-# section above, and this row's `-n` guard is the shape V13 now uses too.
+# section above.
+#
+# The `-n` guard this row used to carry was aimed one layer short. It covered
+# the EXTRACTION - file text, which a git that dies at exec leaves perfectly
+# intact - and not the HASHING, which is the step that actually needs git. With
+# git off the PATH both digests came back empty, `'' = ''` held, and the row
+# certified byte-identity over two absences. The negative two rows below went
+# FAIL in that same run, saying the comparison could not notice a changed byte,
+# so one run had the negative announcing the comparison blind while the positive
+# still vouched for it. A premise gate aimed at the input rather than at the
+# mechanism is indistinguishable from no gate at all. Third instance of `'' = ''`
+# in this file, after pick-port's stability row and its exclusion row.
+#
+# Both premises are needed and neither implies the other: an absent block still
+# digests to the empty blob's id, which is a perfectly well-formed object id, and
+# a dead git digests a present block to nothing at all. whole_object_id() is the
+# one the truncation row uses - 40 characters or 64, never a hard-coded 40 - so
+# there is no fourth spelling of "looks like a hash" to drift against.
+lock_block=$(extract_probe "$LOCK")
+reap_block=$(extract_probe "$REAP")
 p_lock=$(extract_probe "$LOCK" | git hash-object --stdin)
 p_reap=$(extract_probe "$REAP" | git hash-object --stdin)
-if [ -n "$(extract_probe "$REAP")" ] && [ "$p_lock" = "$p_reap" ]; then
+if [ -z "$lock_block" ] && [ -z "$reap_block" ]; then
+    fail "no lstart probe block came out of either script, so there is nothing for the comparison to be about"
+elif [ -z "$lock_block" ]; then
+    fail "no lstart probe block came out of with-lock.sh, so there is nothing for the comparison to be about"
+elif [ -z "$reap_block" ]; then
+    fail "no lstart probe block came out of reap.sh, so there is nothing for the comparison to be about"
+elif ! whole_object_id "$p_lock" || ! whole_object_id "$p_reap"; then
+    fail "the probe blocks digested to '${p_lock:-nothing}' and '${p_reap:-nothing}', and an equality between two things that are no object id says nothing about their bytes"
+elif [ "$p_lock" = "$p_reap" ]; then
     ok "the lstart probe block is byte-identical in with-lock.sh and reap.sh"
 else
-    fail "the lstart probe block is missing from reap.sh or differs from with-lock.sh"
+    fail "the lstart probe block in reap.sh differs from the one in with-lock.sh"
 fi
 
 # One byte, in the first line of the block. If the comparison cannot see this

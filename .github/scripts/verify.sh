@@ -987,6 +987,72 @@ grep -nE "$GNUISM" "$gf"/*.sh >/dev/null 2>&1 \
     || fail "the GNU-only detector cannot fail"
 rm -rf "$gf"
 
+# --- V35  a fixture repository must not inherit the developer's signing ------
+# Every `git commit` in this file builds a THROWAWAY repository, and a throwaway
+# repository is not the developer's. Inheriting a global `commit.gpgsign=true`
+# sends the suite to a signing agent nobody is waiting on, and measured twice on
+# this machine with that agent locked the commit does not fail - it BLOCKS, with
+# no timeout and no diagnostic. One run that takes ninety seconds went past five
+# hundred; a separate commit was still blocked when it was killed at two
+# minutes. That is the stdin trap this skill documents wearing a different
+# costume: for something an agent invokes, hanging is worse than failing,
+# because a hang leaves nothing to read.
+#
+# It stayed invisible because CI has no signing configuration at all, so the
+# only machines that can see it are the ones nobody runs the suite on twice.
+#
+# One helper for every fixture commit in this file, for the reason the shebang
+# expression and $PORTABILITY are each named once rather than twice: a second
+# call site is how the guard goes missing from one of them.
+fixture_commit() {
+    git -c commit.gpgsign=false \
+        -c user.email=verify@invalid -c user.name=verify commit "$@"
+}
+
+# ...and the guard is asserted rather than assumed. The fixture repository
+# demands a signature from a signer that is not there, so a commit that consults
+# the configuration at all dies on the spot. This runs everywhere, CI included,
+# because the configuration is the fixture's own and not the machine's - which
+# is the whole point: the defect this row exists to catch cannot be reproduced
+# by asking the box what it signs with.
+fc=$(mktemp -d)
+(
+    cd "$fc" \
+    && git init -q . \
+    && git config commit.gpgsign true \
+    && git config gpg.format ssh \
+    && git config user.signingkey "$fc/absent.pub" \
+    && git config gpg.ssh.program "$fc/no-such-signer"
+) >/dev/null 2>&1
+
+if ( cd "$fc" && fixture_commit -q --allow-empty -m guarded ) >/dev/null 2>&1; then
+    ok "a fixture commit overrides the ambient signing configuration"
+else
+    fail "a fixture commit consulted the signing configuration, which is what hangs the suite"
+fi
+
+# The negative is the call site as it stood: the same commit, the same fixture,
+# with the guard taken back off. Without it the row above is equally satisfied
+# by a fixture whose signing configuration was inert.
+#
+# ...and the refusal has to be the SIGNING one. git off the PATH stops this
+# commit too, so a bare "it failed" would let a total absence of git certify
+# that the signing configuration is load-bearing - the same family of defect the
+# probe byte-identity row and the fingerprint drift row were both carrying. The
+# message is required to name the signer, the way the -b rejection is quoted
+# back by name.
+fc_out=$( cd "$fc" && git -c user.email=verify@invalid -c user.name=verify \
+        commit -q --allow-empty -m unguarded 2>&1 )
+fc_rc=$?
+if [ "$fc_rc" -eq 0 ]; then
+    fail "the fixture's signing configuration is inert, so the guarded commit proves nothing"
+elif ! printf '%s' "$fc_out" | grep -q no-such-signer; then
+    fail "the unguarded fixture commit failed before it reached the signer, so it says nothing about signing: '$fc_out'"
+else
+    ok "rejected: the same fixture commit with the signing guard removed"
+fi
+rm -rf "$fc"
+
 # --- docker-dependent rows: skipped loudly, never quietly passed -------------
 docker_ready=0
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
@@ -1140,7 +1206,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         && cd "$ck/main" \
         && git init -q . \
         && git add -A \
-        && git -c user.email=verify@invalid -c user.name=verify commit -q -m scripts \
+        && fixture_commit -q -m scripts \
         && git worktree add -q --detach "$ck/linked" HEAD
     ) >/dev/null 2>&1
 
@@ -1396,7 +1462,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     mkdir -p "$repo"
     ( cd "$repo" \
       && git init -q . \
-      && git -c user.email=v@example.invalid -c user.name=verify commit -q --allow-empty -m init \
+      && fixture_commit -q --allow-empty -m init \
       && git worktree add -q -b fixture "$rf/wt" ) >/dev/null 2>&1
     live_wt=$(CDPATH= cd -- "$rf/wt" 2>/dev/null && pwd -P)
     gone_wt="$rfp/deleted"

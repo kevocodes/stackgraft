@@ -21,6 +21,31 @@ fail() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
 
 section() { printf '\n%s\n' "$1"; }
 
+# One expression for lowercase hex and one for a whole object id, shared by every
+# row that concludes anything from a digest: the fingerprint row in the next
+# section, the truncation-removal premise in the skill body, and the probe
+# byte-identity premise in the reap section. Three private spellings of "looks
+# like a hash" is how they drift into admitting three different things.
+#
+# A whole object id is 40 characters or 64 - never a hard-coded 40, because a
+# repository with `extensions.objectFormat=sha256` digests to 64, and this
+# project's own design record (DS11) refused to put a length `pattern` on a
+# fingerprint for exactly that reason. Measured on git 2.50.1: one input, 40
+# characters from a sha1 repository and 64 from a sha256 one.
+lower_hex() {
+    case ${1:-} in
+        '' | *[!0-9a-f]*) return 1 ;;
+        *)                return 0 ;;
+    esac
+}
+whole_object_id() {
+    lower_hex "${1:-}" || return 1
+    case ${#1} in
+        40 | 64) return 0 ;;
+        *)       return 1 ;;
+    esac
+}
+
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
@@ -130,8 +155,28 @@ fi
 lines=$(printf 'README.md\nLICENSE' | sh "$SKILL/scripts/fingerprint.sh" - 2>/dev/null | wc -l | tr -d ' ')
 [ "$lines" = "2" ] && ok "fingerprint keeps a final unterminated line" || fail "fingerprint emitted $lines lines for 2 paths"
 
-miss=$(sh "$SKILL/scripts/fingerprint.sh" no/such/file.txt 2>/dev/null | cut -f1)
-[ "$miss" = "-" ] && ok "fingerprint reports a missing path as drift" || fail "fingerprint gave '$miss' for a missing path"
+# `-` for a missing path is drift only if a path that IS there gets something
+# else. This row used to assert the missing half alone, and fingerprint.sh emits
+# `-` for anything it could not hash - so with git off the PATH it reported `-`
+# for a README.md sitting right there, every source in the manifest read as
+# changed, and the row went green over a fingerprint that called the whole
+# repository drift. Nothing else in this section asserted that a present path
+# digests to anything at all.
+#
+# One invocation, both paths, and the present one must come back a whole object
+# id, so "everything is drift" can no longer read as "the missing path was
+# noticed". The digest is not compared to a value: the row is about what
+# fingerprint.sh can TELL APART, and pinning the digest would just re-check git.
+fp=$(sh "$SKILL/scripts/fingerprint.sh" README.md no/such/file.txt 2>/dev/null)
+here=$(printf '%s\n' "$fp" | awk 'NR == 1 { print $1 }')
+miss=$(printf '%s\n' "$fp" | awk 'NR == 2 { print $1 }')
+if ! whole_object_id "$here"; then
+    fail "fingerprint gave '${here:-nothing}' for a present README.md, so a '-' beside it is not drift, it is everything"
+elif [ "$miss" = "-" ]; then
+    ok "fingerprint digests a present path and reports a missing one as drift"
+else
+    fail "fingerprint gave '$miss' for a missing path"
+fi
 
 sh "$SKILL/scripts/fingerprint.sh" >/dev/null 2>&1
 [ $? -eq 2 ] && ok "fingerprint fails loudly with no arguments" || fail "fingerprint did not reject an empty invocation"
@@ -844,27 +889,8 @@ esac
 # the shipped file with its truncation paragraph deleted - which is the state
 # that shipped, and the state every other check in this file reads as healthy.
 #
-# One expression for lowercase hex, used by both the eight-character arm and the
-# whole-digest premise below rather than spelled twice. A whole object id is 40
-# characters or 64 - never a hard-coded 40, because a repository with
-# `extensions.objectFormat=sha256` digests to 64, and this project's own design
-# record (DS11) refused to put a length `pattern` on a fingerprint for exactly
-# that reason. Measured on git 2.50.1: one input, 40 characters from a sha1
-# repository and 64 from a sha256 one.
-lower_hex() {
-    case ${1:-} in
-        '' | *[!0-9a-f]*) return 1 ;;
-        *)                return 0 ;;
-    esac
-}
-whole_object_id() {
-    lower_hex "${1:-}" || return 1
-    case ${#1} in
-        40 | 64) return 0 ;;
-        *)       return 1 ;;
-    esac
-}
-
+# The eight-character arm below and the whole-digest premise beside it both use
+# lower_hex()/whole_object_id(), defined once at the top of this file.
 hf=$(mktemp -d)
 awk '!/first 8 characters/' "$DISCOVERY" > "$hf/discovery.md"
 h8bad=$(hash8_derive "$hf/discovery.md" "$h8_common")
@@ -986,6 +1012,72 @@ grep -nE "$GNUISM" "$gf"/*.sh >/dev/null 2>&1 \
     && ok "rejected: a fixture reaching for a GNU-only construct" \
     || fail "the GNU-only detector cannot fail"
 rm -rf "$gf"
+
+# --- V35  a fixture repository must not inherit the developer's signing ------
+# Every `git commit` in this file builds a THROWAWAY repository, and a throwaway
+# repository is not the developer's. Inheriting a global `commit.gpgsign=true`
+# sends the suite to a signing agent nobody is waiting on, and measured twice on
+# this machine with that agent locked the commit does not fail - it BLOCKS, with
+# no timeout and no diagnostic. One run that takes ninety seconds went past five
+# hundred; a separate commit was still blocked when it was killed at two
+# minutes. That is the stdin trap this skill documents wearing a different
+# costume: for something an agent invokes, hanging is worse than failing,
+# because a hang leaves nothing to read.
+#
+# It stayed invisible because CI has no signing configuration at all, so the
+# only machines that can see it are the ones nobody runs the suite on twice.
+#
+# One helper for every fixture commit in this file, for the reason the shebang
+# expression and $PORTABILITY are each named once rather than twice: a second
+# call site is how the guard goes missing from one of them.
+fixture_commit() {
+    git -c commit.gpgsign=false \
+        -c user.email=verify@invalid -c user.name=verify commit "$@"
+}
+
+# ...and the guard is asserted rather than assumed. The fixture repository
+# demands a signature from a signer that is not there, so a commit that consults
+# the configuration at all dies on the spot. This runs everywhere, CI included,
+# because the configuration is the fixture's own and not the machine's - which
+# is the whole point: the defect this row exists to catch cannot be reproduced
+# by asking the box what it signs with.
+fc=$(mktemp -d)
+(
+    cd "$fc" \
+    && git init -q . \
+    && git config commit.gpgsign true \
+    && git config gpg.format ssh \
+    && git config user.signingkey "$fc/absent.pub" \
+    && git config gpg.ssh.program "$fc/no-such-signer"
+) >/dev/null 2>&1
+
+if ( cd "$fc" && fixture_commit -q --allow-empty -m guarded ) >/dev/null 2>&1; then
+    ok "a fixture commit overrides the ambient signing configuration"
+else
+    fail "a fixture commit consulted the signing configuration, which is what hangs the suite"
+fi
+
+# The negative is the call site as it stood: the same commit, the same fixture,
+# with the guard taken back off. Without it the row above is equally satisfied
+# by a fixture whose signing configuration was inert.
+#
+# ...and the refusal has to be the SIGNING one. git off the PATH stops this
+# commit too, so a bare "it failed" would let a total absence of git certify
+# that the signing configuration is load-bearing - the same family of defect the
+# probe byte-identity row and the fingerprint drift row were both carrying. The
+# message is required to name the signer, the way the -b rejection is quoted
+# back by name.
+fc_out=$( cd "$fc" && git -c user.email=verify@invalid -c user.name=verify \
+        commit -q --allow-empty -m unguarded 2>&1 )
+fc_rc=$?
+if [ "$fc_rc" -eq 0 ]; then
+    fail "the fixture's signing configuration is inert, so the guarded commit proves nothing"
+elif ! printf '%s' "$fc_out" | grep -q no-such-signer; then
+    fail "the unguarded fixture commit failed before it reached the signer, so it says nothing about signing: '$fc_out'"
+else
+    ok "rejected: the same fixture commit with the signing guard removed"
+fi
+rm -rf "$fc"
 
 # --- docker-dependent rows: skipped loudly, never quietly passed -------------
 docker_ready=0
@@ -1140,7 +1232,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         && cd "$ck/main" \
         && git init -q . \
         && git add -A \
-        && git -c user.email=verify@invalid -c user.name=verify commit -q -m scripts \
+        && fixture_commit -q -m scripts \
         && git worktree add -q --detach "$ck/linked" HEAD
     ) >/dev/null 2>&1
 
@@ -1200,13 +1292,40 @@ reap_run() {
 
 # --- V6  one probe, two scripts, and a byte is enough to notice --------------
 # extract_probe() is defined once, with the V13 block in the instrumentation
-# section above, and this row's `-n` guard is the shape V13 now uses too.
+# section above.
+#
+# The `-n` guard this row used to carry was aimed one layer short. It covered
+# the EXTRACTION - file text, which a git that dies at exec leaves perfectly
+# intact - and not the HASHING, which is the step that actually needs git. With
+# git off the PATH both digests came back empty, `'' = ''` held, and the row
+# certified byte-identity over two absences. The negative two rows below went
+# FAIL in that same run, saying the comparison could not notice a changed byte,
+# so one run had the negative announcing the comparison blind while the positive
+# still vouched for it. A premise gate aimed at the input rather than at the
+# mechanism is indistinguishable from no gate at all. Third instance of `'' = ''`
+# in this file, after pick-port's stability row and its exclusion row.
+#
+# Both premises are needed and neither implies the other: an absent block still
+# digests to the empty blob's id, which is a perfectly well-formed object id, and
+# a dead git digests a present block to nothing at all. whole_object_id() is the
+# one the truncation row uses - 40 characters or 64, never a hard-coded 40 - so
+# there is no fourth spelling of "looks like a hash" to drift against.
+lock_block=$(extract_probe "$LOCK")
+reap_block=$(extract_probe "$REAP")
 p_lock=$(extract_probe "$LOCK" | git hash-object --stdin)
 p_reap=$(extract_probe "$REAP" | git hash-object --stdin)
-if [ -n "$(extract_probe "$REAP")" ] && [ "$p_lock" = "$p_reap" ]; then
+if [ -z "$lock_block" ] && [ -z "$reap_block" ]; then
+    fail "no lstart probe block came out of either script, so there is nothing for the comparison to be about"
+elif [ -z "$lock_block" ]; then
+    fail "no lstart probe block came out of with-lock.sh, so there is nothing for the comparison to be about"
+elif [ -z "$reap_block" ]; then
+    fail "no lstart probe block came out of reap.sh, so there is nothing for the comparison to be about"
+elif ! whole_object_id "$p_lock" || ! whole_object_id "$p_reap"; then
+    fail "the probe blocks digested to '${p_lock:-nothing}' and '${p_reap:-nothing}', and an equality between two things that are no object id says nothing about their bytes"
+elif [ "$p_lock" = "$p_reap" ]; then
     ok "the lstart probe block is byte-identical in with-lock.sh and reap.sh"
 else
-    fail "the lstart probe block is missing from reap.sh or differs from with-lock.sh"
+    fail "the lstart probe block in reap.sh differs from the one in with-lock.sh"
 fi
 
 # One byte, in the first line of the block. If the comparison cannot see this
@@ -1396,7 +1515,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     mkdir -p "$repo"
     ( cd "$repo" \
       && git init -q . \
-      && git -c user.email=v@example.invalid -c user.name=verify commit -q --allow-empty -m init \
+      && fixture_commit -q --allow-empty -m init \
       && git worktree add -q -b fixture "$rf/wt" ) >/dev/null 2>&1
     live_wt=$(CDPATH= cd -- "$rf/wt" 2>/dev/null && pwd -P)
     gone_wt="$rfp/deleted"

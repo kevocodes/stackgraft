@@ -21,6 +21,31 @@ fail() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
 
 section() { printf '\n%s\n' "$1"; }
 
+# One expression for lowercase hex and one for a whole object id, shared by every
+# row that concludes anything from a digest: the fingerprint row in the next
+# section, the truncation-removal premise in the skill body, and the probe
+# byte-identity premise in the reap section. Three private spellings of "looks
+# like a hash" is how they drift into admitting three different things.
+#
+# A whole object id is 40 characters or 64 - never a hard-coded 40, because a
+# repository with `extensions.objectFormat=sha256` digests to 64, and this
+# project's own design record (DS11) refused to put a length `pattern` on a
+# fingerprint for exactly that reason. Measured on git 2.50.1: one input, 40
+# characters from a sha1 repository and 64 from a sha256 one.
+lower_hex() {
+    case ${1:-} in
+        '' | *[!0-9a-f]*) return 1 ;;
+        *)                return 0 ;;
+    esac
+}
+whole_object_id() {
+    lower_hex "${1:-}" || return 1
+    case ${#1} in
+        40 | 64) return 0 ;;
+        *)       return 1 ;;
+    esac
+}
+
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
@@ -130,8 +155,28 @@ fi
 lines=$(printf 'README.md\nLICENSE' | sh "$SKILL/scripts/fingerprint.sh" - 2>/dev/null | wc -l | tr -d ' ')
 [ "$lines" = "2" ] && ok "fingerprint keeps a final unterminated line" || fail "fingerprint emitted $lines lines for 2 paths"
 
-miss=$(sh "$SKILL/scripts/fingerprint.sh" no/such/file.txt 2>/dev/null | cut -f1)
-[ "$miss" = "-" ] && ok "fingerprint reports a missing path as drift" || fail "fingerprint gave '$miss' for a missing path"
+# `-` for a missing path is drift only if a path that IS there gets something
+# else. This row used to assert the missing half alone, and fingerprint.sh emits
+# `-` for anything it could not hash - so with git off the PATH it reported `-`
+# for a README.md sitting right there, every source in the manifest read as
+# changed, and the row went green over a fingerprint that called the whole
+# repository drift. Nothing else in this section asserted that a present path
+# digests to anything at all.
+#
+# One invocation, both paths, and the present one must come back a whole object
+# id, so "everything is drift" can no longer read as "the missing path was
+# noticed". The digest is not compared to a value: the row is about what
+# fingerprint.sh can TELL APART, and pinning the digest would just re-check git.
+fp=$(sh "$SKILL/scripts/fingerprint.sh" README.md no/such/file.txt 2>/dev/null)
+here=$(printf '%s\n' "$fp" | awk 'NR == 1 { print $1 }')
+miss=$(printf '%s\n' "$fp" | awk 'NR == 2 { print $1 }')
+if ! whole_object_id "$here"; then
+    fail "fingerprint gave '${here:-nothing}' for a present README.md, so a '-' beside it is not drift, it is everything"
+elif [ "$miss" = "-" ]; then
+    ok "fingerprint digests a present path and reports a missing one as drift"
+else
+    fail "fingerprint gave '$miss' for a missing path"
+fi
 
 sh "$SKILL/scripts/fingerprint.sh" >/dev/null 2>&1
 [ $? -eq 2 ] && ok "fingerprint fails loudly with no arguments" || fail "fingerprint did not reject an empty invocation"
@@ -844,27 +889,8 @@ esac
 # the shipped file with its truncation paragraph deleted - which is the state
 # that shipped, and the state every other check in this file reads as healthy.
 #
-# One expression for lowercase hex, used by both the eight-character arm and the
-# whole-digest premise below rather than spelled twice. A whole object id is 40
-# characters or 64 - never a hard-coded 40, because a repository with
-# `extensions.objectFormat=sha256` digests to 64, and this project's own design
-# record (DS11) refused to put a length `pattern` on a fingerprint for exactly
-# that reason. Measured on git 2.50.1: one input, 40 characters from a sha1
-# repository and 64 from a sha256 one.
-lower_hex() {
-    case ${1:-} in
-        '' | *[!0-9a-f]*) return 1 ;;
-        *)                return 0 ;;
-    esac
-}
-whole_object_id() {
-    lower_hex "${1:-}" || return 1
-    case ${#1} in
-        40 | 64) return 0 ;;
-        *)       return 1 ;;
-    esac
-}
-
+# The eight-character arm below and the whole-digest premise beside it both use
+# lower_hex()/whole_object_id(), defined once at the top of this file.
 hf=$(mktemp -d)
 awk '!/first 8 characters/' "$DISCOVERY" > "$hf/discovery.md"
 h8bad=$(hash8_derive "$hf/discovery.md" "$h8_common")

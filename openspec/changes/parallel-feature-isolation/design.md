@@ -567,3 +567,30 @@ Stated plainly rather than designed around, because the proposal was rewritten t
    partial. The spec sentence overstates what any check can do here and should be reworded.
 4. **D10's five slices are seven.** Two exceed the 400-line review budget once the answered questions are
    folded in, and Q7 removed the original slice 5 from 2.0 entirely (DS41).
+
+---
+
+## Amendments after measurement
+
+**DS42 — the generated target family is three files, not two. DS34 rung 2 has no source otherwise.**
+
+DS34's rung 2 accepts "a **read** command from the repository's own lifecycle target family … or DS37's generated pair". DS37 generates a **create** and a **drop**. Neither reads, so the pair it generates cannot supply rung 2, and the chain that was supposed to close does not.
+
+Measured against the 43-service repository that motivated this change, every rung fails:
+
+| store | rung 1 | why |
+|---|---|---|
+| postgres | ✗ | `CMD-SHELL`, excluded by DS34's argv rule |
+| timescaledb | ✗ | `CMD-SHELL`, same |
+| redis | ✗ | exec-form, but `redis-cli ping` answers identically on an empty instance — it fails the discriminator |
+| minio | ✗ | exec-form, but it is a health endpoint, the one shape IP-2 names by name |
+
+All four fall to rung 2, which does not exist, and then to rung 3. **2.0 would copy 10.7 GB and refuse every pair for want of a verification query** — the failure DS34's own risk row anticipated, reached by a path nobody traced.
+
+**Correction: DS37 generates three files per store — create, drop, and read.** The read is the verification probe and is held to DS34's discriminator like any other candidate: it qualifies only once its output is shown to differ against an empty instance of the same image. A generated `SELECT 1` fails that test and must, exactly as `pg_isready` does.
+
+This does not put engine knowledge into the skill, and the distinction is the one D5 rests on. The skill carries no query table. **The agent writes an engine-appropriate probe once, at generation time, with the human approving it, and from then on the file is the repository's** — versioned, reviewable, and subject to DS37's existing falsifiers: `inferred` until a run has observed it, and the approval fingerprint dropped by any later edit.
+
+A schema-agnostic read is what to generate, because the skill has no schema: something that counts what an instance carries rather than naming a table the repository owns. An empty instance answers zero; a seeded one does not. That is precisely the discriminator DS34 already requires, so the generated read is tested by the mechanism that was already there.
+
+**Consequence for slicing.** The generated read belongs to slice 5 with the rest of DS37, but slice 4b's verification cannot be demonstrated end to end against a repository with no exec-form discriminating healthcheck until slice 5 lands. Either 4b's acceptance uses a fixture that has one, or the read moves forward into 4b. That is a tasks decision, and it must be made deliberately rather than discovered when 4b is verified against the repository this change exists for.

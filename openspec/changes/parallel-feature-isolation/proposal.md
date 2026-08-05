@@ -276,6 +276,10 @@ This is also the one thing an agent skill can do that a script cannot. Refusing 
 
 **Q7 — `verifyRequest` credentials are their own change.** Out of 2.0. The gap is real but separable, and 2.0 is already five slices.
 
+**Correction, recorded because the spec pass reached the opposite conclusion.** The spec reported that IP-2's verification makes the deferred D9 load-bearing for 2.0 — that on a token-gated stack no verification query is derivable, so every writing pair refuses. **That conflates two different subjects.** `verifyRequest` issues an HTTP request to a *service* behind a Bearer token; IP-2 issues a query against the *store copy*. A query against a copied Postgres needs the database credential, not the application's JWT — and that credential already lives inside the copy's own container, which the provider built from the same image with the same environment. The engine's own client, run inside the instance the provider just created, needs nothing the skill has to store.
+
+So D9 stays out of 2.0. What remains true, and belongs to design rather than to this deferral, is that *deriving* the query per store is a real obligation: a compose `healthcheck`, where the repository declares one, is both discoverable and usually already a real query rather than a liveness ping.
+
 ### Q1 — Does a copy count as isolated before it has answered a query? (blocking)
 
 A file-level copy of a live Postgres data directory is *crash-consistent*, which Postgres is built to recover from — but the measured 9 s was a volume copy, not a verified start. This project's whole posture is that a start is not proof.

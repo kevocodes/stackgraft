@@ -594,3 +594,19 @@ This does not put engine knowledge into the skill, and the distinction is the on
 A schema-agnostic read is what to generate, because the skill has no schema: something that counts what an instance carries rather than naming a table the repository owns. An empty instance answers zero; a seeded one does not. That is precisely the discriminator DS34 already requires, so the generated read is tested by the mechanism that was already there.
 
 **Consequence for slicing.** The generated read belongs to slice 5 with the rest of DS37, but slice 4b's verification cannot be demonstrated end to end against a repository with no exec-form discriminating healthcheck until slice 5 lands. Either 4b's acceptance uses a fixture that has one, or the read moves forward into 4b. That is a tasks decision, and it must be made deliberately rather than discovered when 4b is verified against the repository this change exists for.
+
+**DS43 — a volume's size is measured in bytes inside a container, never read from the runtime's own report.**
+
+DS36 refuses a copy whose size cannot be measured, and DS41 recorded as blocking whether the runtime reports a volume's byte size as a plain string. Measured, three ways:
+
+| source | answer |
+|---|---|
+| `docker system df -v --format '{{json .Volumes}}'` | `"611.2MB"` — a human string with a unit, and not stable across calls: the same volume reported `611MB` minutes earlier |
+| `docker volume inspect --format '{{json .UsageData}}'` | `null` — the field exists and is not populated |
+| `du -sb` inside a container, volume mounted read-only | `611302298` — a plain integer |
+
+**Choice: the third.** A POSIX `sh` implementation that had to parse `611.2MB` would need suffix and decimal handling, and would be parsing a value the runtime does not promise to keep stable. An integer needs none of it.
+
+It is also the right *shape*: mounting a volume read-only into a throwaway container is a runtime operation, which is the layer D5 says may vary, and it carries no knowledge of what engine wrote the bytes. The flag runs inside an image this change controls, so the repository's host-portability rule — no GNU-only flags — is not engaged; that rule governs what ships under `scripts/`, and this is an argument to a container the provider starts.
+
+Note the two figures measure different things and are not interchangeable: `du` reports what the volume contains, the runtime reports what the volume occupies. DS36's free-space comparison must use the same measure on both sides of the arithmetic.

@@ -47,6 +47,12 @@ testing:
     - "Two sibling repositories on one host: the stackgraft.repo=<hash8> filtered query returns only its own overlay, and the same query unfiltered returns both, which is what proves the filter and not the working directory is doing the scoping."
     - "A stub ps earlier on PATH: one that honours -p proves the start-time probe reports supported, and one that ignores -p and prints several lines proves it reports unsupported."
     - "Real execution of every script on macOS and on a minimal Linux image (docker run --rm -v \"$PWD\":/w -w /w alpine/git), in addition to the parse check, so a GNU-only flag that parses cleanly still fails where it is not shipped."
+    - "A description counter run as a named command, not by eye: desc_measure() in .github/scripts/verify.sh, which reports absent, unquoted, embedded-quote or non-ascii instead of a small number. It measures under LC_ALL=C and refuses a value it cannot report in the declared unit, because the ceiling is stated in characters and a byte count reported as a character count is a ceiling nobody is measuring. Fixtures: deleted, unquoted, embedded quote, 251 rejected, exactly 250 accepted, and a multi-byte value refused."
+    - "A discriminator probe against an empty instance of the same image, no volume, started and destroyed: a command qualifies as a verification query only once its output is shown to differ there, so a health probe that answers identically on an empty instance is rejected as a query rather than accepted as one."
+    - "A two-filesystem free-space probe: the container runtime's data root measured by one df -P inside a throwaway container, and the host filesystem holding the cache directory, with the run naming which one bound the decision and refusing when either is unmeasurable."
+    - "A fixture repository carrying a discriminating exec-form healthcheck, because the repository this change was measured against declares none: zero of its four stores supply a rung-1 candidate that survives the discriminator."
+    - "A deliberately truncated source volume copied and read back, so a mismatch is shown to destroy the copy and refuse the pair rather than fall back to the base store."
+    - "The container runtime's volume and instance inventory diffed across a run, because an exit code alone cannot see a surviving partial volume or prove that a pair which needed no copy provisioned nothing."
 
 rules:
   proposal:
@@ -67,7 +73,7 @@ rules:
   apply:
     guidelines:
       - "Follow the LLM-first skill style guide section order: frontmatter, Activation Contract, Hard Rules, Decision Gates, Execution Steps, Output Contract, References."
-      - "Keep SKILL.md body within 180-450 tokens; recommended max 700, hard max 1000. Move detail to references/ or assets/."
+      - "Keep the SKILL.md body within 500 words, at most — the unit the shipped counter measures. A token count is unmeasurable by anything this repository is allowed to ship: python3 is a stub on stock macOS and node and jq are absent from minimal images, so no tokenizer exists on the supported floor and the portability grep would reject a shipped file naming one. The struck 180-450 recommendation was already violated by the shipped body. Move detail to references/ or assets/."
       - "description MUST be one physical quoted line, trigger words first, at most 250 chars."
       - "Ship no path, env var, or tool name that only one agent provides."
       - "All artifacts, docs, comments, and identifiers in English."

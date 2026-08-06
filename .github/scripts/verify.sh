@@ -606,22 +606,97 @@ words=$(body_words "$SKILL/SKILL.md")
     && ok "body is $words words (ceiling 500)" \
     || fail "body is $words words, over the 500 ceiling"
 
-# The ceiling only means something if going over it is caught. Two fixtures:
-# one merely over, and one that reproduces the ordering hazard - applying this
-# change's ADDS before its CUTS puts the body at 530, so a commit made in that
-# order is red at that commit even though both endpoints are legal.
+# The ceiling only means something if going over it is caught, and a fixture is
+# only a boundary test while it sits ON the boundary. Both fixtures were
+# HARD-CODED against a body that no longer exists: 38 is `501 - 463` and 67 is
+# `530 - 463`, both derived from overlay-reaping's slice-1 FORECAST. Measured
+# against the shipped body, 38 lands 36 words clear of the ceiling. Both still
+# fail, so CI stayed green and the drift was invisible - while a counter
+# miscounting by up to 35 words would have gone on being reported as working.
+#
+# So both are DERIVED from the measured body here, and the merely-over one is
+# asserted to sit at exactly 501. `body_verdict` alone cannot express that: the
+# hard-coded fixture already returns `fail`, which is precisely the pass that
+# hid the drift.
 bf=$(mktemp -d)
 body_fixture() { cp "$SKILL/SKILL.md" "$1"; awk -v n="$2" 'BEGIN { while (i++ < n) printf "filler "; print "" }' >> "$1"; }
 
-body_fixture "$bf/over.md" 38
-[ "$(body_verdict "$bf/over.md")" = fail ] \
-    && ok "rejected: a body of $(body_words "$bf/over.md") words, over the ceiling" \
-    || fail "ACCEPTED but must be rejected: a body over 500 words"
+# The words this slice ADDS to the body, named once. adds-first.md reproduces
+# the ordering hazard with it: applying the adds before the cuts is red at that
+# commit even though both endpoints are legal, which is why the cuts and the
+# adds are one commit rather than two.
+BODY_ADDS=21
 
-body_fixture "$bf/adds-first.md" 67
-[ "$(body_verdict "$bf/adds-first.md")" = fail ] \
-    && ok "rejected: adds applied before cuts, $(body_words "$bf/adds-first.md") words" \
-    || fail "ACCEPTED but must be rejected: the adds-before-cuts ordering"
+over_n=$((501 - $(body_words "$SKILL/SKILL.md")))
+body_fixture "$bf/over.md" "$over_n"
+over_w=$(body_words "$bf/over.md")
+if [ "$over_w" -eq 501 ] && [ "$(body_verdict "$bf/over.md")" = fail ]; then
+    ok "rejected: a body of $over_w words - one word over, so the row measures the boundary"
+else
+    fail "the over-ceiling fixture measured $over_w words, not the 501 it is derived to be"
+fi
+
+body_fixture "$bf/adds-first.md" $((over_n + BODY_ADDS))
+adds_w=$(body_words "$bf/adds-first.md")
+if [ "$adds_w" -gt "$over_w" ] && [ "$(body_verdict "$bf/adds-first.md")" = fail ]; then
+    ok "rejected: adds applied before cuts, $adds_w words - above the merely-over fixture's $over_w"
+else
+    fail "the adds-first fixture measured $adds_w words, which is not strictly above over.md's $over_w"
+fi
+
+# ...and the calibration row can see the hard-code coming back. The MARGIN is
+# what it reports, not the verdict, because the verdict was already `fail` for
+# all 36 of those words. At this body the two fixtures happen to land on the
+# same count - over_n plus this slice's adds is 38 - and they stay two rows
+# because they assert different things: adds-first must measure ABOVE the
+# boundary fixture, this one anything OTHER than 501. Arithmetic, not
+# redundancy, and it moves at the next slice.
+body_fixture "$bf/hardcoded.md" 38
+hard_w=$(body_words "$bf/hardcoded.md")
+if [ "$hard_w" -ne 501 ]; then
+    ok "rejected: the hard-coded 38 measures $hard_w words, $((hard_w - 500)) clear of the ceiling, not one"
+else
+    fail "ACCEPTED but must be rejected: an uncalibrated filler count read as a boundary test"
+fi
+
+# ...and the fixture SHAPE is not what fails. over.md is SKILL.md with filler
+# appended, so without this row the calibration above could be passing on a
+# fixture rejected for being a fixture rather than for being over the ceiling.
+body_fixture "$bf/under.md" $((over_n - 1))
+under_w=$(body_words "$bf/under.md")
+if [ "$under_w" -eq 500 ] && [ "$(body_verdict "$bf/under.md")" = pass ]; then
+    ok "accepted: the same fixture shape at exactly $under_w words - at most 500, not fewer than"
+else
+    fail "REJECTED but must be accepted: a fixture body of $under_w words, inside the ceiling"
+fi
+
+# --- V34  the recorded figure is a LITERAL, not a `-le 500` ------------------
+# `-le 500` accepts everything from 0 to 500, so a slice that moved the body by
+# fifteen words in either direction passes it and the counter reports a healthy
+# body over a slice that did something other than what it recorded.
+#
+# The number below is the counter's own output, re-read from the `body is <N>
+# words` line above and never taken from a design table: that table's nine donor
+# rows sum to -35 against a stated subtotal of -34, each row was reproduced
+# against the shipped file, and writing the table's endpoint here would have made
+# a green suite disagree by one word with the file it measures.
+# Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line.
+BODY_WORDS_RECORDED=484
+[ "$words" -eq "$BODY_WORDS_RECORDED" ] \
+    && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
+    || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"
+
+# ...and that row can tell a legal-but-different count apart from the recorded
+# one, which is the whole difference between it and the ceiling row above. One
+# filler word: still inside the ceiling, still `pass` by the verdict, and it
+# must fail HERE.
+body_fixture "$bf/drift.md" 1
+drift_w=$(body_words "$bf/drift.md")
+if [ "$(body_verdict "$bf/drift.md")" = pass ] && [ "$drift_w" -ne "$BODY_WORDS_RECORDED" ]; then
+    ok "rejected: a body of $drift_w words - inside the ceiling, and not the recorded $BODY_WORDS_RECORDED"
+else
+    fail "a one-word drift is indistinguishable from the recorded figure ($drift_w against $BODY_WORDS_RECORDED)"
+fi
 rm -rf "$bf"
 
 # The guard this replaces could not fail. awk printed nothing when the field was
@@ -748,13 +823,235 @@ if [ "$(compat_verdict "$SKILL/SKILL.md")" = pass ]; then
 else
     printf '  skip  the donor-cut fixture (it is derived from the shipped value, which failed above)\n'
 fi
+
+# --- V37  the cap row must be able to see the clause this slice paid for -----
+# `compat_measure <= 500` is equally satisfied by a compatibility line the edit
+# never reached, so the clause is asserted PRESENT as well as affordable. The
+# conditional donor named for it - `all CI-tested. `, -14 bytes - did not fire:
+# the shipped value measured 477, so the 17 bytes the clause costs came out of
+# 23 bytes of headroom rather than out of a cut.
+STORE_COPY_CLAUSE='only for container repos and store copies'
+grep -qF -- "$STORE_COPY_CLAUSE" "$SKILL/SKILL.md" \
+    && ok "compatibility declares the store copies' runtime as conditional, beside the existing container condition" \
+    || fail "compatibility does not declare the store-copy condition"
+
+# ...and that row can fail: the same line with the clause reverted to what 1.1.0
+# shipped. Derived from the shipped value for the donor fixture's reason - a
+# fixture typed out by hand stops testing the bytes that run.
+reverted=$(awk '/^compatibility:/ {
+        r = substr($0, index($0, "\"") + 1); sub(/"$/, "", r)
+        sub(/ and store copies\./, ".", r); print r; exit
+    }' "$SKILL/SKILL.md")
+compat_fixture "$cfx" "compatibility: \"$reverted\""
+if grep -qF -- "$STORE_COPY_CLAUSE" "$cfx"; then
+    fail "ACCEPTED but must be rejected: the store-copy condition reverted and not noticed"
+else
+    ok "rejected: the compatibility line with the store-copy condition reverted"
+fi
 rm -rf "$cf"
+
+# --- V36  description has a 250-CHARACTER ceiling and had no check at all -----
+# `compatibility` next door carries five fixtures; `description` carried none,
+# so a 251-character value passed this suite outright - measured, exit 0 over a
+# planted one. This change edits the field.
+#
+# THE UNIT IS THE POINT. compat_measure counts BYTES against a cap stated in
+# bytes; this requirement says 250 CHARACTERS, and a ceiling stated in one unit
+# and checked in another is a ceiling nobody is measuring. POSIX awk has no
+# portable character count - `length()` answers in bytes under LC_ALL=C and in
+# characters under a UTF-8 locale - so this measures in the C locale and
+# REFUSES what it cannot report in the declared unit: while every byte is ASCII
+# printable the two counts are identical, and the moment one is not it returns
+# `non-ascii` rather than a number that would silently be the wrong unit.
+# Absent / unquoted / embedded-quote are unmeasurable for compat_measure's
+# reasons: -F'"' would read an embedded quote as the end of the value and
+# measure a prefix, and an unquoted value has no second field at all.
+desc_measure() {
+    LC_ALL=C awk '
+        /^description:/ {
+            found = 1
+            rest = substr($0, index($0, ":") + 1)
+            sub(/^[ \t]+/, "", rest)
+            sub(/[ \t]+$/, "", rest)
+            quotes = gsub(/"/, "&", rest)
+            if (quotes != 2 || rest !~ /^".*"$/) {
+                if (rest ~ /^"/) { print "embedded-quote" } else { print "unquoted" }
+                exit
+            }
+            value = substr(rest, 2, length(rest) - 2)
+            if (value ~ /[^ -~]/) { print "non-ascii"; exit }
+            print length(value)
+            exit
+        }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+# One decision, shared by the shipped check and by every fixture below, so the
+# fixtures exercise the guard itself rather than a second copy of it. `-le` is
+# the boundary A8 fixed for compatibility: the requirement is at most 250.
+desc_verdict() {
+    _m=$(desc_measure "$1")
+    case $_m in
+        '' | *[!0-9]*) printf 'fail\n' ;;
+        *) if [ "$_m" -le 250 ]; then printf 'pass\n'; else printf 'fail\n'; fi ;;
+    esac
+}
+
+# Same shape as compat_fixture, and for the same reason: the replacement is
+# inserted after the opening delimiter rather than edited in place, so the
+# fixture has the shape its label claims even when the source carries no such
+# line.
+desc_fixture() {
+    awk -v repl="$2" '
+        NR == 1 { print; if (repl != "") print repl; next }
+        /^description:/ { next }
+        { print }
+    ' "$SKILL/SKILL.md" > "$1"
+}
+
+desc=$(desc_measure "$SKILL/SKILL.md")
+if [ "$(desc_verdict "$SKILL/SKILL.md")" = pass ]; then
+    ok "description is $desc characters, ASCII so bytes and characters agree (at most 250)"
+else
+    fail "description is unmeasurable or over the 250 ceiling: $desc"
+fi
+
+df=$(mktemp -d)
+dfx="$df/SKILL.md"
+
+desc_fixture "$dfx" ''
+if [ "$(desc_measure "$dfx")" = absent ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: the description line deleted entirely"
+else
+    fail "ACCEPTED but must be rejected: a deleted description line"
+fi
+
+desc_fixture "$dfx" 'description: Trigger: git worktree, unquoted and so unmeasurable'
+if [ "$(desc_measure "$dfx")" = unquoted ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: an unquoted description value, vacuous the same way"
+else
+    fail "ACCEPTED but must be rejected: an unquoted description value"
+fi
+
+desc_fixture "$dfx" 'description: "Trigger: a "worktree" overlay"'
+if [ "$(desc_measure "$dfx")" = embedded-quote ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a description carrying its own quote, which a field split would measure as a prefix"
+else
+    fail "ACCEPTED but must be rejected: a description carrying its own quote"
+fi
+
+# compat_value is reused rather than copied: one generator of a value of a given
+# length, not two that could drift into producing different bytes.
+desc_fixture "$dfx" "description: \"$(compat_value 251)\""
+if [ "$(desc_measure "$dfx")" = 251 ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a 251-character description"
+else
+    fail "ACCEPTED but must be rejected: 251 characters"
+fi
+
+desc_fixture "$dfx" "description: \"$(compat_value 250)\""
+if [ "$(desc_measure "$dfx")" = 250 ] && [ "$(desc_verdict "$dfx")" = pass ]; then
+    ok "accepted: exactly 250 characters - the requirement is at most 250, not fewer than"
+else
+    fail "REJECTED but must be accepted: exactly 250 characters is inside the ceiling"
+fi
+
+# ...and a value this guard cannot report in the DECLARED unit is refused rather
+# than measured in the other one. Without this row a multi-byte description
+# would be counted in bytes and reported as characters, which is the defect one
+# field along from the one the compat block repaired: a number in the wrong unit
+# reads exactly like a number in the right one.
+desc_fixture "$dfx" 'description: "Trigger: git worktree — an em dash is two bytes and one character"'
+if [ "$(desc_measure "$dfx")" = non-ascii ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a value whose characters this guard cannot count, refused rather than measured in bytes"
+else
+    fail "ACCEPTED but must be rejected: a multi-byte value silently measured in the wrong unit"
+fi
+rm -rf "$df"
+
+# --- V38  the scope is stated in all three places, or in none of them --------
+# Silence about scope is what let an in-place isolation premise be adopted as a
+# universal truth, so the statement is a contract term with three homes:
+# `description`, the Activation Contract, and README.md. Before this row the
+# suite passed with the README paragraph deleted - measured, exit 0.
+#
+# Both tests demand ONE LINE carrying every claim, not a token found anywhere in
+# the file. "CI", "shared" and "remote" each occur in these files for unrelated
+# reasons, so four independent greps would report a scope statement over a file
+# that declares nothing - satisfied by vocabulary rather than by a sentence.
+scope_missing()    { awk '/Local development/ && /one host/ && /worktrees/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+nongoals_missing() { awk '/non-goal/ && /CI/ && /shared/ && /remote/ && /multi-developer/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+
+activation_contract() { awk '/^## Activation Contract/ { on = 1; next } /^## / { if (on) exit } on' "$1"; }
+description_line()    { awk '/^description:/ { print; exit }' "$1"; }
+
+sf=$(mktemp -d)
+description_line  "$SKILL/SKILL.md" > "$sf/description"
+activation_contract "$SKILL/SKILL.md" > "$sf/activation"
+
+[ "$(scope_missing "$sf/description")" -eq 0 ] \
+    && ok "description states the local-development scope" \
+    || fail "description does not state the scope"
+
+if [ "$(scope_missing "$sf/activation")" -eq 0 ] && [ "$(nongoals_missing "$sf/activation")" -eq 0 ]; then
+    ok "the Activation Contract states the scope and names all four non-goals"
+else
+    fail "the Activation Contract is missing the scope or a non-goal"
+fi
+
+if [ "$(scope_missing README.md)" -eq 0 ] && [ "$(nongoals_missing README.md)" -eq 0 ]; then
+    ok "README.md states the same scope and the same non-goals"
+else
+    fail "README.md is missing the scope or a non-goal"
+fi
+
+# ...and each of the three can go missing on its own. Three fixtures, one per
+# home, every one of which must FAIL - a row keyed on any single file would
+# report a declared scope over a skill that states it twice and hides it once.
+description_line "$SKILL/SKILL.md" | awk '{ sub(/ Local development[^"]*/, ""); print }' > "$sf/no-desc"
+[ "$(scope_missing "$sf/no-desc")" -eq 1 ] \
+    && ok "rejected: the scope clause deleted from description" \
+    || fail "the description row cannot notice the scope going missing"
+
+activation_contract "$SKILL/SKILL.md" | grep -v 'Local development only' > "$sf/no-activation"
+[ "$(scope_missing "$sf/no-activation")" -eq 1 ] && [ "$(nongoals_missing "$sf/no-activation")" -eq 1 ] \
+    && ok "rejected: the scope line deleted from the Activation Contract" \
+    || fail "the Activation Contract row cannot notice the scope going missing"
+
+grep -v 'Scope, stated up front' README.md > "$sf/no-readme.md"
+[ "$(scope_missing "$sf/no-readme.md")" -eq 1 ] && [ "$(nongoals_missing "$sf/no-readme.md")" -eq 1 ] \
+    && ok "rejected: the scope paragraph deleted from README.md" \
+    || fail "the README row cannot notice the scope going missing"
+
+# The fourth fixture, shaped like the portability grep rather than like a
+# presence test: stating the scope is worth nothing while another sentence
+# claims the skill applies everywhere. Case-insensitive and intent-blind, so it
+# fires in prose and in a comment alike - hence written narrowly enough not to
+# fire on "no matter what `writes` says" or "any host running this probe", both
+# shipped text about something else.
+UNIVERSAL='works (with|on|for) any (stack|host|repo|repository|setup|environment|machine)|runs (anywhere|on any (host|machine|stack))|universally applicable|works everywhere|any environment|every environment|whatever your (stack|host|machine|setup)|regardless of where|suitable for (all|every)'
+if grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" >/dev/null 2>&1; then
+    fail "a shipped file claims universal applicability: $(grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" | head -1)"
+else
+    ok "no shipped file claims universal applicability"
+fi
+printf 'stackgraft works with any stack, and runs anywhere.\n' > "$sf/universal.md"
+grep -qiE "$UNIVERSAL" "$sf/universal.md" \
+    && ok "rejected: a file claiming the skill applies to any stack" \
+    || fail "the universal-applicability grep cannot fail"
+rm -rf "$sf"
 
 # One decision and one term list, shared by the shipped rows and by the negative
 # below, so the fixture exercises the test that actually runs rather than a
 # second copy of it that could drift away from it - the shape the compat,
 # version, A7 and notes blocks all use.
-VERDICT_TERMS='REUSE ISOLATE REAP'
+#
+# COPY joins the three verdict terms with the mechanism this change introduces.
+# The body naming a verdict is what would let an agent holding only the body
+# reach something other than refusal, and a term added to the vocabulary but not
+# to this list is a term the loop stopped looking for.
+VERDICT_TERMS='REUSE ISOLATE REAP COPY'
 names_verdict_term() { printf '%s' "$1" | grep -q "$2"; }
 
 body=$(awk 'f; /^---$/{c++; if(c==2) f=1}' "$SKILL/SKILL.md")
@@ -785,10 +1082,38 @@ verdict_hits() {
     done
     printf '%s\n' "$_n"
 }
+#
+# The fixture names the NEW term as well as the old one and the row asserts both
+# are found, not "at least one". A term appended to the list and never exercised
+# is one the loop is only assumed to be looking for - the shape four of the last
+# audit's vacuous rows had: a control exercising a different condition than the
+# row asserts.
 [ "$(verdict_hits "$body
-| Overlay outlived its worktree | REAP it |")" -ge 1 ] \
-    && ok "rejected: a body line naming the REAP verdict" \
-    || fail "the verdict-term loop cannot report a term it should catch"
+| Overlay writes shared state | COPY it |
+| Overlay outlived its worktree | REAP it |")" -ge 2 ] \
+    && ok "rejected: a body line naming the REAP verdict, and one naming the COPY verdict this change adds" \
+    || fail "the verdict-term loop cannot report both terms it should catch"
+
+# --- V40  the body may not carry the hazard-to-mechanism mapping -------------
+# Naming `isolation-providers` and `coordination-identity` in the body IS that
+# mapping: a reader learns there are two mechanisms and which hazard each
+# answers from the filenames alone - a permitting condition reached without
+# opening the only verdict procedure. A gate action cell reading *Copy it* is
+# the same statement one step less subtle. The seal says the body may state that
+# a verdict is required and where the procedure lives, never a condition under
+# which an overlay is permitted. One expression shared with the negative, and
+# case-insensitive: the seal is about what a reader concludes, not capitalisation.
+BODY_MECHANISM='isolation-providers|coordination-identity|copy it|clone it|give it (a distinct|its own)'
+body_mechanism_hits() { printf '%s' "$1" | grep -ciE "$BODY_MECHANISM"; }
+
+[ "$(body_mechanism_hits "$body")" -eq 0 ] \
+    && ok "body names neither new reference file and carries no hazard-to-mechanism wording" \
+    || fail "body carries hazard-to-mechanism wording: $(printf '%s' "$body" | grep -iE "$BODY_MECHANISM" | head -1)"
+
+[ "$(body_mechanism_hits "$body
+| Overlay writes shared state | Copy it — references/isolation-providers.md |")" -ge 1 ] \
+    && ok "rejected: a gate row whose action cell maps the data hazard to a mechanism, naming the file that holds it" \
+    || fail "the hazard-to-mechanism grep cannot fail"
 
 # One expression for the pointer set, used by the rows below and by the negative
 # fixture, so the two cannot drift into keying on differently spelled things.

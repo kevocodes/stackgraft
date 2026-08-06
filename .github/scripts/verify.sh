@@ -793,6 +793,129 @@ else
 fi
 rm -rf "$cf"
 
+# --- V36  description has a 250-CHARACTER ceiling and had no check at all -----
+# `compatibility` next door carries five fixtures; `description` carried none,
+# so a 251-character value passed this suite outright - measured, exit 0 over a
+# planted one. This change edits the field, and editing a field whose guard
+# cannot fail is the defect the compat block above spent a whole amendment
+# repairing.
+#
+# THE UNIT IS THE POINT. compat_measure counts BYTES against a cap the spec
+# states in bytes; this requirement says 250 CHARACTERS, and a ceiling stated
+# in one unit and checked in another is a ceiling nobody is measuring. POSIX awk
+# has no character count that is portable across locales - `length()` answers in
+# bytes under LC_ALL=C and in characters under a UTF-8 one - so this measures in
+# the C locale and REFUSES a value it cannot report in the declared unit: while
+# every byte is ASCII printable the two counts are identical, and the moment one
+# is not, `non-ascii` is returned instead of a number that would silently be the
+# wrong unit. Absent / unquoted / embedded-quote are unmeasurable in the same
+# way, and for compat_measure's reasons: -F'"' would read an embedded quote as
+# the end of the value and measure a prefix, and an unquoted value has no
+# second field at all.
+desc_measure() {
+    LC_ALL=C awk '
+        /^description:/ {
+            found = 1
+            rest = substr($0, index($0, ":") + 1)
+            sub(/^[ \t]+/, "", rest)
+            sub(/[ \t]+$/, "", rest)
+            quotes = gsub(/"/, "&", rest)
+            if (quotes != 2 || rest !~ /^".*"$/) {
+                if (rest ~ /^"/) { print "embedded-quote" } else { print "unquoted" }
+                exit
+            }
+            value = substr(rest, 2, length(rest) - 2)
+            if (value ~ /[^ -~]/) { print "non-ascii"; exit }
+            print length(value)
+            exit
+        }
+        END { if (!found) print "absent" }
+    ' "$1"
+}
+
+# One decision, shared by the shipped check and by every fixture below, so the
+# fixtures exercise the guard itself rather than a second copy of it. `-le` is
+# the boundary A8 fixed for compatibility: the requirement is at most 250.
+desc_verdict() {
+    _m=$(desc_measure "$1")
+    case $_m in
+        '' | *[!0-9]*) printf 'fail\n' ;;
+        *) if [ "$_m" -le 250 ]; then printf 'pass\n'; else printf 'fail\n'; fi ;;
+    esac
+}
+
+# Same shape as compat_fixture, and for the same reason: the replacement is
+# inserted after the opening delimiter rather than edited in place, so the
+# fixture has the shape its label claims even when the source carries no such
+# line.
+desc_fixture() {
+    awk -v repl="$2" '
+        NR == 1 { print; if (repl != "") print repl; next }
+        /^description:/ { next }
+        { print }
+    ' "$SKILL/SKILL.md" > "$1"
+}
+
+desc=$(desc_measure "$SKILL/SKILL.md")
+if [ "$(desc_verdict "$SKILL/SKILL.md")" = pass ]; then
+    ok "description is $desc characters, ASCII so bytes and characters agree (at most 250)"
+else
+    fail "description is unmeasurable or over the 250 ceiling: $desc"
+fi
+
+df=$(mktemp -d)
+dfx="$df/SKILL.md"
+
+desc_fixture "$dfx" ''
+if [ "$(desc_measure "$dfx")" = absent ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: the description line deleted entirely"
+else
+    fail "ACCEPTED but must be rejected: a deleted description line"
+fi
+
+desc_fixture "$dfx" 'description: Trigger: git worktree, unquoted and so unmeasurable'
+if [ "$(desc_measure "$dfx")" = unquoted ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: an unquoted description value, vacuous the same way"
+else
+    fail "ACCEPTED but must be rejected: an unquoted description value"
+fi
+
+desc_fixture "$dfx" 'description: "Trigger: a "worktree" overlay"'
+if [ "$(desc_measure "$dfx")" = embedded-quote ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a description carrying its own quote, which a field split would measure as a prefix"
+else
+    fail "ACCEPTED but must be rejected: a description carrying its own quote"
+fi
+
+# compat_value is reused rather than copied: one generator of a value of a given
+# length, not two that could drift into producing different bytes.
+desc_fixture "$dfx" "description: \"$(compat_value 251)\""
+if [ "$(desc_measure "$dfx")" = 251 ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a 251-character description"
+else
+    fail "ACCEPTED but must be rejected: 251 characters"
+fi
+
+desc_fixture "$dfx" "description: \"$(compat_value 250)\""
+if [ "$(desc_measure "$dfx")" = 250 ] && [ "$(desc_verdict "$dfx")" = pass ]; then
+    ok "accepted: exactly 250 characters - the requirement is at most 250, not fewer than"
+else
+    fail "REJECTED but must be accepted: exactly 250 characters is inside the ceiling"
+fi
+
+# ...and a value this guard cannot report in the DECLARED unit is refused rather
+# than measured in the other one. Without this row a multi-byte description
+# would be counted in bytes and reported as characters, which is the defect one
+# field along from the one the compat block repaired: a number in the wrong unit
+# reads exactly like a number in the right one.
+desc_fixture "$dfx" 'description: "Trigger: git worktree — an em dash is two bytes and one character"'
+if [ "$(desc_measure "$dfx")" = non-ascii ] && [ "$(desc_verdict "$dfx")" = fail ]; then
+    ok "rejected: a value whose characters this guard cannot count, refused rather than measured in bytes"
+else
+    fail "ACCEPTED but must be rejected: a multi-byte value silently measured in the wrong unit"
+fi
+rm -rf "$df"
+
 # One decision and one term list, shared by the shipped rows and by the negative
 # below, so the fixture exercises the test that actually runs rather than a
 # second copy of it that could drift away from it - the shape the compat,

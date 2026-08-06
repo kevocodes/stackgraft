@@ -606,22 +606,65 @@ words=$(body_words "$SKILL/SKILL.md")
     && ok "body is $words words (ceiling 500)" \
     || fail "body is $words words, over the 500 ceiling"
 
-# The ceiling only means something if going over it is caught. Two fixtures:
-# one merely over, and one that reproduces the ordering hazard - applying this
-# change's ADDS before its CUTS puts the body at 530, so a commit made in that
-# order is red at that commit even though both endpoints are legal.
+# The ceiling only means something if going over it is caught, and a fixture is
+# only a boundary test while it sits ON the boundary. Both fixtures were
+# HARD-CODED against a body that no longer exists: 38 is `501 - 463` and 67 is
+# `530 - 463`, both derived from overlay-reaping's slice-1 FORECAST. Measured
+# against the shipped body, 38 lands 36 words clear of the ceiling. Both still
+# fail, so CI stayed green and the drift was invisible - while a counter
+# miscounting by up to 35 words would have gone on being reported as working.
+#
+# So both are DERIVED from the measured body here, and the merely-over one is
+# asserted to sit at exactly 501. `body_verdict` alone cannot express that: the
+# hard-coded fixture already returns `fail`, which is precisely the pass that
+# hid the drift.
 bf=$(mktemp -d)
 body_fixture() { cp "$SKILL/SKILL.md" "$1"; awk -v n="$2" 'BEGIN { while (i++ < n) printf "filler "; print "" }' >> "$1"; }
 
-body_fixture "$bf/over.md" 38
-[ "$(body_verdict "$bf/over.md")" = fail ] \
-    && ok "rejected: a body of $(body_words "$bf/over.md") words, over the ceiling" \
-    || fail "ACCEPTED but must be rejected: a body over 500 words"
+# The words this slice ADDS to the body, named once. adds-first.md reproduces
+# the ordering hazard with it: applying the adds before the cuts is red at that
+# commit even though both endpoints are legal, which is why the cuts and the
+# adds are one commit rather than two.
+BODY_ADDS=21
 
-body_fixture "$bf/adds-first.md" 67
-[ "$(body_verdict "$bf/adds-first.md")" = fail ] \
-    && ok "rejected: adds applied before cuts, $(body_words "$bf/adds-first.md") words" \
-    || fail "ACCEPTED but must be rejected: the adds-before-cuts ordering"
+over_n=$((501 - $(body_words "$SKILL/SKILL.md")))
+body_fixture "$bf/over.md" "$over_n"
+over_w=$(body_words "$bf/over.md")
+if [ "$over_w" -eq 501 ] && [ "$(body_verdict "$bf/over.md")" = fail ]; then
+    ok "rejected: a body of $over_w words - one word over, so the row measures the boundary"
+else
+    fail "the over-ceiling fixture measured $over_w words, not the 501 it is derived to be"
+fi
+
+body_fixture "$bf/adds-first.md" $((over_n + BODY_ADDS))
+adds_w=$(body_words "$bf/adds-first.md")
+if [ "$adds_w" -gt "$over_w" ] && [ "$(body_verdict "$bf/adds-first.md")" = fail ]; then
+    ok "rejected: adds applied before cuts, $adds_w words - above the merely-over fixture's $over_w"
+else
+    fail "the adds-first fixture measured $adds_w words, which is not strictly above over.md's $over_w"
+fi
+
+# ...and the calibration row can see the hard-code coming back. The margin is
+# what it reports, not merely the verdict, because the verdict was already
+# `fail` for all 36 of those words.
+body_fixture "$bf/hardcoded.md" 38
+hard_w=$(body_words "$bf/hardcoded.md")
+if [ "$hard_w" -ne 501 ]; then
+    ok "rejected: the hard-coded 38 measures $hard_w words, $((hard_w - 500)) clear of the ceiling, not one"
+else
+    fail "ACCEPTED but must be rejected: an uncalibrated filler count read as a boundary test"
+fi
+
+# ...and the fixture SHAPE is not what fails. over.md is SKILL.md with filler
+# appended, so without this row the calibration above could be passing on a
+# fixture rejected for being a fixture rather than for being over the ceiling.
+body_fixture "$bf/under.md" $((over_n - 1))
+under_w=$(body_words "$bf/under.md")
+if [ "$under_w" -eq 500 ] && [ "$(body_verdict "$bf/under.md")" = pass ]; then
+    ok "accepted: the same fixture shape at exactly $under_w words - at most 500, not fewer than"
+else
+    fail "REJECTED but must be accepted: a fixture body of $under_w words, inside the ceiling"
+fi
 rm -rf "$bf"
 
 # The guard this replaces could not fail. awk printed nothing when the field was

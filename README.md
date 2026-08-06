@@ -38,6 +38,8 @@ You open a git worktree to work on a branch in parallel. To test it you would ha
 
 One service starts. Three are reused. Nothing is duplicated.
 
+**Scope, stated up front.** Local development: one host, one already-running base stack, N worktrees of one repository in parallel. CI, shared hosts, remote hosts and multi-developer stacks are declared non-goals — a boundary, not a preference, and not a list of things that merely have not been tried. If your base stack does not run on the machine you are sitting at, stackgraft is the wrong tool, and you should learn that here rather than from a refusal several minutes in.
+
 ## Why this is not just `docker compose up`
 
 Because the naive version of this **silently corrupts your data**.
@@ -105,6 +107,7 @@ They meet on one question, where a worktree should live, which is why stackgraft
 
 ## Honest limits
 
+- **The scope above is declared; nothing about isolation has changed yet.** Stating where stackgraft applies is the whole of this step. The manifest is still `schemaVersion` 2, determinacy is still one `writes` array per service, and ISOLATE still means a namespace created inside the datastore instance that is already running. No copy is made, no provider ships, and no refusal behaves differently than it did before.
 - **Reaping ships, and it reports by default.** Every run now says which of this repository's overlays outlived their worktree; stopping one takes an explicit flag, and removing it takes a second flag on top of that. Nothing is stopped, removed or signalled without both an orphan classification and a matching recorded identity.
 - **The base stack is outside the candidate set by construction. The port test on top of that is only as good as what the caller passes.** Only an overlay launch writes the ownership label, so a base-stack container is never a candidate to begin with — that half is structural and holds under every flag. The shape that gets past it — a container hand-labelled with this repository's id — is tested against the base-stack ports the run passes in, and **that test is caller-supplied and caller-defeatable**: the helpers parse no JSON, so nothing can check a passed port against the manifest it came from, and a run that passes the wrong one reaps the container. A mutation given no port at all refuses rather than guessing, and no flag stands in for one. A value that is not a port in 1–65535 is a usage error, which removes typos and closes nothing — `1` is a valid port. So the limit is stated rather than covered, here as in `references/reaping.md` and in the requirement itself: a hand-labelled container whose worktree is unlisted and whose published port is not among the values passed **is reaped**. Nothing else on a running container tells a base-stack service apart from an overlay.
 - **It sees only overlays launched after the labels shipped**, so the first run legitimately reports nothing to act on. A container started before that carries no ownership label, which means nothing distinguishes it from any other container on the machine — there is no query that finds it, so the report names the category, says the gap is structural, and prints the command to look by hand rather than widening a query into a neighbouring repository. An accepted coverage loss, stated out loud.

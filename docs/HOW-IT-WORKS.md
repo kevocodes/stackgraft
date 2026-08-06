@@ -2,6 +2,8 @@
 
 Four ideas carry the whole design. Everything else follows from them.
 
+**The scope they are designed for.** Local development: one host, one already-running base stack, N worktrees of one repository in parallel. CI, shared hosts, remote hosts and multi-developer stacks are declared non-goals. Read that as a boundary rather than a preference — the four ideas below are only correct inside it, and the original draft went wrong precisely because nothing bounded them.
+
 ## 1. Share compute, isolate state
 
 The original draft had this backwards, and correcting it reshaped the skill.

@@ -647,6 +647,12 @@ fi
 # ...and the calibration row can see the hard-code coming back. The margin is
 # what it reports, not merely the verdict, because the verdict was already
 # `fail` for all 36 of those words.
+#
+# At this body the two fixtures happen to land on the same count - over_n plus
+# this slice's adds is 38, which is the shipped hard-code exactly - and they are
+# still two rows, because they assert different things: adds-first must measure
+# ABOVE the boundary fixture, this one must measure anything OTHER than 501.
+# The coincidence is arithmetic, not redundancy, and it moves the next slice.
 body_fixture "$bf/hardcoded.md" 38
 hard_w=$(body_words "$bf/hardcoded.md")
 if [ "$hard_w" -ne 501 ]; then
@@ -664,6 +670,35 @@ if [ "$under_w" -eq 500 ] && [ "$(body_verdict "$bf/under.md")" = pass ]; then
     ok "accepted: the same fixture shape at exactly $under_w words - at most 500, not fewer than"
 else
     fail "REJECTED but must be accepted: a fixture body of $under_w words, inside the ceiling"
+fi
+
+# --- V34  the recorded figure is a LITERAL, not a `-le 500` ------------------
+# `-le 500` accepts everything from 0 to 500, so a slice that moved the body by
+# fifteen words in either direction passes it and the counter reports a healthy
+# body over a slice that did something other than what it recorded. Each slice
+# re-runs the counter and asserts what it MEASURED.
+#
+# The number below is the counter's own output, re-read from the `body is <N>
+# words` line above and never taken from a design table: DS33's donor table sums
+# to -35 against a stated subtotal of -34, the nine rows were each reproduced
+# against the shipped file, and writing the table's endpoint into this check
+# would have made a green suite disagree with the file it measures by one word.
+# Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line.
+BODY_WORDS_RECORDED=484
+[ "$words" -eq "$BODY_WORDS_RECORDED" ] \
+    && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
+    || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"
+
+# ...and that row can tell a legal-but-different count apart from the recorded
+# one, which is the whole difference between it and the ceiling row above. One
+# filler word: still inside the ceiling, still `pass` by the verdict, and it
+# must fail HERE.
+body_fixture "$bf/drift.md" 1
+drift_w=$(body_words "$bf/drift.md")
+if [ "$(body_verdict "$bf/drift.md")" = pass ] && [ "$drift_w" -ne "$BODY_WORDS_RECORDED" ]; then
+    ok "rejected: a body of $drift_w words - inside the ceiling, and not the recorded $BODY_WORDS_RECORDED"
+else
+    fail "a one-word drift is indistinguishable from the recorded figure ($drift_w against $BODY_WORDS_RECORDED)"
 fi
 rm -rf "$bf"
 

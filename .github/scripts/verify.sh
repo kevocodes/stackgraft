@@ -644,15 +644,13 @@ else
     fail "the adds-first fixture measured $adds_w words, which is not strictly above over.md's $over_w"
 fi
 
-# ...and the calibration row can see the hard-code coming back. The margin is
-# what it reports, not merely the verdict, because the verdict was already
-# `fail` for all 36 of those words.
-#
-# At this body the two fixtures happen to land on the same count - over_n plus
-# this slice's adds is 38, which is the shipped hard-code exactly - and they are
-# still two rows, because they assert different things: adds-first must measure
-# ABOVE the boundary fixture, this one must measure anything OTHER than 501.
-# The coincidence is arithmetic, not redundancy, and it moves the next slice.
+# ...and the calibration row can see the hard-code coming back. The MARGIN is
+# what it reports, not the verdict, because the verdict was already `fail` for
+# all 36 of those words. At this body the two fixtures happen to land on the
+# same count - over_n plus this slice's adds is 38 - and they stay two rows
+# because they assert different things: adds-first must measure ABOVE the
+# boundary fixture, this one anything OTHER than 501. Arithmetic, not
+# redundancy, and it moves at the next slice.
 body_fixture "$bf/hardcoded.md" 38
 hard_w=$(body_words "$bf/hardcoded.md")
 if [ "$hard_w" -ne 501 ]; then
@@ -675,14 +673,13 @@ fi
 # --- V34  the recorded figure is a LITERAL, not a `-le 500` ------------------
 # `-le 500` accepts everything from 0 to 500, so a slice that moved the body by
 # fifteen words in either direction passes it and the counter reports a healthy
-# body over a slice that did something other than what it recorded. Each slice
-# re-runs the counter and asserts what it MEASURED.
+# body over a slice that did something other than what it recorded.
 #
 # The number below is the counter's own output, re-read from the `body is <N>
-# words` line above and never taken from a design table: DS33's donor table sums
-# to -35 against a stated subtotal of -34, the nine rows were each reproduced
-# against the shipped file, and writing the table's endpoint into this check
-# would have made a green suite disagree with the file it measures by one word.
+# words` line above and never taken from a design table: that table's nine donor
+# rows sum to -35 against a stated subtotal of -34, each row was reproduced
+# against the shipped file, and writing the table's endpoint here would have made
+# a green suite disagree by one word with the file it measures.
 # Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line.
 BODY_WORDS_RECORDED=484
 [ "$words" -eq "$BODY_WORDS_RECORDED" ] \
@@ -856,22 +853,19 @@ rm -rf "$cf"
 # --- V36  description has a 250-CHARACTER ceiling and had no check at all -----
 # `compatibility` next door carries five fixtures; `description` carried none,
 # so a 251-character value passed this suite outright - measured, exit 0 over a
-# planted one. This change edits the field, and editing a field whose guard
-# cannot fail is the defect the compat block above spent a whole amendment
-# repairing.
+# planted one. This change edits the field.
 #
-# THE UNIT IS THE POINT. compat_measure counts BYTES against a cap the spec
-# states in bytes; this requirement says 250 CHARACTERS, and a ceiling stated
-# in one unit and checked in another is a ceiling nobody is measuring. POSIX awk
-# has no character count that is portable across locales - `length()` answers in
-# bytes under LC_ALL=C and in characters under a UTF-8 one - so this measures in
-# the C locale and REFUSES a value it cannot report in the declared unit: while
-# every byte is ASCII printable the two counts are identical, and the moment one
-# is not, `non-ascii` is returned instead of a number that would silently be the
-# wrong unit. Absent / unquoted / embedded-quote are unmeasurable in the same
-# way, and for compat_measure's reasons: -F'"' would read an embedded quote as
-# the end of the value and measure a prefix, and an unquoted value has no
-# second field at all.
+# THE UNIT IS THE POINT. compat_measure counts BYTES against a cap stated in
+# bytes; this requirement says 250 CHARACTERS, and a ceiling stated in one unit
+# and checked in another is a ceiling nobody is measuring. POSIX awk has no
+# portable character count - `length()` answers in bytes under LC_ALL=C and in
+# characters under a UTF-8 locale - so this measures in the C locale and
+# REFUSES what it cannot report in the declared unit: while every byte is ASCII
+# printable the two counts are identical, and the moment one is not it returns
+# `non-ascii` rather than a number that would silently be the wrong unit.
+# Absent / unquoted / embedded-quote are unmeasurable for compat_measure's
+# reasons: -F'"' would read an embedded quote as the end of the value and
+# measure a prefix, and an unquoted value has no second field at all.
 desc_measure() {
     LC_ALL=C awk '
         /^description:/ {
@@ -985,8 +979,7 @@ rm -rf "$df"
 # Both tests demand ONE LINE carrying every claim, not a token found anywhere in
 # the file. "CI", "shared" and "remote" each occur in these files for unrelated
 # reasons, so four independent greps would report a scope statement over a file
-# that declares nothing - a check satisfied by vocabulary rather than by a
-# sentence. The scope half is the same shape for the same reason.
+# that declares nothing - satisfied by vocabulary rather than by a sentence.
 scope_missing()    { awk '/Local development/ && /one host/ && /worktrees/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
 nongoals_missing() { awk '/non-goal/ && /CI/ && /shared/ && /remote/ && /multi-developer/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
 
@@ -1031,13 +1024,12 @@ grep -v 'Scope, stated up front' README.md > "$sf/no-readme.md"
     && ok "rejected: the scope paragraph deleted from README.md" \
     || fail "the README row cannot notice the scope going missing"
 
-# The fourth fixture, and the only one shaped like the portability grep rather
-# than like a presence test: stating the scope is worth nothing while another
-# sentence claims the skill applies everywhere. Case-insensitive and
-# intent-blind, so it fires inside prose and inside a comment alike - which is
-# why it is written narrowly enough not to fire on "no matter what `writes`
-# says" or on "any host running this probe", both of which are shipped text
-# about something else entirely.
+# The fourth fixture, shaped like the portability grep rather than like a
+# presence test: stating the scope is worth nothing while another sentence
+# claims the skill applies everywhere. Case-insensitive and intent-blind, so it
+# fires in prose and in a comment alike - hence written narrowly enough not to
+# fire on "no matter what `writes` says" or "any host running this probe", both
+# shipped text about something else.
 UNIVERSAL='works (with|on|for) any (stack|host|repo|repository|setup|environment|machine)|runs (anywhere|on any (host|machine|stack))|universally applicable|works everywhere|any environment|every environment|whatever your (stack|host|machine|setup)|regardless of where|suitable for (all|every)'
 if grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" >/dev/null 2>&1; then
     fail "a shipped file claims universal applicability: $(grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" | head -1)"
@@ -1091,11 +1083,11 @@ verdict_hits() {
     printf '%s\n' "$_n"
 }
 #
-# The fixture names the NEW term as well as the old one, and the row asserts
-# both are found rather than "at least one". A term appended to the list and
-# never exercised is a term the loop is only assumed to be looking for, which is
-# the shape four of the last audit's twenty-two vacuous rows had: a negative
-# control exercising a different condition than the row asserts.
+# The fixture names the NEW term as well as the old one and the row asserts both
+# are found, not "at least one". A term appended to the list and never exercised
+# is one the loop is only assumed to be looking for - the shape four of the last
+# audit's vacuous rows had: a control exercising a different condition than the
+# row asserts.
 [ "$(verdict_hits "$body
 | Overlay writes shared state | COPY it |
 | Overlay outlived its worktree | REAP it |")" -ge 2 ] \
@@ -1105,14 +1097,12 @@ verdict_hits() {
 # --- V40  the body may not carry the hazard-to-mechanism mapping -------------
 # Naming `isolation-providers` and `coordination-identity` in the body IS that
 # mapping: a reader learns there are two mechanisms and which hazard each
-# answers from the filenames alone, which is a permitting condition reached
-# without opening the only verdict procedure. A Decision Gate action cell
-# reading *Copy it* is the same statement one step less subtle, and the seal
-# says the body may state that a verdict is required and where the procedure
-# lives - never a condition under which an overlay is permitted.
-#
-# One expression, shared with the negative, and case-insensitive: the seal is
-# about what a reader can conclude, not about capitalisation.
+# answers from the filenames alone - a permitting condition reached without
+# opening the only verdict procedure. A gate action cell reading *Copy it* is
+# the same statement one step less subtle. The seal says the body may state that
+# a verdict is required and where the procedure lives, never a condition under
+# which an overlay is permitted. One expression shared with the negative, and
+# case-insensitive: the seal is about what a reader concludes, not capitalisation.
 BODY_MECHANISM='isolation-providers|coordination-identity|copy it|clone it|give it (a distinct|its own)'
 body_mechanism_hits() { printf '%s' "$1" | grep -ciE "$BODY_MECHANISM"; }
 

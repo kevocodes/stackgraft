@@ -791,6 +791,31 @@ if [ "$(compat_verdict "$SKILL/SKILL.md")" = pass ]; then
 else
     printf '  skip  the donor-cut fixture (it is derived from the shipped value, which failed above)\n'
 fi
+
+# --- V37  the cap row must be able to see the clause this slice paid for -----
+# `compat_measure <= 500` is equally satisfied by a compatibility line the edit
+# never reached, so the clause is asserted PRESENT as well as affordable. The
+# conditional donor named for it - `all CI-tested. `, -14 bytes - did not fire:
+# the shipped value measured 477, so the 17 bytes the clause costs came out of
+# 23 bytes of headroom rather than out of a cut.
+STORE_COPY_CLAUSE='only for container repos and store copies'
+grep -qF -- "$STORE_COPY_CLAUSE" "$SKILL/SKILL.md" \
+    && ok "compatibility declares the store copies' runtime as conditional, beside the existing container condition" \
+    || fail "compatibility does not declare the store-copy condition"
+
+# ...and that row can fail: the same line with the clause reverted to what 1.1.0
+# shipped. Derived from the shipped value for the donor fixture's reason - a
+# fixture typed out by hand stops testing the bytes that run.
+reverted=$(awk '/^compatibility:/ {
+        r = substr($0, index($0, "\"") + 1); sub(/"$/, "", r)
+        sub(/ and store copies\./, ".", r); print r; exit
+    }' "$SKILL/SKILL.md")
+compat_fixture "$cfx" "compatibility: \"$reverted\""
+if grep -qF -- "$STORE_COPY_CLAUSE" "$cfx"; then
+    fail "ACCEPTED but must be rejected: the store-copy condition reverted and not noticed"
+else
+    ok "rejected: the compatibility line with the store-copy condition reverted"
+fi
 rm -rf "$cf"
 
 # --- V36  description has a 250-CHARACTER ceiling and had no check at all -----

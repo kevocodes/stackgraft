@@ -976,11 +976,90 @@ else
 fi
 rm -rf "$df"
 
+# --- V38  the scope is stated in all three places, or in none of them --------
+# Silence about scope is what let an in-place isolation premise be adopted as a
+# universal truth, so the statement is a contract term with three homes:
+# `description`, the Activation Contract, and README.md. Before this row the
+# suite passed with the README paragraph deleted - measured, exit 0.
+#
+# Both tests demand ONE LINE carrying every claim, not a token found anywhere in
+# the file. "CI", "shared" and "remote" each occur in these files for unrelated
+# reasons, so four independent greps would report a scope statement over a file
+# that declares nothing - a check satisfied by vocabulary rather than by a
+# sentence. The scope half is the same shape for the same reason.
+scope_missing()    { awk '/Local development/ && /one host/ && /worktrees/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+nongoals_missing() { awk '/non-goal/ && /CI/ && /shared/ && /remote/ && /multi-developer/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+
+activation_contract() { awk '/^## Activation Contract/ { on = 1; next } /^## / { if (on) exit } on' "$1"; }
+description_line()    { awk '/^description:/ { print; exit }' "$1"; }
+
+sf=$(mktemp -d)
+description_line  "$SKILL/SKILL.md" > "$sf/description"
+activation_contract "$SKILL/SKILL.md" > "$sf/activation"
+
+[ "$(scope_missing "$sf/description")" -eq 0 ] \
+    && ok "description states the local-development scope" \
+    || fail "description does not state the scope"
+
+if [ "$(scope_missing "$sf/activation")" -eq 0 ] && [ "$(nongoals_missing "$sf/activation")" -eq 0 ]; then
+    ok "the Activation Contract states the scope and names all four non-goals"
+else
+    fail "the Activation Contract is missing the scope or a non-goal"
+fi
+
+if [ "$(scope_missing README.md)" -eq 0 ] && [ "$(nongoals_missing README.md)" -eq 0 ]; then
+    ok "README.md states the same scope and the same non-goals"
+else
+    fail "README.md is missing the scope or a non-goal"
+fi
+
+# ...and each of the three can go missing on its own. Three fixtures, one per
+# home, every one of which must FAIL - a row keyed on any single file would
+# report a declared scope over a skill that states it twice and hides it once.
+description_line "$SKILL/SKILL.md" | awk '{ sub(/ Local development[^"]*/, ""); print }' > "$sf/no-desc"
+[ "$(scope_missing "$sf/no-desc")" -eq 1 ] \
+    && ok "rejected: the scope clause deleted from description" \
+    || fail "the description row cannot notice the scope going missing"
+
+activation_contract "$SKILL/SKILL.md" | grep -v 'Local development only' > "$sf/no-activation"
+[ "$(scope_missing "$sf/no-activation")" -eq 1 ] && [ "$(nongoals_missing "$sf/no-activation")" -eq 1 ] \
+    && ok "rejected: the scope line deleted from the Activation Contract" \
+    || fail "the Activation Contract row cannot notice the scope going missing"
+
+grep -v 'Scope, stated up front' README.md > "$sf/no-readme.md"
+[ "$(scope_missing "$sf/no-readme.md")" -eq 1 ] && [ "$(nongoals_missing "$sf/no-readme.md")" -eq 1 ] \
+    && ok "rejected: the scope paragraph deleted from README.md" \
+    || fail "the README row cannot notice the scope going missing"
+
+# The fourth fixture, and the only one shaped like the portability grep rather
+# than like a presence test: stating the scope is worth nothing while another
+# sentence claims the skill applies everywhere. Case-insensitive and
+# intent-blind, so it fires inside prose and inside a comment alike - which is
+# why it is written narrowly enough not to fire on "no matter what `writes`
+# says" or on "any host running this probe", both of which are shipped text
+# about something else entirely.
+UNIVERSAL='works (with|on|for) any (stack|host|repo|repository|setup|environment|machine)|runs (anywhere|on any (host|machine|stack))|universally applicable|works everywhere|any environment|every environment|whatever your (stack|host|machine|setup)|regardless of where|suitable for (all|every)'
+if grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" >/dev/null 2>&1; then
+    fail "a shipped file claims universal applicability: $(grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" | head -1)"
+else
+    ok "no shipped file claims universal applicability"
+fi
+printf 'stackgraft works with any stack, and runs anywhere.\n' > "$sf/universal.md"
+grep -qiE "$UNIVERSAL" "$sf/universal.md" \
+    && ok "rejected: a file claiming the skill applies to any stack" \
+    || fail "the universal-applicability grep cannot fail"
+rm -rf "$sf"
+
 # One decision and one term list, shared by the shipped rows and by the negative
 # below, so the fixture exercises the test that actually runs rather than a
 # second copy of it that could drift away from it - the shape the compat,
 # version, A7 and notes blocks all use.
-VERDICT_TERMS='REUSE ISOLATE REAP'
+#
+# COPY joins the three verdict terms with the mechanism this change introduces.
+# The body naming a verdict is what would let an agent holding only the body
+# reach something other than refusal, and a term added to the vocabulary but not
+# to this list is a term the loop stopped looking for.
+VERDICT_TERMS='REUSE ISOLATE REAP COPY'
 names_verdict_term() { printf '%s' "$1" | grep -q "$2"; }
 
 body=$(awk 'f; /^---$/{c++; if(c==2) f=1}' "$SKILL/SKILL.md")
@@ -1011,10 +1090,40 @@ verdict_hits() {
     done
     printf '%s\n' "$_n"
 }
+#
+# The fixture names the NEW term as well as the old one, and the row asserts
+# both are found rather than "at least one". A term appended to the list and
+# never exercised is a term the loop is only assumed to be looking for, which is
+# the shape four of the last audit's twenty-two vacuous rows had: a negative
+# control exercising a different condition than the row asserts.
 [ "$(verdict_hits "$body
-| Overlay outlived its worktree | REAP it |")" -ge 1 ] \
-    && ok "rejected: a body line naming the REAP verdict" \
-    || fail "the verdict-term loop cannot report a term it should catch"
+| Overlay writes shared state | COPY it |
+| Overlay outlived its worktree | REAP it |")" -ge 2 ] \
+    && ok "rejected: a body line naming the REAP verdict, and one naming the COPY verdict this change adds" \
+    || fail "the verdict-term loop cannot report both terms it should catch"
+
+# --- V40  the body may not carry the hazard-to-mechanism mapping -------------
+# Naming `isolation-providers` and `coordination-identity` in the body IS that
+# mapping: a reader learns there are two mechanisms and which hazard each
+# answers from the filenames alone, which is a permitting condition reached
+# without opening the only verdict procedure. A Decision Gate action cell
+# reading *Copy it* is the same statement one step less subtle, and the seal
+# says the body may state that a verdict is required and where the procedure
+# lives - never a condition under which an overlay is permitted.
+#
+# One expression, shared with the negative, and case-insensitive: the seal is
+# about what a reader can conclude, not about capitalisation.
+BODY_MECHANISM='isolation-providers|coordination-identity|copy it|clone it|give it (a distinct|its own)'
+body_mechanism_hits() { printf '%s' "$1" | grep -ciE "$BODY_MECHANISM"; }
+
+[ "$(body_mechanism_hits "$body")" -eq 0 ] \
+    && ok "body names neither new reference file and carries no hazard-to-mechanism wording" \
+    || fail "body carries hazard-to-mechanism wording: $(printf '%s' "$body" | grep -iE "$BODY_MECHANISM" | head -1)"
+
+[ "$(body_mechanism_hits "$body
+| Overlay writes shared state | Copy it — references/isolation-providers.md |")" -ge 1 ] \
+    && ok "rejected: a gate row whose action cell maps the data hazard to a mechanism, naming the file that holds it" \
+    || fail "the hazard-to-mechanism grep cannot fail"
 
 # One expression for the pointer set, used by the rows below and by the negative
 # fixture, so the two cannot drift into keying on differently spelled things.

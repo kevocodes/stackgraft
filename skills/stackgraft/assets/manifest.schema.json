@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "$comment": "The gate in references/shared-state.md runs once per (service, store) pair, so an empty backingStores runs it zero times and every interlock inside that loop is skipped wholesale. backingStores is therefore REQUIRED — an absent map and a map discovery never populated are the same bytes — and an EMPTY one is a claim that has to be evidenced exactly like writes: [] is: the manifest must carry a root stateReview recording that discovery looked for stateful dependencies and found none. Unevidenced emptiness is undetermined, not safe, and refuses.",
+      "$comment": "The gate in references/shared-state.md runs once per (service, store) pair, so an empty backingStores runs it zero times and every interlock inside that loop is skipped wholesale. backingStores is therefore REQUIRED — an absent map and a map discovery never populated are the same bytes — and an EMPTY one is a claim that has to be evidenced exactly like a determinacy record's checked-and-none is: the manifest must carry a root stateReview recording that discovery looked for stateful dependencies and found none. Unevidenced emptiness is undetermined, not safe, and refuses.",
       "if": {
         "required": ["backingStores"],
         "properties": { "backingStores": { "maxProperties": 0 } }
@@ -31,7 +31,10 @@
     }
   ],
   "properties": {
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": {
+      "const": 3,
+      "description": "Raised from 2 to 3 by the move to per-(unit, store) determinacy, which is breaking. NO MIGRATION PATH IS WRITTEN, AND ITS ABSENCE IS THE DESIGN: everything here is re-derivable from the repository, so a manifest whose version a reader does not recognise is discarded WHOLE and rediscovered, with nothing carried over. That is how a 2 manifest reaches 3, and how a 3 manifest reaches an older release after a rollback. Carrying a v2 field forward would be worse than discarding it: writes was one claim about a whole service, and re-reading it as evidence about one pair is precisely the amplification this version exists to end."
+    },
     "repoRoot": {
       "type": "string",
       "description": "Absolute path of the MAIN worktree, not the checkout in use."
@@ -75,7 +78,7 @@
           "covers": {
             "type": "array",
             "minItems": 1,
-            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest. At least one is mandatory, for the same reason sources itself may not be empty: an entry covering nothing contributes nothing to the refresh union, so it drifts, re-derives no key — and still has its fingerprint rewritten in step 7 of references/discovery.md, spending the one signal that would have caught the change. Emptiness here is unfalsifiable in the same way writes: [] would be without stateReview; a source whose covers cannot be named has not been understood well enough to record.",
+            "description": "Manifest keys this file is authoritative for. A drift here re-discovers ONLY these, not the whole manifest. At least one is mandatory, for the same reason sources itself may not be empty: an entry covering nothing contributes nothing to the refresh union, so it drifts, re-derives no key — and still has its fingerprint rewritten in step 7 of references/discovery.md, spending the one signal that would have caught the change. Emptiness here is unfalsifiable in the same way a determinacy claim would be without its evidence; a source whose covers cannot be named has not been understood well enough to record.",
             "items": {
               "type": "string",
               "not": { "pattern": "^(verifiedOverlays|acceptedRisks)" },
@@ -109,16 +112,26 @@
 
     "backingStores": {
       "type": "object",
-      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. REQUIRED, and it is the gate's pair set: every runnable service is paired with every entry here, so a missing map means zero pairs, zero verdicts and an ungated launch. It MAY be empty, but only alongside the root stateReview that evidences the emptiness — see the conditional at the top of this schema. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and writes resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
+      "description": "One entry per stateful dependency the base stack already runs — database, broker, cache, object store, scheduler. REQUIRED, and it is the gate's pair set: every runnable service is paired with every entry here, so a missing map means zero pairs, zero verdicts and an ungated launch. It MAY be empty, but only alongside the root stateReview that evidences the emptiness — see the conditional at the top of this schema. A top-level sibling of services on purpose: the gate must resolve a dependency NAME to a store record without first proving it is not an app service, and a single namespace would force this schema to accept the union of both field sets, losing its ability to reject overlayCommand on a database. COLLISION RULE: a name MUST NOT appear in both maps; dependsOn and determinacy resolve backingStores first; a name in NEITHER map is unknown, which fails closed.",
       "propertyNames": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
         "description": "A store name is substituted into an isolation command as {{store}}, so it is untrusted repository data reaching an executed argument. The pattern admits no shell metacharacter, no whitespace, and no leading dash, which is what keeps the one repository-controlled substituted value from carrying shell syntax or a second word into an executed argument — the substitution check in references/shared-state.md is structural, so this pattern is where that value is constrained. It still accepts the names real orchestrators use — uppercase, dots and digits are all legal compose service names, and a store that could not be recorded under its real name would resolve to neither map and refuse forever with no remedy."
       },
       "additionalProperties": {
         "type": "object",
-        "required": ["substrate", "isolation"],
+        "required": ["substrate", "isolation", "locality"],
         "additionalProperties": false,
         "properties": {
+          "locality": {
+            "type": "object",
+            "required": ["value", "reason"],
+            "additionalProperties": false,
+            "description": "Where this store's state actually lives and who operates it. REQUIRED, because it is what a provider's eligibility is decided from and an optional field decides nothing: a pass that never looked would otherwise be indistinguishable from one that found the state local. DERIVED FROM THE DISCOVERED ADDRESS AND THE STORE'S DISCOVERED LIFECYCLE, never assumed from its name, image, or engine — the same engine runs managed and local, and a name proves nothing about where bytes sit.",
+            "properties": {
+              "value": { "type": "string", "enum": ["local", "managed", "remote", "host-native", "undetermined"], "description": "\"undetermined\" is a legal, honest answer and is NOT a permission: it is read as remote and refuses. Only \"local\" — state on this host, reachable by a shipped provider — can ever resolve to a copy." },
+              "reason": { "type": "string", "minLength": 1, "description": "The fact this determination rests on, e.g. the resolved address, the declared volume, the absence of either. It survives into the refusal message so a developer is told WHICH fact was missing rather than that isolation was unavailable." }
+            }
+          },
           "substrate": {
             "type": "string",
             "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
@@ -247,17 +260,18 @@
                 "portGroup": false,
                 "overlayCommand": false,
                 "verifyRequest": false,
-                "peerEnv": false
+                "peerEnv": false,
+                "determinacy": false,
+                "migrates": false
               }
             },
             "else": { "required": ["portGroup", "dependsOn"] }
           },
           {
-            "$comment": "Classification is only trustworthy with evidence of how it was reached. An empty writes list is unfalsifiable on its own, so anything that claims classification must also carry stateReview. dependsOn is in this list because an empty one is the same kind of claim — checked and none — and must be as falsifiable as the rest; it does not narrow the gate's pair set, which comes from backingStores.",
+            "$comment": "Classification is only trustworthy with evidence of how it was reached. dependsOn and competesOn are in this list because an EMPTY one is a claim — checked and none — and must be as falsifiable as the rest; neither narrows the gate's pair set, which comes from backingStores. determinacy is deliberately NOT in the list: every record carries its own at, method, confidence and serviceFingerprint, so it is already a per-pair stateReview and asking for a second one at the unit level would evidence a claim no record makes.",
             "if": {
               "anyOf": [
                 { "required": ["dependsOn"] },
-                { "required": ["writes"] },
                 { "required": ["competesOn"] },
                 { "required": ["migrates"] }
               ]
@@ -313,14 +327,51 @@
             "description": "Env var -> URL used to reach each peer. The overlay rewrites these to base-stack host ports.",
             "additionalProperties": { "type": "string" }
           },
-          "writes": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Backing stores this service MUTATES — inserts, updates, DDL, migrations, publishes, uploads. An EMPTY array means checked and none; an ABSENT field means unknown, and unknown fails closed. That distinction is the whole encoding, so never emit [] to mean \"did not look\"."
+          "writes": { "not": {}, "description": "RETIRED at schemaVersion 3, and rejected BY NAME rather than by additionalProperties so the failure says why. writes: [\"postgres\"] was a POSITIVE claim that simultaneously asserted checked-and-none for every OTHER store, so a pass that determined one store and could not determine another had to omit the field entirely — which made ALL of them undetermined. The missing capability was GRANULARITY, not the ability to write a negative: determinacy below records one pair at a time, and a record saying checked-and-none for one store says nothing whatever about the next. NO REPLACEMENT MAY BE ADDED whose PRESENCE asserts checked-and-none for every store at once; that reading is the defect, not the field name." },
+          "determinacy": {
+            "type": "object",
+            "description": "One record per (unit, store) pair, keyed by the backingStores key. This is the gate's evidence for W and X, and it is evidence about EXACTLY ONE PAIR: it may not be read as evidence about another store of the same unit, about the same store under another unit, or about a set. A pair the pass could not determine has NO record — omission is how partial knowledge is expressed, and an omitted record is undetermined, which refuses. An omitted record MUST NOT be written as, or later read as, checked-and-none. Discovery writes one for every runnable unit against every entry in backingStores, not merely the stores a unit declares; references/discovery.md section 3 is the writing side and references/shared-state.md the reading side. Record count grows from one per unit to one per pair, which is the cost of being able to say two different things about two stores.",
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+              "description": "The same pattern backingStores property names take, and for the same reason: a store name reaches an executed argument as {{store}}, so it is untrusted repository data wherever it is written. A key naming no backingStores entry is a record about a pair the set never contained; the gate derives its pairs from backingStores and this map narrows nothing."
+            },
+            "additionalProperties": {
+              "type": "object",
+              "required": ["at", "method", "confidence", "serviceFingerprint", "mutates", "competes"],
+              "additionalProperties": false,
+              "description": "Both booleans are REQUIRED, so a pass that answered W and could not answer X writes no record at all and the pair stays undetermined. Half a record would be a pair the gate reads as examined while one of its two questions was never asked.",
+              "properties": {
+                "at": { "type": "string", "format": "date-time" },
+                "method": { "type": "string", "enum": ["code-scan", "user-asserted", "resolver-declared"], "description": "What the pass actually did, the same scale services[].stateReview.method uses. Independent of confidence: confidence says how sure the pass was, method says what it looked at." },
+                "confidence": { "type": "string", "enum": ["declared", "inferred", "user"], "description": "REQUIRED here, unlike its optional siblings elsewhere, for the reason the root stateReview requires it: this record releases a pair, and an omission would be read as trust while the degraded path is the one least likely to write the field. A degraded pass — resolver unavailable, static parse standing in — writes \"inferred\" rather than omitting the record, so the manifest stays valid and the cache survives; references/shared-state.md then declines to count it, which reaches the same outcome an omission would have reached at no cost to the cache. Only \"declared\" satisfies the gate." },
+                "serviceFingerprint": { "type": "string", "description": "The unit's own source fingerprint when THIS pair was classified, computed by the recipe at the end of references/shared-state.md. Each record carries its own because records are written at different moments and expire independently: re-examining one pair must not renew the evidence for a pair nobody looked at again. Once it stops matching the unit's current source the record is treated as ABSENT, which is undetermined, which refuses — not stale-but-valid." },
+                "mutates": {
+                  "type": "object",
+                  "required": ["value", "evidence"],
+                  "additionalProperties": false,
+                  "description": "W for this pair: does the unit mutate this store — inserts, updates, DDL, migrations, publishes, uploads.",
+                  "properties": {
+                    "value": { "type": "boolean", "description": "false is checked-and-none FOR THIS STORE ALONE and says nothing about the unit's other stores." },
+                    "evidence": { "type": "string", "minLength": 1, "description": "How this pair's answer was reached, in enough words to be judged later. REQUIRED, and at least one character, because checked-and-none is the claim this record makes cheapest to write: a record that can say \"none for this store\" is a record that can say it without looking, and the acceptedRisks.reason precedent applies unchanged — a claim carrying no account of itself records that a pair was released without recording anything that could later be judged." }
+                  }
+                },
+                "competes": {
+                  "type": "object",
+                  "required": ["value", "evidence"],
+                  "additionalProperties": false,
+                  "description": "X for this pair: is attaching competitive or exclusive — consumer groups, queue subscribers, advisory or leader locks, replication slots. Evaluated independently of mutates, because a read-only unit still steals work. competesOn holds the identity KNOB for a pair recorded here as competing; it does not decide this boolean, and where the two disagree the pair is undetermined per references/shared-state.md.",
+                  "properties": {
+                    "value": { "type": "boolean", "description": "false is checked-and-none FOR THIS STORE ALONE, on the same terms as mutates.value." },
+                    "evidence": { "type": "string", "minLength": 1, "description": "How this pair's answer was reached, on the same terms as mutates.evidence." }
+                  }
+                },
+                "notes": { "type": "string" }
+              }
+            }
           },
           "competesOn": {
             "type": "array",
-            "description": "Stores this service attaches to COMPETITIVELY: consumer groups, queue subscribers, advisory or leader locks, replication slots. Evaluated independently of writes, because a read-only service still steals work — a consumer joining the base group.id takes partitions even if it only logs. Empty means checked and none; absent means unknown.",
+            "description": "Stores this service attaches to COMPETITIVELY, and the identity KNOB for each: consumer groups, queue subscribers, advisory or leader locks, replication slots. It does not decide X — determinacy[store].competes does — and it is evaluated independently of the mutation claim, because a read-only service still steals work — a consumer joining the base group.id takes partitions even if it only logs. Empty means checked and none; absent means unknown.",
             "items": {
               "type": "object",
               "required": ["store", "identity"],
@@ -353,19 +404,33 @@
             }
           },
           "migrates": {
-            "type": "boolean",
-            "description": "True when launching this service applies schema migrations. references/shared-state.md reads it as W = yes for EVERY pair of this service, whatever writes lists, which is how it forces isolate-or-refuse regardless of what the rest of the classification claims: a migration against a shared database damages every other consumer of it, and succeeds silently while doing so. It is the escalation the diff cannot supply — a service migrating from its own entrypoint touches no migrations directory in the diff and names no migrate step in its launch command."
+            "type": "object",
+            "required": ["pointing"],
+            "additionalProperties": false,
+            "description": "Recorded when launching this unit applies schema migrations, and SCOPED TO THE STORES ITS ENTRYPOINT IS POINTED AT rather than read as W = yes against every key in backingStores. Nearly every service in a real repository applies schema on startup, so the unscoped boolean made one true fact amplify into a write claim against every store the repository has — the bulk of the over-refusals this version exists to end. Scoping it weakens nothing the field was for: a unit that migrates on startup still writes, that write survives any narrowing a change classification performs, and it is still the escalation the diff cannot supply.",
+            "allOf": [
+              {
+                "$comment": "A recorded pointing NAMES its stores; an unknown pointing may not name any. The two states must stay distinguishable, because collapsing them is how an unscoped migration is laundered into relief: a unit recorded as migrating with no idea where would otherwise be byte-identical to a unit that does not migrate at all. Where the pointing is unknown, references/shared-state.md leaves EVERY store of this unit undetermined, which refuses.",
+                "if": { "required": ["pointing"], "properties": { "pointing": { "const": "recorded" } } },
+                "then": { "required": ["stores"] },
+                "else": { "properties": { "stores": false } }
+              }
+            ],
+            "properties": {
+              "pointing": { "type": "string", "enum": ["recorded", "unknown"], "description": "Whether the pass established which stores the entrypoint reaches. An unscoped migrates becomes a scoped one only where the scope is EVIDENCED, never by default." },
+              "stores": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$" }, "description": "backingStores keys this unit's entrypoint applies schema to. W = yes for each of those pairs whatever their determinacy record says, and the unit's OTHER stores are classified on their own records. At least one member: a migration pointed at nothing is not a migration, and an empty array here would be a positive claim spelled as an absence — the exact shape the retired writes field had." }
+            }
           },
           "stateReview": {
             "type": "object",
             "required": ["at", "method", "serviceFingerprint"],
             "additionalProperties": false,
-            "description": "Evidence of HOW the classification above was reached. Required whenever writes, competesOn, or migrates is present. Without it an all-empty classification is indistinguishable from a lazy pass that disarmed the gate everywhere — see references/traps.md.",
+            "description": "Evidence of HOW the unit-level claims above were reached. Required whenever dependsOn, competesOn, or migrates is present; a determinacy record carries its own. Without it an all-empty classification is indistinguishable from a lazy pass that disarmed the gate everywhere — see references/traps.md.",
             "properties": {
               "at": { "type": "string", "format": "date-time" },
               "serviceFingerprint": {
                 "type": "string",
-                "description": "The service's own source fingerprint when the classification was made, the same value acceptedRisks.serviceFingerprint uses and computed by the same recipe at the end of references/shared-state.md. Required because at and method alone give the cached classification no baseline: sources[] fingerprints cover topology files, and a service's own source tree is not a topology source, so on this skill's primary case — a worktree whose service code changed — the gate would read a classification derived from different code. A service discovered read-only and then given an INSERT would still present writes: [] and resolve to reuse. Once this stops matching the service's current source the classification is UNDETERMINED, not valid, which refuses at step 1 until it is re-derived.",
+                "description": "The service's own source fingerprint when the classification was made, the same value acceptedRisks.serviceFingerprint uses and computed by the same recipe at the end of references/shared-state.md. Required because at and method alone give the cached classification no baseline: sources[] fingerprints cover topology files, and a service's own source tree is not a topology source, so on this skill's primary case — a worktree whose service code changed — the gate would read a classification derived from different code. A service discovered read-only and then given an INSERT would still present a checked-and-none determinacy record and resolve to reuse. Once this stops matching the service's current source the classification is UNDETERMINED, not valid, which refuses at step 1 until it is re-derived.",
                 "$comment": "Deliberately not required to equal acceptedRisks.serviceFingerprint: the two are taken at different moments and drift independently."
               },
               "method": {

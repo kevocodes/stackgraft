@@ -1,6 +1,6 @@
 # Tasks: parallel-feature-isolation
 
-Phase: `sdd-tasks` · Input: `proposal.md` (locked, D1–D10, all seven questions answered plus the correction recorded at Q7) + 7 delta specs (34 requirements, 149 scenarios) + `design.md` (DS33–DS41, **as amended by DS42**) · Next: `sdd-apply`
+Phase: `sdd-tasks` · Input: `proposal.md` (locked, D1–D10, all seven questions answered plus the correction recorded at Q7) + 7 delta specs (34 requirements, 151 scenarios — the `^#### Scenario:` count, which is the figure the verification reads) + `design.md` (DS33–DS41, **as amended by DS42**) · Next: `sdd-apply`
 
 **DS42 wins wherever it touches DS34 or DS37 as originally written.** The generated target family is three files per store — create, drop, and **read** — because DS34 rung 2 has no other source, and the generated read is held to DS34's discriminator like any other candidate.
 

@@ -773,6 +773,92 @@ else
 fi
 rm -rf "$bf"
 
+# --- ...and the PARAGRAPH that publishes the figure is held to it too --------
+# CONTRIBUTING.md's body-budget paragraph states what the body measures and how
+# much headroom is left, and it claims the row above "stops this paragraph and
+# the check drifting apart in silence". Nothing read the paragraph, so it drifted
+# exactly the way it promised it could not: it said 484 with sixteen words of
+# headroom from slice 1a onwards, while the counter answered 487 and the row
+# above recorded 487. A sentence that names the guarantee is the one place a
+# reader trusts, so the guarantee is made true here rather than restated.
+CONTRIB=CONTRIBUTING.md
+contrib_figure() {
+    awk '/The shipped body measures/ {
+             if (match($0, /\*\*[0-9]+\*\*/)) { print substr($0, RSTART + 2, RLENGTH - 4); exit }
+         }' "$1"
+}
+contrib_headroom() {
+    awk '/The shipped body measures/ {
+             if (match($0, /so there are [a-z]+ words of headroom/)) {
+                 s = substr($0, RSTART, RLENGTH)
+                 sub(/^so there are /, "", s)
+                 sub(/ words of headroom$/, "", s)
+                 print s
+                 exit
+             }
+         }' "$1"
+}
+# Spelled out, because the paragraph spells it out. A row reading only the
+# numeral leaves half the sentence unread, and the unread half is the one that
+# said sixteen.
+num_word() {
+    case ${1:-} in
+        0)  printf 'no\n' ;;        1)  printf 'one\n' ;;       2)  printf 'two\n' ;;
+        3)  printf 'three\n' ;;     4)  printf 'four\n' ;;      5)  printf 'five\n' ;;
+        6)  printf 'six\n' ;;       7)  printf 'seven\n' ;;     8)  printf 'eight\n' ;;
+        9)  printf 'nine\n' ;;      10) printf 'ten\n' ;;       11) printf 'eleven\n' ;;
+        12) printf 'twelve\n' ;;    13) printf 'thirteen\n' ;;  14) printf 'fourteen\n' ;;
+        15) printf 'fifteen\n' ;;   16) printf 'sixteen\n' ;;   17) printf 'seventeen\n' ;;
+        18) printf 'eighteen\n' ;;  19) printf 'nineteen\n' ;;  20) printf 'twenty\n' ;;
+        *)  printf 'unmapped\n' ;;
+    esac
+}
+
+cf=$(contrib_figure "$CONTRIB")
+if [ -n "$cf" ] && [ "$cf" -eq "$words" ] 2>/dev/null; then
+    ok "CONTRIBUTING.md publishes the figure the counter measures: $cf words"
+else
+    fail "CONTRIBUTING.md publishes '$cf' as the body figure; the counter measures $words"
+fi
+
+ch=$(contrib_headroom "$CONTRIB")
+want_headroom=$(num_word $((500 - words)))
+if [ "$ch" = "$want_headroom" ]; then
+    ok "...and the headroom it states is the $want_headroom words the 500-word ceiling actually leaves"
+else
+    fail "CONTRIBUTING.md states '$ch' words of headroom; at $words words the ceiling leaves $want_headroom"
+fi
+
+# Three fixtures, and the two drifted ones are DERIVED from the measurement
+# rather than hard-coded, for the reason the over-budget fixtures above are:
+# a literal 484 in a negative is a negative that stops being one the day the
+# body measures 484.
+cb=$(mktemp -d)
+awk -v n="$((words + 3))" '{ if (/The shipped body measures/) sub(/\*\*[0-9]+\*\*/, "**" n "**"); print }' \
+    "$CONTRIB" > "$cb/drifted-figure.md"
+cbf=$(contrib_figure "$cb/drifted-figure.md")
+if [ -n "$cbf" ] && [ "$cbf" -ne "$words" ] 2>/dev/null; then
+    ok "rejected: a CONTRIBUTING.md publishing $cbf words against a body that measures $words"
+else
+    fail "the published-figure row cannot tell a drifted number from the measured one"
+fi
+
+awk -v w="$(num_word $((501 - words)))" '{ if (/The shipped body measures/) sub(/so there are [a-z]+ words of headroom/, "so there are " w " words of headroom"); print }' \
+    "$CONTRIB" > "$cb/drifted-headroom.md"
+cbh=$(contrib_headroom "$cb/drifted-headroom.md")
+if [ -n "$cbh" ] && [ "$cbh" != "$want_headroom" ]; then
+    ok "rejected: a CONTRIBUTING.md stating $cbh words of headroom where the ceiling leaves $want_headroom"
+else
+    fail "the headroom row cannot tell a drifted word from the one the ceiling derives"
+fi
+
+grep -v 'The shipped body measures' "$CONTRIB" > "$cb/silent.md"
+if [ -z "$(contrib_figure "$cb/silent.md")" ] && [ -z "$(contrib_headroom "$cb/silent.md")" ]; then
+    ok "rejected: a CONTRIBUTING.md with the body-budget paragraph deleted - an absent claim is not a matching one"
+else
+    fail "the CONTRIBUTING rows read a figure out of a file whose paragraph is gone"
+fi
+rm -rf "$cb"
 
 # The guard this replaces could not fail. awk printed nothing when the field was
 # absent, ${compat:-0} then read 0, and 0 -lt 500 reported green - so DELETING

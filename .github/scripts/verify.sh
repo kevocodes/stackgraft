@@ -4358,9 +4358,22 @@ gen_name() {
         }'
 }
 
-[ -n "$GEN_KEY" ] \
-    && ok "the map a generated store name must come out of is read from the shipped rule: $GEN_KEY" \
-    || fail "the shipped rule names no map for the store name, so the four naming rows below have no source to hold a name to"
+# Extracted AND asserted, which is two rules rather than one restated. The
+# extraction is what makes the reader follow the shipped file instead of its own
+# copy; the assertion is what stops the shipped file pointing somewhere else.
+# Measured while proving this section load-bearing: with `backingStores` swapped
+# for another field the extraction happily followed it, the reader went on
+# working, and the only thing that caught it was the schema cross-check noticing
+# an undefined field name - which would have caught nothing at all had the
+# substitute been a field that exists. The map has to be the gate's own pair-set
+# map, and naming any other is naming the wrong thing rather than nothing.
+if [ "$GEN_KEY" = backingStores ]; then
+    ok "the map a generated store name must come out of is read from the shipped rule, and it is the gate's own pair-set map: $GEN_KEY"
+elif [ -n "$GEN_KEY" ]; then
+    fail "the shipped rule takes a generated store name from '$GEN_KEY' rather than from backingStores, which is the map every pair is derived against"
+else
+    fail "the shipped rule names no map for the store name, so the four naming rows below have no source to hold a name to"
+fi
 
 name_case() {
     _got=$(gen_name "$1" "$2")

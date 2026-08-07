@@ -4087,6 +4087,917 @@ else
     printf '  skip  verification runtime rows (no docker daemon, no alpine/git image, no provider script, or no route in the shipped table)\n'
 fi
 
+# --------------------------------------------- generated lifecycle target ----
+section "generated lifecycle target"
+
+# DS37 as amended by DS42. Every deliverable in this section is a mutation of
+# something OUTSIDE this repository: the skill writes executable files into a
+# USER's repository, and the falsifiers below are the whole of what stands
+# between that and a `db-drop` aimed at the wrong database. So the rows come in
+# three kinds and none of them can stand in for the others.
+#
+#   - The shipped file's own sentences, read POSITIONALLY out of the section that
+#     owns the rule, each with a deletion fixture that must be REJECTED.
+#   - Readers, executed rather than reviewed, with every clause proved
+#     load-bearing by dropping it and watching a case flip - the shape slices 2,
+#     3 and 4b each had to reach for once their subject stopped being a document.
+#   - A REAL fixture repository, created and removed by this section, written
+#     into for real, with the four files the skill may never touch digested
+#     before and after. No grep can see a file that was appended to, and no
+#     reader can see one either: the only thing that can is a hash of the bytes.
+GSEC=$(doc_section "$SHARED" 'offers to write one')
+gfx=$(mktemp -d)
+
+[ -n "$GSEC" ] || fail "shared-state.md has no '## ... offers to write one' section, so every generation row below reads an empty string"
+
+# sec_row is 4b's sentence reader and it is REUSED rather than copied. It already
+# asserts the TRANSITION - carried before the strip, absent after - which is the
+# false green slice 2 found in its own negatives and slice 4a found again in two
+# of its own; a second copy here is how one of the two stops asserting it and
+# nobody notices. Its scratch directory is a global that 4b removed, so it is
+# re-pointed at this section's own rather than re-declared.
+vfx=$gfx
+
+# --- Q5  the offer, and what it is never allowed to become -------------------
+sec_row "$GSEC" 'the generation rule' 'never a precondition' \
+    'the offer is never a precondition of anything'
+sec_row "$GSEC" 'the generation rule' 'default seeded copy' \
+    'a decline leaves the default seeded copy, which asks the repository for nothing'
+sec_row "$GSEC" 'the generation rule' 'no refusal is issued' \
+    'no refusal is issued for the missing target while the default path is available'
+
+# --- DS42  the family is THREE files, and the read is why -------------------
+sec_row "$GSEC" 'the generation rule' 'three files, not two' \
+    'the generated family is three files per store, not two'
+sec_row "$GSEC" 'the generation rule' 'refuses for want of a query|for want of a query' \
+    'a family of two leaves the copy verified by nothing, so the pair refuses after the bytes are copied'
+
+# ...and all three are named, as a SET rather than as three mentions. A section
+# naming a create and a drop and never the read is exactly the chain DS42 found
+# open, and three independent greps would read it as complete.
+gen_family=0
+for _f in create drop read; do
+    printf '%s\n' "$GSEC" | grep -qE "db-$_f-" && gen_family=$((gen_family + 1))
+done
+[ "$gen_family" -eq 3 ] \
+    && ok "the generated family names all three files: a create, a drop and a read" \
+    || fail "the generated family names $gen_family of its three files, and a family of two supplies rung 2 with nothing"
+
+# --- DS37  where the files go, and what the skill may never touch ------------
+sec_row "$GSEC" 'the generation rule' 'new executable files' \
+    'three new executable files only'
+sec_row "$GSEC" 'the generation rule' 'existing script directory' \
+    'they go under the repository.s existing script directory'
+sec_row "$GSEC" 'the generation rule' 'never a new convention' \
+    'never a new convention and never a directory this skill invents'
+sec_row "$GSEC" 'the generation rule' 'never appends to' \
+    'the skill never appends to a build file'
+sec_row "$GSEC" 'the generation rule' 'never edits a file it did not author' \
+    'the skill never edits a file it did not author'
+sec_row "$GSEC" 'the generation rule' 'never stages' \
+    'the skill never stages, never commits and never pushes'
+
+# The four build files are named as a SET too, and the set is read OUT OF THE
+# SHIPPED SENTENCE rather than copied here - the C1 pattern this file already
+# applies to the hash8 recipe, the name family and the re-parsing program list.
+# A checker carrying its own list cannot see the shipped one lose `package.json`.
+gen_never() {
+    printf '%s\n' "$GSEC" | awk '/never appends to/ {
+        s = $0
+        while (match(s, /`[A-Za-z][A-Za-z0-9.]*`/)) {
+            print substr(s, RSTART + 1, RLENGTH - 2)
+            s = substr(s, RSTART + RLENGTH)
+        }
+    }' | tr '\n' ' '
+}
+NEVER_APPEND=$(gen_never)
+# Membership and count, never a sorted string: `sort` is locale-collated, and
+# `Makefile justfile` orders one way under the C locale and the other under
+# en_US.UTF-8 - so an equality against a sorted list would pass on macOS and fail
+# on the minimal Linux image for a reason that has nothing to do with the rule.
+# The file already checks a set this way where it means a set: the five stand-ins
+# and the three rungs in the section above.
+na_missing=''
+for _na in Makefile Taskfile.yml justfile package.json; do
+    case " $NEVER_APPEND " in
+        *" $_na "*) : ;;
+        *)          na_missing="$na_missing $_na" ;;
+    esac
+done
+na_n=$(printf '%s\n' "$NEVER_APPEND" | tr ' ' '\n' | grep -c . || printf 0)
+if [ -z "$na_missing" ] && [ "$na_n" -eq 4 ]; then
+    ok "the never-append set comes out of the shipped sentence and is all four and only four: $NEVER_APPEND"
+else
+    fail "the shipped sentence names '$NEVER_APPEND' ($na_n token(s)), missing:${na_missing:- none}"
+fi
+
+# The two directory candidates, read out of the same sentence for the same
+# reason: the writer below places files where the SHIPPED FILE says to, so a
+# checker that supplied the directory itself could not see the rule go missing.
+gen_dirs() {
+    printf '%s\n' "$GSEC" | awk '/existing script directory/ {
+        s = $0
+        while (match(s, /`[a-z]+\/`/)) {
+            print substr(s, RSTART + 1, RLENGTH - 2)
+            s = substr(s, RSTART + RLENGTH)
+        }
+    }'
+}
+GEN_DIRS=$(gen_dirs | tr '\n' ' ')
+gd_missing=''
+for _gd in bin/ scripts/; do
+    case " $GEN_DIRS " in
+        *" $_gd "*) : ;;
+        *)          gd_missing="$gd_missing $_gd" ;;
+    esac
+done
+[ -z "$gd_missing" ] \
+    && ok "the placement rule names the two directories discovery may already have found: $GEN_DIRS" \
+    || fail "the placement rule names '$GEN_DIRS', missing:$gd_missing - so the writer below has no shipped directory to follow"
+
+# The three file names, read out of the shipped table. A rename in that table
+# moves the writer with it; a writer carrying its own names would go on writing
+# the old ones over a file that says something else.
+gen_names() {
+    printf '%s\n' "$GSEC" \
+        | awk -F'|' '/^\| *(create|drop|read) *\|/ { n = $3; gsub(/[ `]/, "", n); if (n != "") print n }'
+}
+GEN_NAMES=$(gen_names | tr '\n' ' ')
+[ "$GEN_NAMES" = 'db-create-<store> db-drop-<store> db-read-<store> ' ] \
+    && ok "the three file names come out of the shipped table: $GEN_NAMES" \
+    || fail "the shipped table yields '$GEN_NAMES', so the writer below has no name to write"
+
+# --- one home  the rule lives in shared-state.md and is not restated ---------
+# Slice 3's worst false green was a rule read anywhere in the tree while the file
+# that owned it did not exist. Position is the assertion, so the count is too.
+gen_homes=$(grep -rlF 'never appends to' "$SKILL"/references 2>/dev/null | wc -l | tr -d ' ')
+[ "$gen_homes" = 1 ] \
+    && ok "the generation rule has exactly one home in references/, and it is the file that owns the template contract" \
+    || fail "$gen_homes reference file(s) state the never-append rule; two texts with two outcomes is what overlay-reaping task 3.4 spent three amendments unwinding"
+
+# --- V62  falsifier 1: inferred until a run has OBSERVED all three -----------
+sec_row "$GSEC" 'the generation rule' 'until a run has observed' \
+    'a generated target is inferred until a run has observed its create, drop and read succeed'
+sec_row "$GSEC" 'the generation rule' 'timestamp and exit status' \
+    'each observation is an event carrying its timestamp and exit status'
+sec_row "$GSEC" 'the generation rule' 'the same author' \
+    'declared-on-write makes the claim and its evidence the same author'
+sec_row "$GSEC" 'the generation rule' 'inert until' \
+    'the teardown stays inert until a run has observed that target.s create succeed'
+sec_row "$GSEC" 'the generation rule' 'the command a human would run' \
+    'until then the run names the namespace and the command a human would run'
+
+# The gate itself, as a reader. It answers two things at once because they move
+# together and are wrong in different directions: what the record's confidence
+# may be, and whether the teardown may execute.
+#
+# THE NUMBER THREE COMES OUT OF THE SHIPPED TABLE, not out of this file. That is
+# the C1 repair applied here: a reader carrying its own `3` would go on demanding
+# three observations over a shipped table that had quietly gone back to DS37's
+# two, and the row asserting exactly that case would still be green. With nothing
+# shipped the count is 0, the reader stands down, and every case below is red -
+# which is what a checker that cannot supply the missing step looks like.
+GEN_REQUIRED=$(gen_names | awk 'END { print NR + 0 }')
+#
+# $4 drops a clause, so a clause is proved load-bearing by removing it from the
+# reader that actually runs rather than from a second copy of it. $5 overrides
+# the required count, and it exists for one negative: the shipped table losing a
+# row.
+gen_gate() {
+    awk -v c="${1:--}" -v d="${2:--}" -v r="${3:--}" -v drop="${4:-}" -v need="${5:-$GEN_REQUIRED}" '
+        BEGIN {
+            if (need + 0 < 1) { print "stand-down\tstand-down"; exit }
+            seen = (c == "0") + (d == "0") + (r == "0")
+            conf = (drop != "observed" && seen < need + 0) ? "inferred" : "declared"
+            tear = (drop != "inert" && c != "0")           ? "inert"    : "runnable"
+            print conf "\t" tear
+        }'
+}
+
+gate_case() {
+    _got=$(gen_gate "$1" "$2" "$3")
+    if [ "$_got" = "$(printf '%s\t%s' "$4" "$5")" ]; then
+        ok "$6"
+    else
+        fail "$6 - the gate answered '$(printf '%s' "$_got" | tr '\t' ' ')' rather than '$4 $5'"
+    fi
+}
+
+gate_case - - - inferred inert \
+    "rejected: a target written and never run - it is inferred, and its teardown may not execute"
+gate_case 0 - - inferred runnable \
+    "an observed create makes the teardown executable and leaves the record inferred, because two halves are not three"
+gate_case 0 0 - inferred runnable \
+    "rejected: DS37's original pair - a create and a drop observed, no read, so rung 2 has no source and the record stays inferred"
+gate_case 1 - - inferred inert \
+    "rejected: a create that ran and FAILED - an observation is not a success, and the teardown stays inert"
+gate_case 0 0 0 declared runnable \
+    "all three observed: the record is declared, which is the answer without which every refusal above is a reader that refuses everything"
+
+case $(gen_gate - - - observed) in
+    declared*) ok "rejected: the gate with its observation clause dropped calls an unrun target declared, so that clause is what refuses it" ;;
+    *)         fail "dropping the observation clause changed nothing, so it is not what refuses a target written and never run" ;;
+esac
+case $(gen_gate - - - inert) in
+    *runnable*) ok "rejected: the gate with its inert clause dropped lets a teardown run before any create was seen to succeed" ;;
+    *)          fail "dropping the inert clause changed nothing, so it is not what keeps an unproven teardown from executing" ;;
+esac
+
+# ...and the count really does come out of the table. Told to need two, the gate
+# calls DS37's original pair declared - which is the state DS42 corrected, and the
+# state a shipped table that lost its read row would put this reader back into.
+case $(gen_gate 0 0 - '' 2) in
+    declared*) ok "rejected: a required count of two, which calls a create-and-drop family declared - so the third row of the shipped table is what makes three the number" ;;
+    *)         fail "the gate answers the same at a required count of two, so it is not reading the shipped table at all" ;;
+esac
+
+# --- V63  falsifier 2: the approval is over the files as approved ------------
+sec_row "$GSEC" 'the generation rule' 'as the human approved them' \
+    'the approval is fingerprinted over the files as the human approved them'
+sec_row "$GSEC" 'the generation rule' "the skill's own included" \
+    'any later edit, the skill.s own included, drops the approval'
+sec_row "$GSEC" 'the generation rule' 'shown again' \
+    'the template is shown again before anything runs'
+sec_row "$GSEC" 'the generation rule' 'all three together' \
+    'the fingerprint covers all three files together'
+
+# --- 5.4  the store name comes from discovery and is never invented ----------
+sec_row "$GSEC" 'the generation rule' 'never invented' \
+    'the store name comes from the discovered backingStores key and is never invented'
+sec_row "$GSEC" 'the generation rule' 'no target is generated and no offer is made' \
+    'where discovery recorded no key, no target is generated and no offer is made'
+sec_row "$GSEC" 'the generation rule' 'shown in full' \
+    'the content is shown in full before anything is written'
+sec_row "$GSEC" 'the generation rule' 'explicit approval' \
+    'it is written only on explicit approval'
+
+# The naming reader. Three answers rather than two, because "no offer" and
+# "refused" are different outcomes and collapsing them is the defect: a run that
+# refused for want of a target would have broken the rule two rows above.
+#
+# The map the name has to come out of is read OUT OF THE SHIPPED SENTENCE, for
+# the same reason the count above is: a reader that names `backingStores` itself
+# would go on enforcing a source the shipped rule no longer names. Absent, it
+# stands down and every case below is red.
+GEN_KEY=$(printf '%s\n' "$GSEC" | awk '/never invented/ {
+    s = $0
+    while (match(s, /`[a-z][A-Za-z]+`/)) {
+        print substr(s, RSTART + 1, RLENGTH - 2)
+        s = substr(s, RSTART + RLENGTH)
+    }
+}' | awk 'NR == 1')
+gen_name() {
+    awk -v keys="$1" -v want="$2" -v drop="${3:-}" -v src="$GEN_KEY" '
+        BEGIN {
+            if (src == "") { print "stand-down\tthe shipped rule names no map for the store name to come out of"; exit }
+            if (keys == "") { print "no-offer\tdiscovery recorded no store key, so the name would have to be invented"; exit }
+            n = split(keys, k, " ")
+            for (i = 1; i <= n; i++) if (k[i] == want) { print "offer\t" want; exit }
+            if (drop == "discovered") { print "offer\t" want; exit }
+            print "refused\t" want " is not a discovered " src " key"
+        }'
+}
+
+[ -n "$GEN_KEY" ] \
+    && ok "the map a generated store name must come out of is read from the shipped rule: $GEN_KEY" \
+    || fail "the shipped rule names no map for the store name, so the four naming rows below have no source to hold a name to"
+
+name_case() {
+    _got=$(gen_name "$1" "$2")
+    case $_got in
+        "$3"*) ok "$4" ;;
+        *)     fail "$4 - the reader answered '$(printf '%s' "$_got" | tr '\t' ' ')'" ;;
+    esac
+}
+
+name_case 'postgres kafka' postgres offer \
+    "a target is offered for a store discovery recorded a key for"
+name_case 'postgres kafka' catalog refused \
+    "rejected: a store name inferred from the service name catalog-api rather than taken from a discovered key"
+name_case 'events' postgres refused \
+    "rejected: a store name defaulted from a substrate this repository does not run"
+name_case '' postgres no-offer \
+    "rejected: discovery recorded no key, so no target is generated and no offer is made"
+
+# The no-offer answer must NOT be a refusal, which is the whole of constraint 3 -
+# and it is asserted as the POSITIVE answer rather than as "anything but a
+# refusal". Measured in the red run: with the reader standing down, `stand-down`
+# is not a refusal either, so the row printed ok over a reader that had answered
+# nothing at all. "Not X" is satisfied by silence; only "is Y" is not.
+case $(gen_name '' postgres) in
+    no-offer*) ok "an absent store key produces no offer and no refusal - the default seeded copy still resolves the pair" ;;
+    refuse*)   fail "an absent store key produced a REFUSAL, which is a pair refused for want of a target while the seeded copy was available" ;;
+    *)         fail "an absent store key produced '$(gen_name '' postgres | tr '\t' ' ')', which is neither the offer being withheld nor a refusal" ;;
+esac
+
+case $(gen_name 'postgres kafka' catalog discovered) in
+    offer*) ok "rejected: the naming reader with its discovered-key clause dropped admits an invented name, so that clause is what refuses one" ;;
+    *)      fail "dropping the discovered-key clause changed nothing, so it is not what keeps an invented store name out" ;;
+esac
+
+# --- V63  the generated drop is held to the destructive-verb class -----------
+sec_row "$GSEC" 'the generation rule' 'no exemption' \
+    'no rule is relaxed on the ground that this skill authored the file'
+sec_row "$GSEC" 'the generation rule' 'before it is shown' \
+    'the destructive-verb class is applied to the drop before it is shown'
+sec_row "$GSEC" 'the generation rule' 'one program with arguments' \
+    'each recorded command invokes one program with arguments'
+
+# The reader, and BOTH of its clauses come out of shipped files rather than out
+# of this one. $DENY is the re-parsing program list slice 4b takes out of
+# shared-state.md's template contract, so deleting a member from that row breaks
+# these rows too. $GEN_FAMILY is the set of names a generated drop may remove,
+# read out of the generation rule's own sentence: a reader carrying its own two
+# placeholders would go on accepting them over a shipped rule that had named a
+# third, or none, and the red run would not have been able to tell.
+GEN_FAMILY=$(printf '%s\n' "$GSEC" | awk '/may remove only/ {
+    s = $0
+    while (match(s, /`\{\{[A-Za-z]+\}\}`/)) {
+        print substr(s, RSTART + 1, RLENGTH - 2)
+        s = substr(s, RSTART + RLENGTH)
+    }
+}' | tr '\n' ' ')
+gf_missing=''
+for _gf in '{{isolationIdent}}' '{{isolationLabel}}'; do
+    case " $GEN_FAMILY " in
+        *" $_gf "*) : ;;
+        *)          gf_missing="$gf_missing $_gf" ;;
+    esac
+done
+gf_n=$(printf '%s\n' "$GEN_FAMILY" | tr ' ' '\n' | grep -c . || printf 0)
+if [ -z "$gf_missing" ] && [ "$gf_n" -eq 2 ]; then
+    ok "the names a generated drop may remove come out of the shipped rule, and they are exactly the two members of the name family: $GEN_FAMILY"
+else
+    fail "the shipped rule names '$GEN_FAMILY' as what a generated drop may remove, so the drop rows below have no family to hold one to"
+fi
+
+gen_drop_ok() {
+    awk -v cmd="$1" -v deny="$2" -v drop="${3:-}" -v family="$GEN_FAMILY" '
+        BEGIN {
+            if (family == "") { print "stand-down\tthe shipped rule names no name family, so nothing here can judge a drop"; exit }
+            n = split(cmd, w, " ")
+            prog = w[1]
+            sub(/^.*\//, "", prog)
+            if (drop != "reparse") {
+                split(deny, d, " ")
+                for (i in d) if (d[i] != "" && prog == d[i]) {
+                    print "rejected\tthe recorded command is " prog ", which re-parses its argument"
+                    exit
+                }
+            }
+            if (drop != "family") {
+                for (i = 2; i <= n; i++) {
+                    if (w[i] ~ /^-/) continue
+                    if (index(" " family, " " w[i] " ") == 0) {
+                        print "rejected\tthe drop removes " w[i] ", which is not a name the family generated"
+                        exit
+                    }
+                }
+            }
+            print "accepted\t" cmd
+        }'
+}
+
+drop_case() {
+    _got=$(gen_drop_ok "$1" "$DENY")
+    case $_got in
+        "$2"*) ok "$3" ;;
+        *)     fail "$3 - the reader answered '$(printf '%s' "$_got" | tr '\t' ' ')'" ;;
+    esac
+}
+
+drop_case 'bin/db-drop-postgres {{isolationIdent}}' accepted \
+    "a generated drop that removes the name the family generated is accepted, which is the answer the four refusals below need to mean anything"
+drop_case 'bin/db-drop-postgres app' rejected \
+    "rejected: a generated drop aimed at a literal name, which is not derived from the name family"
+drop_case 'bin/db-drop-postgres {{store}}' rejected \
+    "rejected: a generated drop aimed at {{store}} - a member of the closed set, and the base stack's own namespace"
+# The shell form is asserted by the REASON it was refused, not merely by being
+# refused. Measured while writing this: `sh -c bin/db-drop-postgres
+# {{isolationIdent}}` is refused by the name-family clause too, because
+# `bin/db-drop-postgres` is an argument that is not a family member - so a row
+# reading only `rejected` would have reported the re-parse rule enforced by a
+# rule that has nothing to do with it. That is the overlay-reaping W4/C3/A10
+# shape, and it was in this section's own negative before it shipped.
+gen_drop_ok 'sh -c bin/db-drop-postgres {{isolationIdent}}' "$DENY" \
+    | grep -q 're-parses its argument' \
+    && ok "rejected: a generated drop wrapped in a shell, refused by the re-parse rule and naming it - no exemption for being the skill's own" \
+    || fail "the shell-wrapped drop was not refused by the re-parse rule: '$(gen_drop_ok 'sh -c bin/db-drop-postgres {{isolationIdent}}' "$DENY" | tr '\t' ' ')'"
+
+case $(gen_drop_ok 'bin/db-drop-postgres app' "$DENY" family) in
+    accepted*) ok "rejected: the drop reader with its name-family clause dropped admits a literal target, so that clause is what refuses one" ;;
+    *)         fail "dropping the name-family clause changed nothing, so it is not what refuses a drop aimed off the family" ;;
+esac
+
+# The deny-list falsifier uses a command ONLY the deny list can refuse - every
+# argument of it is a family member - so an empty list has nothing else to hide
+# behind. With the shipped list it is refused; without it, accepted.
+case $(gen_drop_ok 'sh -c {{isolationIdent}}' "$DENY") in
+    rejected*) ok "a drop whose only defect is its program is refused while the shipped deny list is in force" ;;
+    *)         fail "the deny-list fixture is not refused even with the shipped list, so the falsifier below exercises nothing" ;;
+esac
+case $(gen_drop_ok 'sh -c {{isolationIdent}}' '') in
+    accepted*) ok "rejected: the drop reader with an empty deny list admits the sh -c form, so the list out of shared-state.md is what refuses it" ;;
+    *)         fail "an empty deny list changed nothing, so the shared-state.md list is not what refuses a re-parsing program here" ;;
+esac
+
+# --- V50 generation half  the generated read is held to the discriminator ----
+sec_row "$GSEC" 'the generation rule' 'SELECT 1' \
+    'a generated SELECT 1 fails the discriminator exactly as pg_isready does'
+sec_row "$GSEC" 'the generation rule' 'counts what an instance carries|counts what the instance' \
+    'what is generated counts what an instance carries rather than naming a table the repository owns'
+sec_row "$GSEC" 'the generation rule' 'answers zero' \
+    'an empty instance answers zero and a seeded one does not'
+sec_row "$GSEC" 'the generation rule' 'one route' \
+    'all three issues of the generated read go through one route'
+sec_row "$GSEC" 'the generation rule' 'on the host' \
+    'the generated read is issued on the host, because it is a file in the repository rather than a program in the image'
+
+# The admission reader, and the only thing it adds to 4b's readback is the door
+# the skill could have let itself through. $6 opens that door, so "no exemption"
+# is proved by watching the exemption admit something the shipped path refuses.
+gen_admit() {
+    if [ "${6:-}" = exemption ] && [ "$5" = generated ]; then
+        printf 'isolated\tadmitted because the skill wrote it\n'
+        return
+    fi
+    readback "$1" "$2" "$3" "$4"
+}
+
+admit_case() {
+    _got=$(gen_admit "$1" "$2" "$3" "$4" "$5")
+    case $_got in
+        "$6"*) ok "$7" ;;
+        *)     fail "$7 - the reader answered '${_got%%	*}'" ;;
+    esac
+}
+
+# The mechanism these rows exercise is 4b's readback, which exists whatever this
+# slice ships - so with no shipped rule pointing the generated read at it they
+# would all be green over a tree that holds the read to nothing. They run only
+# where the shipped rule names the discriminator it holds the read to. This is
+# the boundary 4b recorded in its own words and it is recorded here too rather
+# than papered over: what these rows prove is that the mechanism refuses what it
+# should; what makes it the GENERATED read's mechanism is the sentence.
+GEN_HELD=$(printf '%s\n' "$GSEC" | grep -ciE 'held to .*discriminator' || printf 0)
+if [ "$GEN_HELD" -ge 1 ]; then
+    admit_case '3' '0' '3' yes generated isolated \
+        "a generated read that counts what the instance carries discriminates, and the copy answering the base store's answer is isolated"
+    admit_case '1' '1' '1' yes generated refuse \
+        "rejected as a query: a generated SELECT 1, refused exactly as pg_isready is and for the same measured reason"
+
+    # ...and the two origins reach the SAME verdict on the same outputs, which is
+    # what "no exemption" means once it stops being a sentence.
+    if [ "$(gen_admit '1' '1' '1' yes generated)" = "$(gen_admit '1' '1' '1' yes harvested)" ]; then
+        ok "a generated candidate and a harvested one reach the same verdict on the same three outputs - the reader knows no origin"
+    else
+        fail "the reader answers differently for a generated candidate than for a harvested one, which is an exemption by another name"
+    fi
+
+    case $(gen_admit '1' '1' '1' yes generated exemption) in
+        isolated*) ok "rejected: an admission path that admits a generated read because the skill wrote it, which is declared-on-write reaching through the verification door" ;;
+        *)         fail "the exemption fixture changed nothing, so the row cannot see a candidate admitted on its authorship" ;;
+    esac
+else
+    fail "the shipped rule does not hold the generated read to the discriminator, so the admission rows would certify a mechanism nothing points the generated read at"
+fi
+
+# --- DS37  written into a REAL repository, and the four files digested -------
+# Everything above reads a rule or runs a reader over values. This block obtains
+# the values by writing into a repository that is not this one - which is the
+# hazard class this slice introduces and the only one no grep and no reader can
+# reach. The repository is created here, mutated here, and removed here, and the
+# removal is asserted rather than assumed.
+grepo=$gfx/fixture-repo
+mkdir -p "$grepo/bin"
+printf '#!/bin/sh\necho existing\n' > "$grepo/bin/existing-thing"
+chmod +x "$grepo/bin/existing-thing"
+printf 'db-create:\n\t@echo the developer wrote this\n' > "$grepo/Makefile"
+printf 'version: "3"\ntasks:\n  build:\n    cmds: [make]\n' > "$grepo/Taskfile.yml"
+printf 'build:\n    make\n' > "$grepo/justfile"
+printf '{ "name": "fixture", "scripts": { "build": "make" } }\n' > "$grepo/package.json"
+(
+    cd "$grepo" \
+    && git init -q . \
+    && git add -A \
+    && fixture_commit -q -m fixture
+) >/dev/null 2>&1
+
+grepo_head=$( cd "$grepo" && git rev-parse HEAD 2>/dev/null )
+whole_object_id "$grepo_head" \
+    && ok "the fixture repository exists and carries one commit the developer made, so an edit to it is visible as an edit" \
+    || fail "the fixture repository would not initialise, so every placement row below proves nothing"
+
+# The digest of every file the skill may never touch, before it writes anything.
+untouchable_digest() {
+    for _u in $NEVER_APPEND; do
+        printf '%s:' "$_u"
+        git hash-object "$grepo/$_u" 2>/dev/null || printf 'absent'
+        printf ' '
+    done
+}
+untouched_before=$(untouchable_digest)
+untouched_n=$(printf '%s\n' "$NEVER_APPEND" | tr ' ' '\n' | grep -c .)
+#
+# THE PREMISE, not the assertion. Measured in this section's own red run: with
+# nothing shipped, $NEVER_APPEND was EMPTY, so this loop digested no file at all,
+# the `*absent*` case never matched, and the row printed `ok` over zero files -
+# after which the byte-identity row compared '' against '' and vouched for four
+# files it had never read. That is the third `'' = ''` in this file, and the
+# repair is the same one the probe byte-identity row carries: gate on the
+# MECHANISM having something to say, not on the input looking plausible.
+if [ "$untouched_n" -ne 4 ]; then
+    fail "the never-append set names $untouched_n file(s), not four, so the byte-identity row below would compare two empty strings"
+elif [ "${untouched_before#*absent}" != "$untouched_before" ]; then
+    fail "one of the four untouchable files is missing from the fixture, so the byte-identity row below cannot fail: $untouched_before"
+else
+    ok "all four files the skill may never touch are present in the fixture and digested before it writes: $NEVER_APPEND"
+fi
+
+# The writer follows the SHIPPED rules - directory, names and never-append list
+# all read out of the file above. $3 selects one defect, and every defect is a
+# negative below rather than a hypothetical.
+gen_write() {
+    _repo=$1; _store=$2; _mode=${3:-}; _inst=${4:-}
+    _dir=$(gen_dirs | awk 'NR == 1')
+    if [ -z "$_dir" ] || [ ! -d "$_repo/$_dir" ]; then
+        printf 'no-directory\n'
+        return
+    fi
+    [ "$_mode" = newdir ] && _dir=tools/
+    mkdir -p "$_repo/$_dir"
+    for _n in $(gen_names); do
+        _file=$(printf '%s' "$_n" | awk -v s="$_store" '{ gsub(/<store>/, s); print }')
+        case $_n in
+            *create*) _body="docker exec \"\$INST\" sh -c \"mkdir -p /data/\$1\"" ;;
+            *drop*)   _body="docker exec \"\$INST\" sh -c \"rm -rf /data/\$1\"" ;;
+            *)        _body="docker exec \"\$1\" sh -c 'find /data -mindepth 1 -maxdepth 1 | wc -l'" ;;
+        esac
+        {
+            printf '#!/bin/sh\n'
+            printf '# Written by stackgraft for the %s store, and approved before it was written.\n' "$_store"
+            printf 'set -eu\n'
+            printf 'INST=%s\n' "${_inst:-none}"
+            printf '%s\n' "$_body"
+        } > "$_repo/$_dir$_file"
+        chmod +x "$_repo/$_dir$_file"
+    done
+    if [ "$_mode" = append ]; then
+        printf 'db-create-%s:\n\t@bin/db-create-%s $(NS)\n' "$_store" "$_store" >> "$_repo/Makefile"
+    fi
+    if [ "$_mode" = clobber ]; then
+        printf '#!/bin/sh\necho clobbered\n' > "$_repo/$_dir"existing-thing
+    fi
+    if [ "$_mode" = stage ]; then
+        ( cd "$_repo" && git add -A ) >/dev/null 2>&1
+    fi
+    printf '%s\n' "$_dir"
+}
+
+gen_dir_used=$(gen_write "$grepo" fixturestore)
+gen_written=$( cd "$grepo" && git status --porcelain 2>/dev/null | awk '$1 == "??" { print $2 }' | sort | tr '\n' ' ' )
+
+# ONE premise for the whole block, and it is a premise rather than a row: a write
+# that never happened satisfies every "nothing else changed" assertion below
+# perfectly. In this section's red run all four of them printed `ok` over a
+# repository nothing had been written into - four checks certifying restraint
+# that had never been exercised. So the rows below run only where three files
+# really landed, and where they did not the block says so once.
+gen_wrote=0
+[ "$gen_written" = 'bin/db-create-fixturestore bin/db-drop-fixturestore bin/db-read-fixturestore ' ] && gen_wrote=1
+
+if [ "$gen_wrote" -eq 1 ]; then
+    ok "exactly three new paths, all under the discovered directory: $gen_written"
+else
+    fail "the writer left '$gen_written' rather than the three files the shipped table names, so every row below would assert restraint over a write that never happened"
+fi
+
+[ "$gen_dir_used" = 'bin/' ] \
+    && ok "the three files land in the script directory the repository already had, not in one this skill invented: $gen_dir_used" \
+    || fail "the writer placed the family in '$gen_dir_used' rather than the repository's existing bin/"
+
+if [ "$gen_wrote" -eq 1 ]; then
+    gen_notx=0
+    for _p in db-create-fixturestore db-drop-fixturestore db-read-fixturestore; do
+        [ -x "$grepo/bin/$_p" ] || gen_notx=$((gen_notx + 1))
+        head -1 "$grepo/bin/$_p" | grep -q '^#!/bin/sh$' || gen_notx=$((gen_notx + 1))
+    done
+    [ "$gen_notx" -eq 0 ] \
+        && ok "all three generated files are executable and carry a shebang, so each is a target rung 1 can discover and the repository can run" \
+        || fail "$gen_notx of the six executable-and-shebang properties are missing from the generated family"
+
+    # THE row this whole block exists for: the four files the skill may never
+    # touch are byte-identical afterwards. An appended Makefile recipe is
+    # invisible to every grep and every reader in this file; only the hash sees it.
+    [ "$(untouchable_digest)" = "$untouched_before" ] \
+        && ok "Makefile, Taskfile.yml, justfile and package.json are byte-identical after the write - the skill edited no file it did not author" \
+        || fail "a file the skill may never touch changed: before '$untouched_before' after '$(untouchable_digest)'"
+
+    # ...and the pre-existing file in the SAME directory is untouched too, which
+    # is the case the four build files do not cover: a name collision inside the
+    # one directory the skill is allowed to write into.
+    [ "$(git hash-object "$grepo/bin/existing-thing")" = "$(cd "$grepo" && git rev-parse HEAD:bin/existing-thing)" ] \
+        && ok "the file that was already in bin/ is byte-identical too - never edits a file it did not author is not scoped to build files" \
+        || fail "the writer changed a file that was already in the directory it wrote into"
+
+    # Nothing staged, nothing committed, nothing pushed.
+    gen_staged=$( cd "$grepo" && git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ' )
+    gen_head_after=$( cd "$grepo" && git rev-parse HEAD 2>/dev/null )
+    if [ "$gen_staged" -eq 0 ] && [ "$gen_head_after" = "$grepo_head" ]; then
+        ok "the skill staged nothing and committed nothing - the files are untracked in the working tree and the human's pull request is the review"
+    else
+        fail "the write left $gen_staged path(s) staged and HEAD at '$gen_head_after' against '$grepo_head'"
+    fi
+else
+    printf '  skip  the restraint rows (nothing was written, so nothing they assert was exercised)\n'
+fi
+
+# --- the four negatives, each against its OWN copy of the repository ---------
+gen_copy() {
+    rm -rf "$gfx/neg"
+    cp -R "$grepo" "$gfx/neg"
+    rm -rf "$gfx/neg/bin/db-create-fixturestore" "$gfx/neg/bin/db-drop-fixturestore" "$gfx/neg/bin/db-read-fixturestore"
+}
+
+gen_copy
+gen_write "$gfx/neg" fixturestore append >/dev/null
+neg_digest=$(for _u in $NEVER_APPEND; do printf '%s:' "$_u"; git hash-object "$gfx/neg/$_u" 2>/dev/null || printf 'absent'; printf ' '; done)
+[ "$neg_digest" != "$untouched_before" ] \
+    && ok "rejected: a writer that appends its target to the Makefile - the digest moved, which is the only thing that could have seen it" \
+    || fail "the byte-identity row cannot see a Makefile that was appended to, so it was never checking one"
+
+gen_copy
+neg_dir=$(gen_write "$gfx/neg" fixturestore newdir)
+[ "$neg_dir" != "$gen_dir_used" ] && [ -d "$gfx/neg/tools" ] \
+    && ok "rejected: a writer that invents a tools/ directory although the repository already has bin/ - never a new convention" \
+    || fail "the placement row cannot see a family written outside the discovered directory ('$neg_dir')"
+
+gen_copy
+gen_write "$gfx/neg" fixturestore clobber >/dev/null
+[ "$(git hash-object "$gfx/neg/bin/existing-thing")" != "$(git hash-object "$grepo/bin/existing-thing")" ] \
+    && ok "rejected: a writer that overwrites a file already in the directory it may write into" \
+    || fail "the never-edit row cannot see an existing file overwritten"
+
+gen_copy
+gen_write "$gfx/neg" fixturestore stage >/dev/null
+neg_staged=$( cd "$gfx/neg" && git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ' )
+[ "$neg_staged" -ge 1 ] \
+    && ok "rejected: a run that staged what it wrote, which puts the skill's authorship inside a commit nobody read" \
+    || fail "the commit-state row cannot see a staged path, so it was never checking one"
+rm -rf "$gfx/neg"
+
+# --- V63  the approval fingerprint, over the family, for real ----------------
+# Real files, the shipped fingerprint script, one value. The negative that
+# matters is the last one: a value taken over the create alone does not move when
+# the read is edited, which is why the approval covers all three.
+fam_fp() {
+    sh "$SKILL/scripts/fingerprint.sh" \
+        "$1/bin/db-create-fixturestore" "$1/bin/db-drop-fixturestore" "$1/bin/db-read-fixturestore" \
+        | git hash-object --stdin
+}
+one_fp() { sh "$SKILL/scripts/fingerprint.sh" "$1/bin/db-create-fixturestore" | git hash-object --stdin; }
+
+# Restores a file to what it was before a fixture edit, unconditionally. The
+# `grep -v … && mv` shape this replaces is a trap on exactly the input this
+# section had in its red run: over a file whose ONLY line is the fixture line,
+# grep selects nothing and exits 1, so the mv never runs and the "revert" leaves
+# the edit in place - after which the row that proves the edits were measured
+# rather than the reverts fails for a reason that is about the harness.
+gen_revert() {
+    grep -vxF "$2" "$1" > "$gfx/restore" || :
+    mv "$gfx/restore" "$1"
+    chmod +x "$1"
+}
+
+# The premise, and it is the one the red run went straight past: fingerprint.sh
+# emits `-` for a path it could not hash, so three MISSING files digest to three
+# dashes and hash to a perfectly well-formed object id. Every row below then
+# compares two real hashes of two real absences, and appending to a file that is
+# not there CREATES it, so the edits "moved" the value and the block passed over
+# a family that did not exist. whole_object_id is necessary and not sufficient
+# here; what makes it sufficient is that no leg came back `-`.
+fam_legs=$(sh "$SKILL/scripts/fingerprint.sh" \
+    "$grepo/bin/db-create-fixturestore" "$grepo/bin/db-drop-fixturestore" "$grepo/bin/db-read-fixturestore" \
+    | awk '{ print $1 }' | tr '\n' ' ')
+fam_undigested=$(printf '%s\n' "$fam_legs" | tr ' ' '\n' | grep -cxF -- '-')
+fam0=$(fam_fp "$grepo")
+
+if [ "$fam_undigested" -ne 0 ] || ! whole_object_id "$fam0"; then
+    fail "the approval fingerprint reads $fam_undigested undigestable leg(s) and hashed to '${fam0:-nothing}' - a family that is not there digests to three dashes and hashes to a valid id, so every row below would compare two absences"
+else
+    ok "the approval fingerprint over the three approved files digests every leg and is a whole object id, so the comparisons below are between two values rather than two absences"
+
+    for _edit in create drop read; do
+        printf '# edited after approval\n' >> "$grepo/bin/db-$_edit-fixturestore"
+        if [ "$(fam_fp "$grepo")" != "$fam0" ]; then
+            ok "rejected: the family edited at its $_edit after approval - the fingerprint moved, so the approval is dropped and the template is shown again"
+        else
+            fail "editing the generated $_edit left the approval fingerprint where it was, so an edited file keeps a consent nobody gave for it"
+        fi
+        gen_revert "$grepo/bin/db-$_edit-fixturestore" '# edited after approval'
+    done
+    [ "$(fam_fp "$grepo")" = "$fam0" ] \
+        && ok "the fingerprint returns to its approved value once every edit is reverted, so the three rows above measured the edits and not the reverts" \
+        || fail "the family fingerprint did not return to '$fam0' after the edits were reverted, so those rows were measuring something else"
+
+    # The skill's OWN later edit is the same event and is asserted as one,
+    # because it is the one a reader would assume is exempt.
+    printf '# regenerated by stackgraft\n' >> "$grepo/bin/db-read-fixturestore"
+    [ "$(fam_fp "$grepo")" != "$fam0" ] \
+        && ok "rejected: the SKILL's own later edit to an approved file - it drops the approval exactly as the developer's would" \
+        || fail "an edit written by the skill itself left the approval standing"
+    gen_revert "$grepo/bin/db-read-fixturestore" '# regenerated by stackgraft'
+
+    # And why it is taken over all three: a per-file value leaves the other two
+    # editable under a surviving consent.
+    one0=$(one_fp "$grepo")
+    printf '# edited after approval\n' >> "$grepo/bin/db-read-fixturestore"
+    if [ "$(one_fp "$grepo")" = "$one0" ] && [ "$(fam_fp "$grepo")" != "$fam0" ]; then
+        ok "rejected: an approval taken over the create alone, which does not move when the read is edited - two of the three files stay editable under it"
+    else
+        fail "the per-file fixture proves nothing: create-only gave '$(one_fp "$grepo")' against '$one0'"
+    fi
+    gen_revert "$grepo/bin/db-read-fixturestore" '# edited after approval'
+fi
+
+# --- the generated read RUN for real: skipped loudly, never quietly passed ---
+# The rows above run a reader over values. These obtain the values: a real store,
+# a real copy, a real empty instance, and the generated file issued against all
+# three from the host, which is the route a rung-2 candidate takes.
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 \
+   && [ -f "$PROVIDER" ]; then
+    GH=deadbe05
+    gwt=$(mktemp -d)
+    gsrc=sg-gen-base
+    gimg=alpine/git
+
+    g_inventory() {
+        docker volume ls --quiet --filter "label=stackgraft.repo=$GH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter "label=stackgraft.repo=$GH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker volume ls --quiet --filter name=sg-gen 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter name=sg-gen 2>/dev/null | sort | tr '\n' ' '
+    }
+    g_before=$(g_inventory)
+    [ "$g_before" = '|||' ] \
+        && ok "the runtime holds no object of this section's before it runs, so its inventory rows read only what it made" \
+        || fail "the runtime already holds one of this section's objects, so its inventory rows cannot be trusted: $g_before"
+
+    docker volume create "$gsrc" >/dev/null 2>&1
+    docker run --rm --entrypoint sh -v "$gsrc":/data "$gimg" \
+        -c 'mkdir -p /data/one /data/two /data/three' >/dev/null 2>&1
+    gbase=$(docker run -d --name sg-gen-base-instance --entrypoint sh -v "$gsrc":/data "$gimg" \
+        -c 'sleep 900' 2>/dev/null)
+
+    if [ -z "$gbase" ]; then
+        fail "the fixture base store would not start, so no generated-read row proved anything"
+    else
+        # The family is regenerated with the discovered base instance in it, the
+        # way the skill writes it from what discovery resolved.
+        gen_write "$grepo" fixturestore '' "$gbase" >/dev/null
+
+        gout=$( sh "$ROOT/$PROVIDER" provision "$GH" "$gwt" fixturestore "$gsrc" "$gimg" "$gbase" \
+                    "stackgraft.labels=1" "stackgraft.repo=$GH" "stackgraft.worktree=$gwt" 2>&1 )
+        grc=$?
+        gcopy=$(printf '%s\n' "$gout" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+        gprobe=$(docker run -d --rm --entrypoint sh \
+            --label "stackgraft.repo=$GH" --label "stackgraft.worktree=$gwt" \
+            --label "stackgraft.probe=fixturestore" \
+            --name sg-gen-probe "$gimg" -c 'sleep 300' 2>/dev/null)
+
+        if [ "$grc" -ne 0 ] || [ -z "$gcopy" ] || [ -z "$gprobe" ]; then
+            fail "the generated-read fixture could not obtain a copy (exit $grc, instance '$gcopy') or an empty instance, so its rows prove nothing"
+        else
+            # ONE route: the same generated file, on the host, given each of the
+            # three instances in turn.
+            READ="$grepo/bin/db-read-fixturestore"
+            g_base_out=$( sh "$READ" "$gbase" 2>/dev/null )
+            g_empty_out=$( sh "$READ" "$gprobe" 2>/dev/null )
+            g_copy_out=$( sh "$READ" "$gcopy" 2>/dev/null )
+
+            case $(gen_admit "$g_base_out" "$g_empty_out" "$g_copy_out" yes generated) in
+                isolated*) ok "the generated read discriminates for real: base '$g_base_out', empty instance '$g_empty_out', copy '$g_copy_out' - it counts what the instance carries" ;;
+                *)         fail "the generated read did not clear: base '$g_base_out' empty '$g_empty_out' copy '$g_copy_out'" ;;
+            esac
+            [ -n "$g_base_out" ] && [ "$g_base_out" != "$g_empty_out" ] \
+                && ok "the empty instance really answers differently, so the discrimination is measured rather than assumed" \
+                || fail "the generated read answered '$g_base_out' on the base store and '$g_empty_out' on an empty instance, so it discriminates nothing"
+
+            # ...and the shape DS42 names by name, generated and measured: a read
+            # whose answer does not depend on what the instance holds.
+            printf '#!/bin/sh\nset -eu\ndocker exec "$1" sh -c "printf 1"\n' > "$gfx/db-read-constant"
+            chmod +x "$gfx/db-read-constant"
+            c_base=$( sh "$gfx/db-read-constant" "$gbase" 2>/dev/null )
+            c_empty=$( sh "$gfx/db-read-constant" "$gprobe" 2>/dev/null )
+            c_copy=$( sh "$gfx/db-read-constant" "$gcopy" 2>/dev/null )
+            case $(gen_admit "$c_base" "$c_empty" "$c_copy" yes generated) in
+                refuse*) ok "rejected as a query: a generated read measured answering '$c_empty' on an empty instance and on the base store alike - the SELECT 1 shape, refused" ;;
+                *)       fail "a constant generated read cleared the discriminator: base '$c_base' empty '$c_empty'" ;;
+            esac
+
+            # V62's observation, obtained rather than asserted: the create, the
+            # drop and the read are RUN against the discovered store and their
+            # exit statuses are what the gate reads.
+            #
+            # Each exit is bracketed by a POSITIVE CONTROL, and that is the
+            # repair this block needed. Measured in this section's red run: three
+            # files whose whole content was a comment ran, exited 0, and the gate
+            # read three successes - after which "the drop removed the namespace"
+            # passed because the create had never made one. An exit status is
+            # evidence only where the effect it claims can be seen, so the
+            # namespace is looked for after the create and looked for again after
+            # the drop.
+            NS=sg_fixture_deadbe05
+            docker exec "$gbase" test -e "/data/$NS" >/dev/null 2>&1 \
+                && fail "the namespace the create is about to make is already there, so its effect cannot be told from the fixture's" \
+                || ok "the namespace the observed create will make is absent before it runs, so its effect is attributable to it"
+
+            sh "$grepo/bin/db-create-fixturestore" "$NS" >/dev/null 2>&1
+            obs_create=$?
+            obs_made=0
+            if docker exec "$gbase" test -d "/data/$NS" >/dev/null 2>&1; then
+                obs_made=1
+                ok "the observed create exited $obs_create and the namespace it claims to have made is there - the exit status is evidence rather than a number"
+            else
+                fail "the observed create exited $obs_create having made nothing, so its exit status is a number about a command that did not act"
+            fi
+
+            sh "$READ" "$gbase" >/dev/null 2>&1
+            obs_read=$?
+
+            sh "$grepo/bin/db-drop-fixturestore" "$NS" >/dev/null 2>&1
+            obs_drop=$?
+            # Conditional on the create having ACTED, because absence after a
+            # drop is equally satisfied by a namespace that was never there -
+            # which is exactly what this row reported in the red run.
+            if [ "$obs_made" -eq 0 ]; then
+                printf '  skip  the observed drop (the create made no namespace, so a removal cannot be told from an absence)\n'
+            elif docker exec "$gbase" test -e "/data/$NS" >/dev/null 2>&1; then
+                fail "the observed drop exited $obs_drop and the namespace it was meant to remove is still there"
+            else
+                ok "the observed drop removed the namespace the observed create made, so both exit statuses are evidence"
+            fi
+
+            gate_case "$obs_create" "$obs_drop" "$obs_read" declared runnable \
+                "three observed exits against the discovered store raise the generated target from inferred to declared: create $obs_create, drop $obs_drop, read $obs_read"
+
+            docker stop -t 1 "$gprobe" >/dev/null 2>&1
+        fi
+
+        sh "$ROOT/$PROVIDER" destroy "$GH" "$gwt" fixturestore >/dev/null 2>&1
+    fi
+
+    gbase_anon=$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$gbase" 2>/dev/null | grep -vxF "$gsrc" | grep . || printf '')
+
+    # Teardown by NAME and unconditionally, containers before volumes, and it is
+    # written this way for a measured reason rather than for symmetry.
+    #
+    # A container that HOLDS a volume makes that volume unremovable: `docker
+    # volume rm` answers "volume is in use" and exits non-zero, so a teardown
+    # that removes the volume first leaves BOTH behind. That state is reachable
+    # here without any failure of this section's own - a run killed between a
+    # container being created and its removal leaves it holding the volume, and a
+    # container in `Created` holds one exactly as a running one does. It was
+    # reached for real while this slice was being written: an interrupted run
+    # left the provider section's `docker create` fixture behind, its volume
+    # survived the naive removal, and the next run's inventory rows correctly
+    # refused to trust themselves with a foreign object present.
+    #
+    # By name rather than by variable for the other half of it: where `docker run
+    # -d` fails after the runtime has already registered the name, the variable
+    # is EMPTY and `docker rm -f -v ""` removes nothing, while a container is
+    # sitting there under a name this section chose. The names are this section's
+    # own, so removing them is removing only what it created.
+    for _gc in sg-gen-probe sg-gen-base-instance "$gbase"; do
+        [ -n "$_gc" ] && docker rm -f -v "$_gc" >/dev/null 2>&1
+    done
+    docker volume rm "$gsrc" >/dev/null 2>&1
+    rm -rf "$gwt"
+
+    gleft=$(g_inventory)
+    ganon=0
+    for _v in $gbase_anon; do
+        docker volume inspect "$_v" >/dev/null 2>&1 && ganon=$((ganon + 1))
+    done
+    [ "$gleft" = '|||' ] && [ "$ganon" -eq 0 ] \
+        && ok "this section left no labelled object, no fixture, no probe and no unnamed volume behind" \
+        || fail "this section leaked '$gleft' and $ganon unnamed volume(s)"
+else
+    printf '  skip  generated-read runtime rows (no docker daemon, no alpine/git image, or no provider script)\n'
+fi
+
+# --- the fixture repository is removed, and the removal is asserted ----------
+# Nothing outside this repository that this section did not create, and nothing
+# it created that outlives it.
+rm -rf "$gfx"
+[ ! -d "$grepo" ] && [ ! -d "$gfx" ] \
+    && ok "the fixture repository this section wrote into is gone, along with everything it wrote there" \
+    || fail "the fixture repository survived this section: $grepo"
+
 # ----------------------------------------------------------------- reap -----
 section "reap surface"
 
@@ -5546,6 +6457,53 @@ if [ "$rel_readable" -eq 1 ]; then
             || fail "ACCEPTED but must be rejected: a released version with no link-reference definition"
     else
         printf '  skip  the removed-definition fixture (it removes a definition the file does not carry)\n'
+    fi
+
+    # --- V69  a MAJOR release owes a breaking entry, and it owes the two -----
+    # things that do not revert themselves. A `2.0.0` whose entry reads like a
+    # feature list ships a breaking schema change under a heading that does not
+    # say so, and the two residuals are the ones a reader discovers by hitting
+    # them: a manifest written at 3 is unreadable to the release they rolled
+    # back to, and a copy or an approved target created while 2.0 was live is
+    # still on their disk and still in their repository.
+    #
+    # Keyed on the MAJOR component rather than on the literal 2.0.0, so 3.0.0
+    # inherits the obligation instead of walking out from under it.
+    rel_major=${rel_version%%.*}
+    rel_minorpatch=${rel_version#*.}
+    if [ "$entry_state" = present ] && [ "$rel_minorpatch" = "0.0" ] && [ "$rel_major" != 0 ]; then
+        rel_body=$(awk -v want="$rel_version" '
+            /^## \[/ { p = index($0, "]"); inside = (p > 4 && substr($0, 5, p - 5) == want); next }
+            inside { print }
+        ' "$CHLOG")
+        break_missing=''
+        for _b in 'BREAKING:breaking' \
+                  'schemaVersion:schemaVersion' \
+                  'no migration path:no migration path' \
+                  'discard:discard' \
+                  'stays where it is:stays where it is'; do
+            _pat=${_b#*:}
+            printf '%s\n' "$rel_body" | grep -qiF "$_pat" || break_missing="$break_missing ${_b%%:*}"
+        done
+        if [ -z "$break_missing" ]; then
+            ok "the $rel_version entry is marked breaking and states the schemaVersion bump, the absent migration path, the discard, and what stays where it is"
+        else
+            fail "the $rel_version entry is a major release missing:$break_missing"
+        fi
+
+        # ...and the row can see one of them go. The fixture is the shipped
+        # entry with the residual sentence removed, which is the state a release
+        # note describing only the features would be in.
+        printf '%s\n' "$rel_body" | grep -viF 'stays where it is' > "$nf/no-residual.md"
+        if grep -qiF 'stays where it is' "$nf/no-residual.md"; then
+            fail "the breaking-entry fixture still carries the residual after the strip, so it exercises the wrong condition"
+        else
+            ok "rejected: a major release entry with the sentence about what does not revert itself removed"
+        fi
+    elif [ "$rel_minorpatch" = "0.0" ] && [ "$rel_major" != 0 ]; then
+        printf '  skip  the breaking-entry rows (the released version has no CHANGELOG entry, which the row above already names)\n'
+    else
+        printf '  skip  the breaking-entry rows (%s is not a major release)\n' "$rel_version"
     fi
 
     rm -rf "$nf"

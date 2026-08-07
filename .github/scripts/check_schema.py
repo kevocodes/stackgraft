@@ -1301,5 +1301,106 @@ for _label, _v, _want in [
     else:
         fail(("REJECTED but must be accepted: " if _want else "ACCEPTED but must be rejected: ") + _label)
 
+# The generated lifecycle family (DS37 as amended by DS42). This is the only
+# record in the schema describing files the skill WROTE INTO SOMEBODY ELSE'S
+# repository, so the two rules that matter are the ones a document cannot
+# enforce: three files rather than two, and `declared` unreachable until a run
+# has observed all three. Both are made structural here, because a rule that
+# lives only in prose is a rule the next writer of a manifest does not meet.
+_gen_files = {
+    "create": "bin/db-create-postgres",
+    "drop": "bin/db-drop-postgres",
+    "read": "bin/db-read-postgres",
+}
+_gen_obs = {
+    "create": {"at": "2026-08-07T09:00:00Z", "exit": 0},
+    "drop": {"at": "2026-08-07T09:00:05Z", "exit": 0},
+    "read": {"at": "2026-08-07T09:00:02Z", "exit": 0},
+}
+
+
+def _generated_case(gen, **over):
+    """An isolation record carrying a generated family, plus its approval."""
+    iso = {
+        "mechanism": "database",
+        "command": "bin/db-create-postgres {{isolationIdent}}",
+        "teardownCommand": "bin/db-drop-postgres {{isolationIdent}}",
+        "discoveredFrom": "bin/db-create-postgres",
+        "approval": {"at": "2026-08-07T08:59:00Z", "sourceFingerprint": "cafebabe"},
+        "confidence": "inferred",
+    }
+    iso.update(over)
+    if gen is not None:
+        iso["generated"] = gen
+    return _store_case(iso)
+
+
+for _label, _gen, _over, _want in [
+    ("a generated family of three files that no run has exercised yet, recorded inferred",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": {}}, {}, True),
+    ("a generated family raised to declared after a run observed all three succeed",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": _gen_obs},
+     {"confidence": "declared"}, True),
+    ("a generated family recorded declared with nothing observed, which is declared-on-write",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": {}},
+     {"confidence": "declared"}, False),
+    ("a generated family declared on a create and a drop with no read - DS37 as originally written, which leaves rung 2 with no source",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files,
+      "observed": {k: v for k, v in _gen_obs.items() if k != "read"}},
+     {"confidence": "declared"}, False),
+    ("a generated family declared on three observations one of which is a FAILURE, so an observation stands in for a success",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files,
+      "observed": {**_gen_obs, "create": {"at": "2026-08-07T09:00:00Z", "exit": 1}}},
+     {"confidence": "declared"}, False),
+    ("a family naming a create and a drop and no read at all, which is a chain that does not close",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/",
+      "files": {k: v for k, v in _gen_files.items() if k != "read"}, "observed": {}}, {}, False),
+    ("an observation carrying a timestamp and no exit status, which is an event that says nothing happened or otherwise",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files,
+      "observed": {"create": {"at": "2026-08-07T09:00:00Z"}}}, {}, False),
+    ("an observation of a half nobody generates, which is a record about a file that does not exist",
+     {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files,
+      "observed": {"seed": {"at": "2026-08-07T09:00:00Z", "exit": 0}}}, {}, False),
+    ("a generated family recorded with no directory, so nothing says where the skill wrote",
+     {"at": "2026-08-07T08:59:00Z", "files": _gen_files, "observed": {}}, {}, False),
+]:
+    _valid = _validates(_generated_case(_gen, **_over))
+    if _valid is _want:
+        ok(("accepted: " if _want else "rejected: ") + _label)
+    else:
+        fail(("REJECTED but must be accepted: " if _want else "ACCEPTED but must be rejected: ") + _label)
+
+# Consent is not implied by the record existing, and the two rows are separate
+# because they fail for different reasons: no approval at all, and an approval
+# with no file for its fingerprint to be taken against.
+_no_approval = _generated_case(
+    {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": {}}
+)
+del _no_approval["backingStores"]["probe"]["isolation"]["approval"]
+if _validates(_no_approval):
+    fail("ACCEPTED but must be rejected: three files written into a repository with no approval recorded beside them")
+else:
+    ok("rejected: three files written into a repository with no approval recorded beside them")
+
+_no_source = _generated_case(
+    {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": {}}
+)
+del _no_source["backingStores"]["probe"]["isolation"]["discoveredFrom"]
+if _validates(_no_source):
+    fail("ACCEPTED but must be rejected: an approval with no discoveredFrom, so no later edit could ever drop it")
+else:
+    ok("rejected: an approval with no discoveredFrom, so no later edit could ever drop it")
+
+# ...and the whole block is only worth its rows while the base case validates.
+# Every fixture above is a MUTATION of that case, so a base that was already
+# invalid would have every negative passing for a reason none of them names -
+# the same stand-down the version fixtures take when the shipped files do not read.
+if _validates(_generated_case(
+    {"at": "2026-08-07T08:59:00Z", "directory": "bin/", "files": _gen_files, "observed": {}}
+)):
+    ok("the generated-family base case validates, so each rejection above is attributable to the one thing it changed")
+else:
+    fail("the generated-family base case does not validate, so every rejection above fired for a reason it does not name")
+
 print()
 sys.exit(1 if fails else 0)

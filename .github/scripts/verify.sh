@@ -2841,7 +2841,34 @@ else
     ok "rejected: cited measurements with the one-sample label removed"
 fi
 
-# --- V65  four refusals, each by name, and none of them cascading ------------
+# --- V65, V66, V44  the sentences the shipped file owes, driven from a table --
+# Nine rows, one shape, one helper. Written out longhand they were nine copies of
+# grep/ok/fail differing only in a pattern and a sentence, and nine copies of one
+# rule is nine places for it to drift. Each row still names the condition it
+# asserts, which is what the verification legend requires and what a bare
+# non-zero exit does not give.
+doc_states() {
+    grep -qiE "$2" "$PROVIDERS_DOC" 2>/dev/null \
+        && ok "isolation-providers.md states: $1" \
+        || fail "isolation-providers.md never states: $1"
+}
+doc_states "an undeterminable locality is read as remote - an unknown is not a permission" \
+    'unknown is not a permission|undetermin.*(treated as|read as) remote|remote.*undetermin'
+doc_states "a refusal does not cascade: the unit's other pairs are still classified on their own" \
+    'does not cascade|other pairs are still classified|the unit.s other pairs'
+doc_states "host-native refuses as unbuilt rather than as impossible" 'unbuilt'
+doc_states "no credential is requested for a managed store, and nothing is isolated in place there" \
+    'requests? no credential|no credential is requested|never requests? (a )?credential'
+doc_states "the exact removal command, spelled out rather than described" 'docker volume rm'
+doc_states "a run that removed nothing still names the copy it left behind" \
+    'removed nothing|did not run|still up|even when nothing was removed'
+doc_states "a runtime that cannot be queried reports unknown, never zero copies" \
+    'unknown, never zero|never zero copies|reports unknown'
+doc_states "destroy matches the worktree label by equality, not liveness and not a prefix" \
+    'equals the worktree argument|worktree.*equal'
+
+# The two set rows stay counted rather than folded in, because what they assert
+# is a COMPLETE set and a missing member has to be countable to be named.
 refusal_missing=0
 for _r in managed remote host-native undetermin; do
     grep -qi "$_r" "$PROVIDERS_DOC" 2>/dev/null || refusal_missing=$((refusal_missing + 1))
@@ -2850,23 +2877,6 @@ done
     && ok "isolation-providers.md refuses managed, remote, host-native and undeterminable locality, each by name" \
     || fail "$refusal_missing of the four refusal cases are unnamed in isolation-providers.md"
 
-grep -qiE 'unknown is not a permission|undetermin.*(treated as|read as) remote|remote.*undetermin' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "an undeterminable locality is read as remote: an unknown is not a permission" \
-    || fail "isolation-providers.md never says an undeterminable locality is treated as remote"
-
-grep -qiE 'does not cascade|other pairs are still classified|the unit.s other pairs' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "the refusal is stated as scoped: a refused store does not refuse its siblings" \
-    || fail "isolation-providers.md never states that a refusal does not cascade"
-
-grep -qiE 'unbuilt' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "host-native refuses as unbuilt rather than as impossible" \
-    || fail "isolation-providers.md never marks host-native as unbuilt"
-
-grep -qiE 'requests? no credential|no credential is requested|never requests? (a )?credential' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "the skill requests no credential for a managed store and attempts no in-place isolation against one" \
-    || fail "isolation-providers.md never states that no credential is requested for a managed store"
-
-# --- V66  every copy is owned, labelled, and named with its removal command ---
 label_missing=0
 for _l in stackgraft.labels stackgraft.repo stackgraft.worktree stackgraft.store; do
     grep -qF "$_l" "$PROVIDERS_DOC" 2>/dev/null || label_missing=$((label_missing + 1))
@@ -2875,22 +2885,24 @@ done
     && ok "the four labels a copy must carry are named in isolation-providers.md" \
     || fail "$label_missing of the copy's four labels are unnamed in isolation-providers.md"
 
-grep -qiE 'docker volume rm' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "the exact removal command is spelled out rather than described" \
-    || fail "isolation-providers.md describes removal without spelling the command"
-
-grep -qiE 'removed nothing|did not run|still up|even when nothing was removed' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "the copy is named on a run that removed nothing, which is the run that most needs to say so" \
-    || fail "isolation-providers.md never obliges a quiet run to name the copy it left behind"
-
-grep -qiE 'unknown, never zero|never zero copies|reports unknown' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "a runtime that cannot be queried reports unknown, never zero copies" \
-    || fail "isolation-providers.md never says an unqueryable runtime reports unknown rather than zero"
-
-# --- V44  destroy is worktree equality, stated before it is executed ---------
-grep -qiE 'equals the worktree argument|worktree.*equal' "$PROVIDERS_DOC" 2>/dev/null \
-    && ok "destroy is documented as equality on the worktree label, not liveness and not a prefix" \
-    || fail "isolation-providers.md never states that destroy matches the worktree label by equality"
+# ...and the helper must be able to say no, or all eight rows above are a
+# sentence about a file nobody read.
+#
+# The `$( ... )` here is a SUBSHELL ON PURPOSE, which is worth saying out loud
+# because it is the exact shape of the harness defect slice 3 found: a `fail`
+# inside a subshell increments a copy of the counter that dies with it. That is
+# precisely what is wanted for one probe of the helper's own behaviour - the
+# probe must not add a failure to a suite that is working correctly - and it is
+# the only place in this file where a `fail` is deliberately allowed to be lost.
+# Every other loop here is fed by a redirect for the opposite reason.
+PROVIDERS_DOC_REAL=$PROVIDERS_DOC
+PROVIDERS_DOC=/dev/null
+doc_states_probe=$( doc_states "a sentence no empty file carries" 'a sentence no empty file carries' )
+PROVIDERS_DOC=$PROVIDERS_DOC_REAL
+case $doc_states_probe in
+    *FAIL*) ok "rejected: the sentence reader over a file that carries none of it" ;;
+    *)      fail "the sentence reader reported ok over an empty file: '$doc_states_probe'" ;;
+esac
 
 # --- V42  the provider and the new reference file, against the wider floor ---
 for _f in "$PROVIDER" "$PROVIDERS_DOC"; do

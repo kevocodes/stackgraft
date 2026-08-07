@@ -151,6 +151,17 @@ copy_name() {
 verb=$1
 shift
 
+# THE VERB IS DECIDED BEFORE ANYTHING ELSE, and the dispatch at the bottom is
+# what runs it rather than what validates it. Ordering it after the runtime check
+# means a machine with no container runtime answers a TYPO with an environment
+# failure - measured on a minimal image, where an unknown verb exited 4 and the
+# caller was told the runtime was missing rather than that the verb was wrong. A
+# usage error is a fact about the invocation and is knowable without a runtime.
+case $verb in
+    provision | address | destroy) ;;
+    *) usage "unknown verb: '$verb' - expected provision, address or destroy" ;;
+esac
+
 [ "$#" -ge 3 ] || usage "$verb needs <hash8> <worktree> <store>"
 hash8=$1
 worktree_arg=$2
@@ -496,9 +507,10 @@ destroy() {
     [ "$refused_any" -eq 0 ] || exit 3
 }
 
+# The verb was validated at the top, so this dispatch has no unknown branch: two
+# places deciding one thing is how they come to decide it differently.
 case $verb in
     provision) provision "$@" ;;
     address)   [ "$#" -eq 0 ] || usage "address takes no further arguments"; address ;;
     destroy)   [ "$#" -eq 0 ] || usage "destroy takes no further arguments"; destroy ;;
-    *)         usage "unknown verb: '$verb' - expected provision, address or destroy" ;;
 esac

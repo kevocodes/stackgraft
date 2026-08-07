@@ -2991,8 +2991,14 @@ prov_rm_bad=$(grep -nE 'docker (rm|volume rm)' "$PROVIDER" 2>/dev/null \
 if [ -f "$PROVIDER" ]; then
     sh "$PROVIDER" >/dev/null 2>&1
     [ $? -eq 2 ] && ok "the provider refuses an empty invocation at exit 2" || fail "the provider did not reject an empty invocation with exit 2"
+    # Exit 2 rather than "non-zero", and that distinction is the whole row: on a
+    # machine with no container runtime the script exits 4 for the environment,
+    # and a row taking any non-zero code would have read that as a rejected verb.
+    # Measured on a minimal image, where this is exactly what happened - so the
+    # verb is now decided before the runtime is looked for, and this row is what
+    # says so on both platforms.
     sh "$PROVIDER" snapshot deadbeef "$ROOT" store >/dev/null 2>&1
-    [ $? -eq 2 ] && ok "the provider rejects an unknown verb at exit 2" || fail "the provider accepted an unknown verb"
+    [ $? -eq 2 ] && ok "the provider rejects an unknown verb at exit 2, on a host with a runtime and on one without" || fail "the provider accepted an unknown verb, or refused it as an environment failure"
     sh "$PROVIDER" destroy NOTHEX "$ROOT" store >/dev/null 2>&1
     [ $? -eq 2 ] && ok "the provider rejects a hash8 that is not lowercase hex" || fail "the provider accepted a non-hex hash8"
     sh "$PROVIDER" destroy deadbeef /no/such/worktree store >/dev/null 2>&1

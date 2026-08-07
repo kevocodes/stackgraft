@@ -11,12 +11,12 @@ Three operations. Not two, and **not four**.
 | Operation | Takes | Answers |
 |---|---|---|
 | `provision` | the repository hash, the worktree, the store key, the runtime object holding its state, the image running it, and the ownership labels | a copy exists, an instance runs on it, and both are named — with the bytes and the seconds this run measured |
-| `address` | the same first three | how the overlay reaches that instance: a name its runtime resolves, a published port, and any value the caller could not derive from those two |
+| `address` | the same first three, and **optionally a fourth**: the base instance to compare the copy's age against | how the overlay reaches that instance: a name its runtime resolves, a published port, and any value the caller could not derive from those two — plus the copy's age, which reports `base unread` where the fourth argument is absent rather than agreement by default |
 | `destroy` | the same first three | the instance and the copy are gone, or the run fails loudly naming what it left |
 
 **The contract varies by runtime and never by substrate.** Cloning state is the same operation whatever wrote the bytes, and it differs between a container runtime, a cluster, and a process on the host. So no operation, parameter, return value, or obligation above names an engine, and none may be added that does. A store engine released after this version is provisionable with no edit here and no edit to the shipped provider's interface — a contract that enumerated engines would be the finite table this skill deleted, walked back in through another door.
 
-**There is no `verify` operation, and its absence is the design.** A fourth one would let the provider certify its own output — the property that had to be removed from `reap.sh` and is not being re-introduced here. Verification is issued by the agent, through the same channel `applyVia` already documents, against the address the third operation returned.
+**There is no `verify` operation, and its absence is the design.** A fourth one would let the provider certify its own output — the property that had to be removed from `reap.sh` and is not being re-introduced here. Verification is issued by the agent, through the same channel `applyVia` already documents, against the address the second operation returned.
 
 Three exit meanings, and they are the same three every script here uses: refused is `3`, a usage error is `2`, and an environment failure is `4`. **A refusal creates nothing and removes nothing** — or, where it is discovered part-way, removes what it made before reporting.
 
@@ -196,7 +196,7 @@ docker rm -f -v <name> && docker volume rm <name>
 
 **`-v` is not decoration.** Without it the anonymous volumes the store's image declared — and that the provisioning run therefore created — are orphaned: unnamed, unlabelled, and reachable by no query anyone can write, which is the one class `references/reaping.md` can never afterwards reclaim. Measured on server 29.5.3: the flag removes the container's **anonymous** volumes and leaves every **named** one, and every copy this skill makes is a named `sg-` volume, so the removal by name beside it still has the copy to remove.
 
-An unlabelled object is never provisioned over, never destroyed, and never named as a copy of ours — see `references/reaping.md`, which reclaims a copy whose worktree is gone and takes the removal flag in addition to the mutation flag before it touches one.
+An unlabelled object is never provisioned over, never destroyed, and never named as a copy of ours. `references/reaping.md` section 9a specifies how a copy whose worktree is gone is to be reclaimed, and states at the top of that section that **`scripts/reap.sh` implements none of it**: an orphaned copy is not detected here, and `destroy` above is the only shipped path that removes one.
 
 ## What the run reports
 

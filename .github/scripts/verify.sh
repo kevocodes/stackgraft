@@ -1389,6 +1389,192 @@ awk '!(/39/ && /156/)'                "$DISCOVERY" > "$df/no-counts.md"
     || fail "the counts row cannot notice its sentence going missing"
 rm -rf "$df"
 
+# ---------------------------------------------------------- narrowing -------
+section "change-scoped gating"
+
+# Every row in this section reads its sentence INSIDE the narrowing rule, never
+# anywhere in the file, and every negative deletes it from inside that section
+# alone while leaving the rest of the file untouched.
+#
+# That is not fastidiousness, it is a measured repair. Against the shipped file
+# before this slice wrote a byte:
+#     awk '/dependsOn/ && /narrow/'   matched 2 lines
+#     awk '/less/ && /laziest/'       matched 1 line
+# The prohibition's exact words - "saying less would gate less, and the laziest
+# manifest would be the least refused" - already live in the
+# Evidence-that-does-not-count list, and the pair-set paragraph already says
+# dependsOn may only add. So a row keyed on the WORDS reported a prohibition
+# restated inside the narrowing rule over a file that had no narrowing rule at
+# all. Third slice, third false green of the same family: a row passing over the
+# very absence it exists to report. Position is the assertion here, so position
+# is what the check reads.
+NARROWING='## The subject: the pairs the change can reach'
+
+# The section is the heading's own lines: `### ` subheadings stay inside it
+# because `^## ` needs the space, and the next `## ` ends it.
+section_of() {
+    awk -v h="$2" '$0 == h { on = 1; next } on && /^## / { on = 0 } on' "$1"
+}
+# The same bounds, used to DELETE rather than to read, so a negative removes a
+# sentence from the rule while the file keeps every other copy of it.
+strip_in_section() {
+    awk -v h="$2" -v p="$3" '
+        $0 == h            { on = 1 }
+        on && /^## / && $0 != h { on = 0 }
+        on && $0 ~ p       { next }
+                           { print }
+    ' "$1"
+}
+
+# --- V58, V60  the rule, its evidence obligation and its limit ---------------
+# One predicate per SENTENCE. A rule this file can only confirm the existence of
+# is a rule a reader cannot act on, which is the C1 lesson: a link check proves
+# a file exists and nothing more.
+prohibition_missing()  { awk '/dependsOn/ && /laziest/ && /least refused/               { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+structural_missing()   { awk '/subtract/ && /derived independently of it/               { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+limit_missing()        { awk '/frontend/ && /does not make that unit stateless/         { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+unscoped_missing()     { awk '/pointing/ && /unknown/ && /cannot be laundered/          { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+counts_missing()       { awk '/beside/ && /never in place of it/                        { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+evidence_missing()     { awk '/Absence of a record/ && /never relief/                   { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+passes_missing()       { awk '/Derive/ { d = 1 } /Remove/ { r = 1 } /Re-insert/ { i = 1 } /Classify/ { c = 1 } END { print (d && r && i && c) ? 0 : 1 }' "$1"; }
+# Exactly one pass may narrow. Two rows claiming it is two places a later reader
+# can put a removal, which is the whole property this slice is defending.
+narrowing_passes()     { grep -c 'only here' "$1"; }
+
+nf=$(mktemp -d)
+section_of "$SHARED" "$NARROWING" > "$nf/rule.md"
+
+if [ -s "$nf/rule.md" ]; then
+    ok "shared-state.md carries the narrowing rule under its own heading"
+else
+    fail "shared-state.md has no '$NARROWING' section, so every row below reads an empty file"
+fi
+
+for _case in \
+    "passes_missing:the five passes are named, with derive, remove, re-insert and classify distinct" \
+    "prohibition_missing:the dependsOn prohibition is restated INSIDE the rule, in those words" \
+    "structural_missing:the rule states why it is one-directional: a record may only subtract from a set derived independently of it" \
+    "evidence_missing:the rule states that absence of a record is never relief" \
+    "limit_missing:the rule states the limit - a frontend change does not make that unit stateless" \
+    "unscoped_missing:the rule states that an unscoped migrates cannot be laundered into relief" \
+    "counts_missing:the rule states the gated count goes beside the derived one, never in place of it"
+do
+    _fn=${_case%%:*}
+    _what=${_case#*:}
+    if [ "$($_fn "$nf/rule.md")" -eq 0 ]; then
+        ok "$_what"
+    else
+        fail "the narrowing rule does not state: $_what"
+    fi
+done
+
+_np=$(narrowing_passes "$nf/rule.md")
+[ "$_np" -eq 1 ] \
+    && ok "exactly one pass may narrow, and the rule says so once" \
+    || fail "$_np pass(es) claim they may narrow; the rule permits exactly one"
+
+# Those three rows get fixtures too, or they are three rows this file's own rule
+# does not apply to. The heading, one pass row, and the narrowing permission are
+# each removable, and one of them is removable by DUPLICATION rather than by
+# deletion: two rows saying `only here` is two places a later reader may put a
+# removal, which is the property this whole section defends.
+grep -v -- "$NARROWING" "$SHARED" > "$nf/no-heading.md"
+section_of "$nf/no-heading.md" "$NARROWING" > "$nf/no-heading-rule.md"
+[ ! -s "$nf/no-heading-rule.md" ] \
+    && ok "rejected: shared-state.md with the narrowing heading removed - the rule reads as an empty file" \
+    || fail "the heading row cannot tell a present rule from an absent one"
+
+strip_in_section "$SHARED" "$NARROWING" 'Classify' > "$nf/no-pass.md"
+section_of "$nf/no-pass.md" "$NARROWING" > "$nf/no-pass-rule.md"
+[ "$(passes_missing "$nf/no-pass-rule.md")" -eq 1 ] \
+    && ok "rejected: the pass table with the classify pass deleted" \
+    || fail "the pass-table row cannot notice a pass going missing"
+
+strip_in_section "$SHARED" "$NARROWING" 'only here' > "$nf/none.md"
+section_of "$nf/none.md" "$NARROWING" > "$nf/none-rule.md"
+[ "$(narrowing_passes "$nf/none-rule.md")" -ne 1 ] \
+    && ok "rejected: a pass table in which no pass may narrow" \
+    || fail "the one-narrowing-pass row cannot see the permission removed"
+
+awk -v h="$NARROWING" '
+    $0 == h                 { on = 1 }
+    on && /^## / && $0 != h { on = 0 }
+                            { print }
+    on && /only here/       { print }
+' "$SHARED" > "$nf/twice.md"
+section_of "$nf/twice.md" "$NARROWING" > "$nf/twice-rule.md"
+[ "$(narrowing_passes "$nf/twice-rule.md")" -ne 1 ] \
+    && ok "rejected: a second pass claiming it may narrow" \
+    || fail "the one-narrowing-pass row cannot see a second narrowing pass"
+
+# ...and each of those can go missing on its own. One fixture per sentence,
+# every one of which must FAIL.
+#
+# Each row asserts the TRANSITION - present before the strip, absent after - and
+# not merely absent after. Measured while these rows were red: with no narrowing
+# section in the file at all, stripping a sentence out of nothing left nothing,
+# and all six negatives printed ok beside the positives that were failing. A
+# negative satisfied by the section never existing exercises a different
+# condition than the row it is paired with, which is the defect the verification
+# legend names four shipped rows for.
+for _case in \
+    "prohibition_missing:laziest:the dependsOn prohibition" \
+    "structural_missing:derived independently of it:the one-directional reason" \
+    "evidence_missing:never relief:the absence-is-never-relief sentence" \
+    "limit_missing:does not make that unit stateless:the frontend limit" \
+    "unscoped_missing:cannot be laundered:the unscoped-migration sentence" \
+    "counts_missing:never in place of it:the both-counts sentence"
+do
+    _fn=${_case%%:*}
+    _rest=${_case#*:}
+    _pat=${_rest%%:*}
+    _what=${_rest#*:}
+    strip_in_section "$SHARED" "$NARROWING" "$_pat" > "$nf/stripped.md"
+    section_of "$nf/stripped.md" "$NARROWING" > "$nf/stripped-rule.md"
+    if [ "$($_fn "$nf/rule.md")" -ne 0 ]; then
+        fail "the fixture for $_what deletes a sentence the rule never carried"
+    elif [ "$($_fn "$nf/stripped-rule.md")" -eq 1 ]; then
+        ok "rejected: the narrowing rule with $_what deleted"
+    else
+        fail "the row for $_what cannot notice its sentence going missing"
+    fi
+done
+
+# The false green, reproduced as a standing row rather than left in a comment:
+# with the prohibition deleted from INSIDE the rule, the file still carries those
+# exact words elsewhere - so a whole-file grep still reports green while the rule
+# a reader acts on says nothing. This row is what proves the check reads position.
+strip_in_section "$SHARED" "$NARROWING" 'laziest' > "$nf/stripped.md"
+_elsewhere=$(grep -c 'laziest' "$nf/stripped.md" || true)
+if [ "$_elsewhere" -ge 1 ] && [ "$(prohibition_missing "$nf/stripped.md")" -eq 0 ]; then
+    ok "rejected: a whole-file grep still passes on the fixture the rule-scoped row rejects"
+else
+    fail "the fixture no longer reproduces the false green, so the positional row is untested"
+fi
+rm -rf "$nf"
+
+# --- V61 slice-2 half  the trap that makes the diff safety-load-bearing ------
+# The diff selecting the subject is what promotes it from a convenience to a
+# safety input, and a diff under-reports by construction. Keyed on the sentence
+# for the reason every row above is.
+TRAPS="$SKILL/references/traps.md"
+underreport_missing() { awk '/under-report/ && /safety-load-bearing/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+
+[ "$(underreport_missing "$TRAPS")" -eq 0 ] \
+    && ok "traps.md names the diff as safety-load-bearing and under-reporting by construction" \
+    || fail "traps.md does not name the diff's under-reporting as a trap"
+
+tf=$(mktemp -d)
+awk '!(/under-report/ && /safety-load-bearing/)' "$TRAPS" > "$tf/no-trap.md"
+if [ "$(underreport_missing "$TRAPS")" -ne 0 ]; then
+    fail "the under-reporting fixture deletes a sentence traps.md never carried"
+elif [ "$(underreport_missing "$tf/no-trap.md")" -eq 1 ]; then
+    ok "rejected: traps.md with the under-reporting trap deleted"
+else
+    fail "the under-reporting row cannot notice its sentence going missing"
+fi
+rm -rf "$tf"
+
 # ------------------------------------------------- instrumentation ----------
 section "instrumentation"
 

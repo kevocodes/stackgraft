@@ -3868,17 +3868,40 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     vsrc=sg-verify-base
     vimg=alpine/git
 
+    # TWO envelopes, and the second one is a repair rather than belt and braces.
+    # The name filter alone covers the fixtures this block creates by hand, and
+    # it does NOT cover the object most likely to leak: the copy, whose name the
+    # provider derives from the worktree hash and which begins with neither
+    # prefix. A leak row that cannot see the most likely leak is the shape this
+    # whole file exists to catch, so the label query - which is what a copy and
+    # the probe both answer - is asked as well.
     v_inventory() {
+        docker volume ls --quiet --filter "label=stackgraft.repo=$VH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter "label=stackgraft.repo=$VH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
         docker volume ls --quiet --filter name=sg-verify 2>/dev/null | sort | tr '\n' ' '
         printf '|'
         docker container ls --all --quiet --filter name=sg-verify 2>/dev/null | sort | tr '\n' ' '
-        printf '|'
-        docker container ls --all --quiet --filter "label=stackgraft.probe" 2>/dev/null | sort | tr '\n' ' '
     }
     v_before=$(v_inventory)
-    [ "$v_before" = '||' ] \
+    [ "$v_before" = '|||' ] \
         && ok "the runtime holds no object of this section's before it runs, so its inventory rows read only what it made" \
         || fail "the runtime already holds one of this section's objects, so its inventory rows cannot be trusted: $v_before"
+
+    # ...and the label envelope can SEE such an object, which is what makes the
+    # widening a check rather than a claim. The fixture carries this run's label
+    # and NEITHER fixture name prefix, so the name filter alone is blind to it -
+    # which is exactly the shape a leaked copy has.
+    docker volume create --label "stackgraft.repo=$VH" sgleak4b >/dev/null 2>&1
+    if [ "$(v_inventory)" = "$v_before" ]; then
+        fail "the leak envelope cannot see a labelled object outside the fixture name prefix, so it could not see a leaked copy either"
+    elif docker volume ls --quiet --filter name=sg-verify 2>/dev/null | grep -qxF sgleak4b; then
+        fail "the leak fixture matches the name filter, so it exercises the wrong envelope"
+    else
+        ok "rejected: an object carrying this run's label and neither fixture name - the leak envelope reports it, which the name filter alone could not"
+    fi
+    docker volume rm sgleak4b >/dev/null 2>&1
 
     # Issues the candidate the way the shipped table says to, with the instance
     # and the argument vector supplied the way the table's own placeholders name
@@ -4057,8 +4080,8 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     for _v in $vbase_anon; do
         docker volume inspect "$_v" >/dev/null 2>&1 && vanon=$((vanon + 1))
     done
-    [ "$vleft" = '||' ] && [ "$vanon" -eq 0 ] \
-        && ok "this section left no volume, no container, no probe and no unnamed volume behind" \
+    [ "$vleft" = '|||' ] && [ "$vanon" -eq 0 ] \
+        && ok "this section left no labelled object, no fixture, no probe and no unnamed volume behind" \
         || fail "this section leaked '$vleft' and $vanon unnamed volume(s)"
 else
     printf '  skip  verification runtime rows (no docker daemon, no alpine/git image, no provider script, or no route in the shipped table)\n'

@@ -3038,6 +3038,11 @@ doc_states "destroy matches the worktree label by equality, not liveness and not
 # be stated is what happens when the removal does NOT take.
 doc_states "a copy the runtime will not remove is named and left as an environment failure, never reported as removed" \
     'names it and fails as an environment failure'
+# ...and the same direction one door further along: an unanswered query is not an
+# empty result. The pattern is the DIRECTION again rather than the topic, because
+# a file saying destroy uses a scoped listing is saying what the defect said too.
+doc_states "a scoped listing that did not answer is unknown rather than empty, so destroy refuses the store instead of reporting it clear" \
+    'unknown rather than empty'
 
 # The three non-blocking open questions design.md carries, stated in the shipped
 # file as assumptions rather than resolved silently. Each pattern is the
@@ -3263,6 +3268,66 @@ if [ -f "$PROVIDER" ]; then
 else
     fail "the provider is absent, so its usage rows ran nothing"
 fi
+
+# --- a scoped listing that did not ANSWER is unknown, and destroy refuses -----
+# `for inst in $(scoped_instances)` runs its body zero times for a listing that
+# FAILED exactly as it does for one that found nothing, so the verb exits 0
+# reporting that it destroyed nothing while having looked at nothing. That is
+# unknown reported as zero - the distinction A7's legacy category and the
+# sidecar's registry-missing were both written for, and the one provision's own
+# `space copies` record already draws correctly in the same file.
+#
+# NO CONTAINER RUNTIME IS NEEDED, and that is why the row is here rather than in
+# the runtime block below: CI pulls no alpine/git, so a row placed there is a row
+# the regression would never meet. The fixture IS the runtime - a `docker` first
+# on PATH answering `info` and then failing the one listing under test - which is
+# also the only way to fail a listing on demand without editing, stubbing or
+# wrapping the script.
+udf=$(mktemp -d)
+udwt=$(mktemp -d)
+fake_docker() {
+    {
+        printf '%s\n' '#!/bin/sh' 'case "$1" in' '    info) exit 0 ;;'
+        printf '    container) [ "${2:-}" = ls ] && exit %s ;;\n' "$1"
+        printf '    volume) [ "${2:-}" = ls ] && exit %s ;;\n' "$2"
+        printf '%s\n' 'esac' 'exit 0'
+    } > "$udf/docker"
+    chmod +x "$udf/docker"
+}
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so the unanswerable-listing rows ran nothing"
+else
+    # One reader, asked of BOTH listings, so a repair that guarded the instance
+    # query and left the volume query reading a failure as an empty list is a
+    # named half rather than a green row. It prints the exit status beside the
+    # number of refusals that named this store as unknown, because either alone
+    # is satisfiable by the other's absence.
+    ud_refuses() {
+        fake_docker "$1" "$2"
+        _o=$( PATH="$udf:$PATH" sh "$PROVIDER" destroy deadbe03 "$udwt" unknownstore 2>&1 )
+        _rc=$?
+        printf '%s %s\n' "$_rc" "$(printf '%s\n' "$_o" | awk -F'\t' \
+            '$1 == "refused" && $2 == "unknownstore" && $3 ~ /unknown/ { n++ } END { print n + 0 }')"
+    }
+    ud_i=$(ud_refuses 1 0)
+    ud_v=$(ud_refuses 0 1)
+    if [ "$ud_i" = "3 1" ] && [ "$ud_v" = "3 1" ]; then
+        ok "a destroy whose scoped listing did not answer refuses the store as unknown at exit 3 - the instance query and the copy query alike"
+    else
+        fail "the instance listing read '$ud_i' and the copy listing '$ud_v', not '3 1' each: a listing that failed is being read as one that found nothing"
+    fi
+
+    # ...and the negative is the listing that ANSWERED. Its expected reading is
+    # the same whether the verb is broken or repaired, which is what makes it a
+    # negative rather than a second positive: what it rules out is a verb that
+    # refuses every store, under which the row above would be green over a
+    # destroy that had stopped destroying anything.
+    ud_n=$(ud_refuses 0 0)
+    [ "$ud_n" = "0 0" ] \
+        && ok "rejected: two listings that answered and found nothing - destroy exits 0 and refuses nothing, so an unknown is the failure and not the emptiness" \
+        || fail "a destroy over two answered-but-empty listings read '$ud_n', not '0 0'"
+fi
+rm -rf "$udf" "$udwt"
 rm -rf "$pcf"
 
 # --- V61 slice-4a half  the new file joins the reference link loop -----------
@@ -6582,6 +6647,51 @@ sed 's/docker rm -f -v "\$a_id"/docker rm -f "$a_id"/' "$SKILL/scripts/reap.sh" 
     && ok "rejected: the reaper's removal with its -v reverted - the row reads the flag rather than the line" \
     || fail "the removal row cannot notice -v going away"
 rm -rf "$rvf"
+
+# The same flag, held across the WHOLE SHIPPED SURFACE rather than at the one
+# line the reaper removes an overlay on - because the leak came back through a
+# different door and shipped, as advice to a person. The provider printed the
+# copy's removal command with the flag missing and isolation-providers.md printed
+# the same line in a code block: the ordering is right and nothing false is
+# claimed, but a reader who ran it orphaned the container's anonymous volume,
+# which is the class the reaper exists to reclaim and the leak this repository
+# took out of reap.sh one slice ago.
+#
+# The count of instructions SEEN is the other half of the row. Zero bare ones is
+# equally true of a surface that hands a reader no removal command at all, which
+# is why the provider's own listing row counts both its numbers too.
+#
+# The safety premise is the measured one the runtime row below establishes and
+# this row does not re-derive: the flag takes the container's ANONYMOUS volumes
+# and leaves every NAMED one, and every copy this skill makes is a named sg-
+# volume, so the removal by name beside it still has something to remove.
+rm_dash_v() {
+    grep -rnF 'docker rm -f' "$@" 2>/dev/null | awk '
+        { seen++; if (index($0, "docker rm -f -v") == 0) bare++ }
+        END { print (seen + 0) " " (bare + 0) }
+    '
+}
+rmv=$(rm_dash_v $SHIPPED_SURFACE)
+rmv_seen=${rmv%% *}
+rmv_bare=${rmv##* }
+if [ "$rmv_seen" -lt 2 ]; then
+    fail "the shipped surface hands a reader $rmv_seen removal instruction(s), so this row is not reading the advice it claims to"
+elif [ "$rmv_bare" -gt 0 ]; then
+    fail "$rmv_bare of the surface's $rmv_seen removal instructions carry no -v: $(grep -rnF 'docker rm -f' $SHIPPED_SURFACE 2>/dev/null | grep -vF 'docker rm -f -v' | head -1)"
+else
+    ok "all $rmv_seen forced-removal instructions in the shipped surface carry -v, so no shipped file advises a removal that orphans the container's anonymous volume"
+fi
+
+# ...and the reader can see a bare one BESIDE a flagged one, which is the whole
+# reason the row above counts both numbers. Two lines, one of each, and the
+# expected reading is fixed: it does not move with the state of the tree.
+rmf=$(mktemp -d)
+{ printf '%s\n' 'docker rm -f -v "$a_id"'; printf 'docker rm -f %s && docker volume rm %s\n' '<name>' '<name>'; } > "$rmf/advice.md"
+rmv_fix=$(rm_dash_v "$rmf/advice.md")
+[ "$rmv_fix" = "2 1" ] \
+    && ok "rejected: a removal instruction spelled without -v, beside one that carries it - the detector names the bare one and passes the flagged one" \
+    || fail "the -v detector reported '$rmv_fix' for one flagged and one bare removal, not '2 1'"
+rm -rf "$rmf"
 
 if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
     # The safety premise that repair rests on, MEASURED rather than cited: a

@@ -40,6 +40,7 @@ One provider ships: `scripts/provider-docker.sh`, because a local base stack alr
 | Scoped query only | The target is found with a label filter carrying this repository's hash and this store's key. No unfiltered listing exists in the script, so one can never reach a removal |
 | Worktree equality | An object is removed only where its recorded worktree label **equals the worktree argument**, both sides normalised to an absolute physical path first. Not a prefix, not a substring, not liveness. "Destroy another worktree's copy" is unreachable without the caller naming that worktree, and a path that will not normalise matches nothing |
 | No labels, or a set version this run does not recognise | Reported and left alone — the same fail-safe direction an unrecognised `schemaVersion` takes |
+| A listing that did not answer | **Unknown rather than empty.** A scoped query that failed found nothing only in the sense that it was never performed, so the store is refused and nothing is removed — never a run that exits 0 having looked at nothing. Both listings are taken before either removal, so an unanswered one leaves the inventory exactly as it was found. This is the direction the copy count already takes when the runtime will not answer |
 | Order | Instance first, copy second. A copy still attached to a running instance is one the runtime refuses to remove, and reporting that as success is the half of the leak that matters |
 | Never | No prune of any kind, no bringing the base stack down with its volumes, and no removal that did not come out of a scoped query |
 
@@ -190,8 +191,10 @@ Four, not the overlay's five: `stackgraft.service` holds a manifest service key,
 **Every run names the copy and the exact command that removes it**, including a run that **removed nothing** because the overlay is still up or a destroy failed. That is the run that most needs to say so: the only thing that will ever remove it otherwise is a person who was told it exists.
 
 ```
-docker rm -f <name> && docker volume rm <name>
+docker rm -f -v <name> && docker volume rm <name>
 ```
+
+**`-v` is not decoration.** Without it the anonymous volumes the store's image declared — and that the provisioning run therefore created — are orphaned: unnamed, unlabelled, and reachable by no query anyone can write, which is the one class `references/reaping.md` can never afterwards reclaim. Measured on server 29.5.3: the flag removes the container's **anonymous** volumes and leaves every **named** one, and every copy this skill makes is a named `sg-` volume, so the removal by name beside it still has the copy to remove.
 
 An unlabelled object is never provisioned over, never destroyed, and never named as a copy of ours — see `references/reaping.md`, which reclaims a copy whose worktree is gone and takes the removal flag in addition to the mutation flag before it touches one.
 

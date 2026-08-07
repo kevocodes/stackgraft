@@ -1249,5 +1249,57 @@ for _label, _iso, _want in [
     else:
         fail(("REJECTED but must be accepted: " if _want else "ACCEPTED but must be rejected: ") + _label)
 
+# The verification record: a candidate query, what makes it one, and what expires
+# it. Three acceptances and five rejections, because the failure this record
+# exists to stop is a store that LOOKS verified - a healthcheck copied in as a
+# query with nothing establishing that it can tell a seeded instance from an
+# empty one.
+_probe_ok = {
+    "command": ["CMD", "cat", "/data/marker"],
+    "rung": 1,
+    "sourceFingerprint": "cafebabe",
+    "discriminates": {
+        "value": True,
+        "evidence": "answered 2 on the base store and 0 on an empty instance of the same image",
+        "at": "2026-08-07T09:00:00Z",
+    },
+}
+
+
+def _verification_case(v):
+    m = json.loads(json.dumps(example))
+    entry = {**_iso_base}
+    if v is not None:
+        entry["verification"] = v
+    m["backingStores"] = {"probe": entry}
+    m["services"] = {}
+    return m
+
+
+for _label, _v, _want in [
+    ("a store recording a candidate, its rung, its fingerprint and a measured discrimination",
+     _probe_ok, True),
+    ("a store recording that its candidate does NOT discriminate, which is checked-and-not-a-query",
+     {**_probe_ok, "discriminates": {**_probe_ok["discriminates"], "value": False,
+                                     "evidence": "answered PONG on an empty instance too"}}, True),
+    ("a store recording no candidate at all, which refuses at verification rather than at discovery",
+     None, True),
+    ("a candidate recorded as a shell line rather than an argument vector",
+     {**_probe_ok, "command": "cat /data/marker"}, False),
+    ("a candidate with no discrimination recorded, which is a healthcheck copied in as a query",
+     {k: v for k, v in _probe_ok.items() if k != "discriminates"}, False),
+    ("a discrimination claimed with an empty evidence string, which is a claim nobody ran",
+     {**_probe_ok, "discriminates": {**_probe_ok["discriminates"], "evidence": ""}}, False),
+    ("a candidate with no sourceFingerprint, so nothing could ever expire the probe result",
+     {k: v for k, v in _probe_ok.items() if k != "sourceFingerprint"}, False),
+    ("a candidate claiming rung 3, which is the absence of a candidate rather than a source",
+     {**_probe_ok, "rung": 3}, False),
+]:
+    _valid = _validates(_verification_case(_v))
+    if _valid is _want:
+        ok(("accepted: " if _want else "rejected: ") + _label)
+    else:
+        fail(("REJECTED but must be accepted: " if _want else "ACCEPTED but must be rejected: ") + _label)
+
 print()
 sys.exit(1 if fails else 0)

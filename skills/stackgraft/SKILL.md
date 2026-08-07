@@ -58,7 +58,7 @@ Skip for single-service repos, cheap `up`, or full isolation.
 - Changed paths and their mapped services.
 - Per overlay: service, port, launch command, verification result.
 - Base-stack services reused, not duplicated.
-- The exact teardown command, any isolated namespace left behind, and how to remove it.
+- The exact teardown command, any namespace or copy left behind, its age, and how to remove it.
 
 ## References
 

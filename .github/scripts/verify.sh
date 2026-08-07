@@ -644,7 +644,13 @@ body_fixture() { cp "$SKILL/SKILL.md" "$1"; awk -v n="$2" 'BEGIN { while (i++ < 
 # the ordering hazard with it: applying the adds before the cuts is red at that
 # commit even though both endpoints are legal, which is why the cuts and the
 # adds are one commit rather than two.
-BODY_ADDS=21
+#
+# 21 at slice 1a, which was the slice with cuts to pay for them. Slice 4b adds
+# THREE and cuts nothing, so the hazard is arithmetic here rather than live - and
+# the number still moves, because the row asserts this slice's own add count and
+# a figure left at a previous slice's is a fixture nobody recalibrated. That is
+# the same drift the hard-coded 38 above was carrying.
+BODY_ADDS=3
 
 over_n=$((501 - $(body_words "$SKILL/SKILL.md")))
 body_fixture "$bf/over.md" "$over_n"
@@ -699,8 +705,11 @@ fi
 # rows sum to -35 against a stated subtotal of -34, each row was reproduced
 # against the shipped file, and writing the table's endpoint here would have made
 # a green suite disagree by one word with the file it measures.
-# Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line.
-BODY_WORDS_RECORDED=484
+# Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line at
+# slice 1a; +3 at slice 4b, where Output Contract bullet 5 gained the copy and
+# its age. 484 + 3 = 487, and the plan's "488 or 487" resolves to 487 for the
+# same reason 1a landed at 484 rather than 485.
+BODY_WORDS_RECORDED=487
 [ "$words" -eq "$BODY_WORDS_RECORDED" ] \
     && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
     || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"
@@ -3251,8 +3260,8 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
             fail "address exited $parc and named host '$pa_host'"
         fi
         printf '%s\n' "$pa" | awk -F'\t' '$1 != "" { print $1 }' | sort -u > "$pdir/kinds"
-        if grep -qvE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds"; then
-            fail "address emitted a record kind the contract does not define: $(grep -vE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds" | head -1)"
+        if grep -qvE '^(volume|instance|bytes|seconds|space|host|port|env|age|copy|refused)$' "$pdir/kinds"; then
+            fail "address emitted a record kind the contract does not define: $(grep -vE '^(volume|instance|bytes|seconds|space|host|port|env|age|copy|refused)$' "$pdir/kinds" | head -1)"
         else
             ok "address emits only record kinds the contract defines"
         fi
@@ -3449,6 +3458,633 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         || fail "this section leaked $plefto labelled volume(s), $pleftc container(s) and $plefta unnamed volume(s)"
 else
     printf '  skip  provider runtime rows (no docker daemon, no alpine/git image, or no provider script)\n'
+fi
+
+# ------------------------------------------- verification and lifetime -------
+section "verification and lifetime"
+
+# IP-2 and IP-4. A copy that started is not isolation, and the age of a copy is
+# not the age of what it holds. Both are properties of a READING - three command
+# outputs and two comparisons - so, like the narrowing rule in slice 2 and the
+# name family in slice 3, the reading is executed here rather than reviewed.
+#
+# Two sections of the provider contract are read, and the presence guard is a
+# FAIL rather than a skip for the reason the provider section states once: a row
+# that reads an empty section reports its rule satisfied by nothing at all.
+VSEC=$(doc_section "$PROVIDERS_DOC" 'Verifying the copy')
+LSEC=$(doc_section "$PROVIDERS_DOC" 'lifetime')
+vfx=$(mktemp -d)
+
+[ -n "$VSEC" ] || fail "isolation-providers.md has no '## Verifying the copy' section, so every verification row below reads an empty string"
+[ -n "$LSEC" ] || fail "isolation-providers.md has no lifetime section, so every age and reuse row below reads an empty string"
+
+# One row shape for the sentences these two sections owe, and it asserts a
+# POSITION as well as a sentence: the rule has to be inside the section that owns
+# it. Position is what slice 2 had to repair for the narrowing rule and slice 3
+# for the identity proof, both of which read green over a file that carried the
+# words somewhere else entirely.
+#
+# The negative asserts the TRANSITION - carried before the strip, absent after -
+# because a deletion fixture over a section that never carried the sentence
+# prints ok while proving nothing, which is the false green slice 2 found in its
+# own negatives and slice 4a found again in two of its own.
+sec_row() {
+    if printf '%s\n' "$1" | grep -qiE "$3"; then
+        ok "$2 states: $4"
+    else
+        fail "$2 never states: $4"
+        return
+    fi
+    printf '%s\n' "$1" | grep -viE "$3" > "$vfx/stripped"
+    if grep -qiE "$3" "$vfx/stripped"; then
+        fail "the fixture for '$4' still carries the sentence after the strip"
+    else
+        ok "rejected: $2 with '$4' deleted"
+    fi
+}
+
+# ...and the row shape must be able to say no, or every call below is a sentence
+# about a section nobody read. The subshell is deliberate and is the same one the
+# provider section's doc_states probe uses: a probe of the helper's own behaviour
+# must not add a failure to a suite that is working correctly.
+sec_probe=$( sec_row '' 'an empty section' 'a sentence no empty section carries' 'the probe' )
+case $sec_probe in
+    *FAIL*) ok "rejected: the sentence reader over a section that carries none of it" ;;
+    *)      fail "the sentence reader reported ok over an empty section: '$sec_probe'" ;;
+esac
+
+# --- IP-2  a start is not proof, and the five stand-ins are named ------------
+sec_row "$VSEC" 'the verification section' 'start is not proof' \
+    'a start is not proof'
+standins=0
+for _s in 'running' 'connection' '200' 'exit status' 'log line'; do
+    printf '%s\n' "$VSEC" | grep -qiF "$_s" && standins=$((standins + 1))
+done
+[ "$standins" -eq 5 ] \
+    && ok "all five things that may not stand in for the query are named: a running process, an accepted connection, a 200, a zero exit, a readiness log line" \
+    || fail "$((5 - standins)) of the five stand-ins for the query are unnamed in the verification section"
+
+sec_row "$VSEC" 'the verification section' 'destroy(ed)? and the pair refuses|copy is destroyed' \
+    'a failed verification destroys the copy and refuses the pair'
+sec_row "$VSEC" 'the verification section' 'never wired to the base store|silent fall ?back' \
+    'the overlay is never wired to the base store instead'
+sec_row "$VSEC" 'the verification section' 'byte for byte' \
+    'the copy must match the base store byte for byte'
+sec_row "$VSEC" 'the verification section' 'differs from its output on the empty instance|differs.*empty instance' \
+    'the candidate is a query only once it discriminates against an empty instance'
+sec_row "$VSEC" 'the verification section' 'CMD-SHELL' \
+    'a CMD-SHELL healthcheck is not a candidate'
+sec_row "$VSEC" 'the verification section' 'no query could be derived' \
+    'rung 3 destroys the copy, refuses the pair and names the store'
+sec_row "$VSEC" 'the verification section' 'one route' \
+    'all three issues of the candidate go through one route'
+
+# The rung table, as a set rather than as three mentions: a file naming rungs 1
+# and 3 and never the read rung is the chain DS42 found open, and it would read
+# as complete under three independent greps.
+rungs=0
+for _r in 'healthcheck' 'read' 'nothing'; do
+    printf '%s\n' "$VSEC" | grep -qiF "$_r" && rungs=$((rungs + 1))
+done
+[ "$rungs" -eq 3 ] \
+    && ok "the rung table names all three sources: the exec-form healthcheck, a read from the repository's own targets, and nothing" \
+    || fail "the rung table names $rungs of its three sources"
+
+# --- 4b.1  the measured 0-of-4 table, declared rather than met as a bug ------
+# The consequence is the point: on the repository this change exists for, this
+# version provisions a copy and then refuses. A file that stated the mechanism
+# and not the gap would read as a working feature.
+for _s in postgres timescaledb redis minio; do
+    printf '%s\n' "$VSEC" | grep -qiF "$_s" \
+        && ok "the measured rung-1 table names $_s" \
+        || fail "the measured rung-1 table does not name $_s"
+done
+sec_row "$VSEC" 'the verification section' 'refuses every writing pair' \
+    'the consequence: against that repository this version provisions and then refuses every writing pair'
+
+# --- V51  the match is a property of the moment the copy was made ------------
+# Not a nicety. Re-running the byte-for-byte comparison on a later launch
+# compares a copy the overlay has been writing into against a base store that
+# has moved on, so it would report the overlay's own work as a corrupt copy and
+# destroy it - which is the reuse Q3 exists to make free, deleted.
+sec_row "$VSEC" 'the verification section' 'writing into the copy|overlay has been writing' \
+    'the match is not re-run later, because the overlay has been writing into the copy'
+sec_row "$VSEC" 'the verification section' 'still answer differently from an instance holding nothing|every later launch' \
+    'every later launch still issues the query against the copy and an empty instance'
+
+# --- V53  lifetime: once per (worktree, store), and refresh is explicit ------
+sec_row "$LSEC" 'the lifetime section' 'once per .\(worktree, store\).|once per .worktree, store.' \
+    'a copy is made once per (worktree, store) and reused'
+sec_row "$LSEC" 'the lifetime section' 'explicit refresh' \
+    'a copy is re-provisioned only on an explicit refresh request'
+sec_row "$LSEC" 'the lifetime section' 'never refuses a launch on age|refuses a launch on age' \
+    'no heuristic refreshes a copy and none refuses a launch on age alone'
+
+# --- DS38  the age is the COPY's, and the data's age is unmeasured -----------
+sec_row "$LSEC" 'the lifetime section' 'absolute timestamp' \
+    'the absolute timestamp the copy was taken'
+sec_row "$LSEC" 'the lifetime section' 'elapsed' \
+    'the elapsed time since it'
+sec_row "$LSEC" 'the lifetime section' 'as of that timestamp' \
+    'what it holds is the base stack.s state as of that timestamp'
+sec_row "$LSEC" 'the lifetime section' 'did not compare' \
+    'the run did not compare the copy with the base store'
+sec_row "$LSEC" 'the lifetime section' 'instance identity has changed' \
+    'where the base store.s runtime instance identity has changed, the run says so'
+sec_row "$LSEC" 'the lifetime section' 'comparison was not made' \
+    'where that identity cannot be read, the run says the comparison was not made'
+
+# --- V55  no shipped file states a data age beside a copy --------------------
+# The exclusion is ONE word - `never` - and it is measured rather than chosen for
+# style, the same decision slice 3 made for the allocator vocabulary. The file
+# that forbids these four phrases has to be able to name them, and every shipped
+# line that names one carries `never`; the fixtures below carry none.
+#
+# `\b` on both sides of stale and fresh is load-bearing too: `staleness` and
+# `refresh` are ordinary words this repository already uses correctly, and a
+# pattern that turned them red is a pattern that gets loosened rather than obeyed.
+# ...and the prohibition has to be STATED as well as obeyed, or the tree-wide row
+# below is satisfied by a tree that says nothing about ageing at all - which is a
+# gate satisfied by absence, the defect this file was written against.
+sec_row "$LSEC" 'the lifetime section' 'may never appear beside a copy' \
+    'four phrases may never appear beside a copy'
+
+DATA_AGE='up to date as of|the data is [0-9]|data is [0-9]+ ?[a-z]+ old|(cop(y|ies))[^.]{0,30}(is|are|was|were) \b(stale|fresh)\b|\b(stale|fresh)\b cop(y|ies)|the state is \b(stale|fresh)\b'
+data_age_hits() { grep -rniE "$DATA_AGE" "$SKILL" README.md docs SECURITY.md 2>/dev/null | grep -v never; }
+if [ -n "$(data_age_hits)" ]; then
+    fail "a shipped file states a data age beside a copy: $(data_age_hits | head -1)"
+else
+    ok "no shipped file states a data age beside a copy - no up-to-date-as-of, no stale, no fresh, no data-is-N-old"
+fi
+aged=0
+for _a in 'The copy is up to date as of 09:14.' \
+          'The data is 3 days old.' \
+          'That copy is stale.' \
+          'Your copy is fresh.'; do
+    printf '%s\n' "$_a" > "$vfx/age.md"
+    grep -qiE "$DATA_AGE" "$vfx/age.md" && aged=$((aged + 1))
+done
+[ "$aged" -eq 4 ] \
+    && ok "rejected: all four comparisons the run never performed - up to date as of, data is N old, a stale copy, a fresh copy" \
+    || fail "the data-age grep caught only $aged of the four phrases"
+
+# ...and the one-word exclusion is load-bearing, proved by deleting it from the
+# shipped prohibition rather than asserted. Without this the exclusion could be
+# excusing every line in the tree and nobody would know.
+printf '%s\n' 'Four phrases may appear beside a copy: up to date as of, stale, fresh, and the data is N old.' > "$vfx/noneverline"
+if grep -qiE "$DATA_AGE" "$vfx/noneverline" && [ -z "$(grep -v never "$vfx/noneverline" | grep -viE "$DATA_AGE")" ]; then
+    ok "rejected: the prohibition sentence with its one-word exclusion removed, which is what proves the exclusion is not a blanket pass"
+else
+    fail "the data-age exclusion is not load-bearing: the prohibition sentence without 'never' is not caught"
+fi
+
+# --- V48  a candidate is harvested from an EXEC-FORM healthcheck only --------
+# The healthcheck's test vector is repository data that becomes a command this
+# skill runs against a store, so the template contract governs it unchanged:
+# `references/shared-state.md` says every rule there applies to every command
+# this skill discovers and runs against a store, and two of its rows decide this
+# one. A shell-form test is shell source again rather than an argument vector,
+# and a vector whose program re-parses its argument hands the value straight back
+# to the grammar argv had just closed.
+#
+# The list of re-parsing programs is taken OUT OF THE SHIPPED FILE rather than
+# copied here - the C1 pattern this repository already applies to the hash8
+# recipe and to the name family. A checker carrying its own copy of the rule
+# cannot see the shipped one lose a member.
+reparse_programs() {
+    awk '/may not re-parse/ {
+        s = $0
+        while (match(s, /`[^`]*`/)) {
+            c = substr(s, RSTART + 1, RLENGTH - 2)
+            if (c ~ /^[a-z]+$/) print c
+            s = substr(s, RSTART + RLENGTH)
+        }
+    }' "$SHARED" | sort -u | tr '\n' ' '
+}
+DENY=$(reparse_programs)
+case " $DENY " in
+    *' sh '*) ok "the re-parsing program list comes out of shared-state.md: $DENY" ;;
+    *)        fail "shared-state.md yielded no re-parsing program list ('$DENY'), so the harvest rows below judge nothing" ;;
+esac
+
+# Decides what a healthcheck test vector yields. The vector arrives one element
+# per line, the first being the FORM the resolver reported.
+#
+# $2 exists for the falsifiers below and for nothing else: it names a clause to
+# drop, so a clause is proved load-bearing by removing it from the reader that
+# actually runs rather than from a second copy of it - slice 2's relief_missing,
+# one file along.
+harvest() {
+    awk -v deny="$1" -v drop="${2:-}" '
+        NR == 1 { form = $0; next }
+        { argv[++n] = $0 }
+        END {
+            if (form == "" || form == "NONE") { print "refused\tthe store declares no healthcheck, so rung 1 supplies no candidate"; exit }
+            if (drop != "form" && form != "CMD") { print "refused\ta " form " healthcheck is shell source again rather than an argument vector"; exit }
+            if (n == 0) { print "refused\tan exec-form healthcheck naming no program"; exit }
+            if (drop != "reparse") {
+                split(deny, d, " ")
+                for (i in d) if (d[i] != "" && argv[1] == d[i]) {
+                    print "refused\tthe candidate program " argv[1] " re-parses its argument, so the vector is program text again"
+                    exit
+                }
+            }
+            line = "candidate"
+            for (i = 1; i <= n; i++) line = line "\t" argv[i]
+            print line
+        }'
+}
+
+harvest_case() {
+    _got=$(harvest "$DENY" "" < "$1")
+    case $_got in
+        "$2"*) ok "$3" ;;
+        *)     fail "$3 - the reader answered '$_got'" ;;
+    esac
+}
+
+printf 'CMD\ncat\n/data/marker\n' > "$vfx/exec.hc"
+printf 'CMD-SHELL\npg_isready -U postgres\n' > "$vfx/shell.hc"
+printf 'CMD\nsh\n-c\npg_isready -U postgres\n' > "$vfx/reparse.hc"
+printf 'NONE\n' > "$vfx/none.hc"
+
+harvest_case "$vfx/exec.hc" candidate "an exec-form healthcheck is harvested as a verification candidate"
+harvest_case "$vfx/shell.hc" refused "rejected: a CMD-SHELL healthcheck, which is shell source rather than an argument vector"
+harvest_case "$vfx/reparse.hc" refused "rejected: an exec-form healthcheck whose program re-parses its argument"
+harvest_case "$vfx/none.hc" refused "rejected: a store declaring no healthcheck at all"
+
+# The refusal must NAME the shell form rather than merely exit non-zero, which is
+# the defect the verification legend names four shipped rows for.
+harvest "$DENY" "" < "$vfx/shell.hc" | grep -q 'CMD-SHELL healthcheck is shell source' \
+    && ok "the CMD-SHELL refusal names the shell form it refused on" \
+    || fail "the CMD-SHELL refusal does not name the form: '$(harvest "$DENY" "" < "$vfx/shell.hc")'"
+
+# ...and both clauses are proved LOAD-BEARING by dropping them and showing a case
+# flip, not by asserting the reader contains them.
+case $(harvest "$DENY" form < "$vfx/shell.hc") in
+    candidate*) ok "rejected: the harvest with its exec-form clause dropped admits the CMD-SHELL vector, so the clause is what refuses it" ;;
+    *)          fail "dropping the exec-form clause changed nothing, so that clause is not what refuses a shell-form healthcheck" ;;
+esac
+case $(harvest '' "" < "$vfx/reparse.hc") in
+    candidate*) ok "rejected: the harvest with an empty deny list admits the sh -c vector, so the list out of shared-state.md is what refuses it" ;;
+    *)          fail "an empty deny list changed nothing, so the shared-state.md list is not what refuses a re-parsing program" ;;
+esac
+
+# --- V49, V50  the readback: three outputs, two comparisons, no engine -------
+# DS34. Matching proves the copy carries the base's state; discrimination proves
+# the command could have said otherwise. Neither alone is worth anything, which
+# is why both are clauses of one reader and each is falsified separately.
+#
+# $5 drops a clause, for the same reason $2 does above.
+readback() {
+    if [ "${5:-}" != probe ] && [ "$4" != yes ]; then
+        printf 'refuse\tno discriminator probe has been run for this store and command\n'; return
+    fi
+    if [ "${5:-}" != discriminate ] && [ "$1" = "$2" ]; then
+        printf 'refuse\tthe candidate answers identically on an empty instance, so it is not a query\n'; return
+    fi
+    if [ "${5:-}" != match ] && [ "$3" != "$1" ]; then
+        printf 'destroy\tthe copy does not answer what the base store answers, so it does not carry its state\n'; return
+    fi
+    printf 'isolated\tthe copy answered the base store.s answer, and the query discriminates\n'
+}
+
+readback_case() {
+    _got=$(readback "$1" "$2" "$3" "$4")
+    case $_got in
+        "$5"*) ok "$6" ;;
+        *)     fail "$6 - the reader answered '${_got%%	*}'" ;;
+    esac
+}
+
+# The four values below are MEASURED rather than invented, on postgres:16 and
+# redis:7-alpine, an empty instance beside a seeded one:
+#   pg_isready -U postgres  ->  "/var/run/postgresql:5432 - accepting connections", exit 0, on both
+#   redis-cli ping          ->  "PONG" on both
+#   psql -tAc 'SELECT 1'    ->  "1" on both, which is DS42's generated read failing its own test
+#   a schema-agnostic count ->  "0" empty against "1" seeded, and redis dbsize 0 against 2
+readback_case '2' '0' '2' yes isolated \
+    "a candidate that counts what the instance carries is a query, and the copy answering the base store's answer is isolated"
+readback_case '/var/run/postgresql:5432 - accepting connections' '/var/run/postgresql:5432 - accepting connections' '/var/run/postgresql:5432 - accepting connections' yes refuse \
+    "rejected as a query: pg_isready, measured answering identically on an empty instance"
+readback_case 'PONG' 'PONG' 'PONG' yes refuse \
+    "rejected as a query: redis-cli ping, measured answering identically on an empty instance"
+readback_case '1' '1' '1' yes refuse \
+    "rejected as a query: a generated SELECT 1, measured answering identically - DS42's read held to the same discriminator"
+readback_case '2' '0' '0' yes destroy \
+    "rejected: a copy answering what an empty instance answers - it is destroyed and the pair refuses"
+readback_case '2' '0' '2' no refuse \
+    "rejected: a candidate admitted with no discriminator probe having run at all"
+
+# Each clause dropped in turn, and each drop must flip a case that the shipped
+# reader answers correctly. A clause nobody can flip is a clause the case list
+# never reached - the false green slice 2 found in its own invariant.
+case $(readback 'PONG' 'PONG' 'PONG' yes discriminate) in
+    isolated*) ok "rejected: the readback with its discrimination clause dropped admits redis-cli ping, so that clause is what refuses it" ;;
+    *)         fail "dropping the discrimination clause changed nothing, so it is not what rejects a non-discriminating candidate" ;;
+esac
+case $(readback '2' '0' '0' yes match) in
+    isolated*) ok "rejected: the readback with its match clause dropped admits a copy carrying the wrong state, so that clause is what destroys it" ;;
+    *)         fail "dropping the match clause changed nothing, so it is not what catches a copy that does not carry the base's state" ;;
+esac
+case $(readback '2' '0' '2' no probe) in
+    isolated*) ok "rejected: the readback with its probe clause dropped admits an unprobed candidate, so that clause is what refuses it" ;;
+    *)         fail "dropping the probe clause changed nothing, so an unprobed candidate was never being refused by it" ;;
+esac
+
+# --- DS34  the route is ONE route, and it is read out of the shipped table ---
+# A candidate issued one way against the empty instance and another way against
+# the base store can differ for a reason that has nothing to do with the data -
+# and a difference is exactly the signal being read, so a second route would
+# MANUFACTURE a discrimination and admit a liveness ping as a query. The table
+# is what the run follows, so the table is what this reads.
+exec_routes() {
+    printf '%s\n' "$VSEC" \
+        | awk -F'|' '/docker exec/ { r = $4; gsub(/`/, "", r); sub(/^[ \t]+/, "", r); sub(/[ \t]+$/, "", r); if (r != "") print r }' \
+        | sort -u
+}
+route_n=$(exec_routes | awk 'END { print NR + 0 }')
+ROUTE=$(exec_routes | awk 'NR == 1')
+if [ "$route_n" -eq 1 ] && [ -n "$ROUTE" ]; then
+    ok "all three issues of the candidate use one route, taken out of the shipped table: $ROUTE"
+else
+    fail "the shipped table defines $route_n distinct exec route(s), so the three outputs are not comparable"
+fi
+printf '%s\n' "$VSEC" \
+    | awk '/docker exec/ { print }' \
+    | awk 'NR == 1 { sub(/docker exec/, "docker attach --sig-proxy"); } { print }' > "$vfx/tworoutes.md"
+if [ "$( { printf '%s\n' "$VSEC"; cat "$vfx/tworoutes.md"; } \
+        | awk -F'|' '/docker (exec|attach)/ { r = $4; gsub(/`/, "", r); sub(/^[ \t]+/, "", r); sub(/[ \t]+$/, "", r); if (r != "") print r }' \
+        | sort -u | awk 'END { print NR + 0 }')" -ge 2 ]; then
+    ok "rejected: a table whose empty-instance row issues the candidate by a second route, which would manufacture the discrimination"
+else
+    fail "the route reader cannot see a second route in the table"
+fi
+
+# The empty instance's start line, read out of the same table. Three properties
+# and each is the difference between a probe and a leak: it mounts nothing, so it
+# can hold no state; it is started with --rm, so the RUNTIME removes it and no
+# command here ever names an object to remove; and it carries this repository's
+# hash and worktree, so a run that died still leaves something a person can find.
+PROBE_START=$(printf '%s\n' "$VSEC" | awk -F'|' '/docker run/ { r = $3; gsub(/`/, "", r); sub(/^[ \t]+/, "", r); sub(/[ \t]+$/, "", r); print r; exit }')
+if [ -z "$PROBE_START" ]; then
+    fail "the shipped table carries no start line for the empty instance, so the probe rows below read nothing"
+else
+    probe_bad=0
+    printf '%s\n' "$PROBE_START" | grep -q -- '--rm' || probe_bad=$((probe_bad + 1))
+    printf '%s\n' "$PROBE_START" | grep -qE ' -v |--volume|--mount' && probe_bad=$((probe_bad + 1))
+    for _l in stackgraft.repo stackgraft.worktree; do
+        printf '%s\n' "$PROBE_START" | grep -qF "$_l" || probe_bad=$((probe_bad + 1))
+    done
+    [ "$probe_bad" -eq 0 ] \
+        && ok "the empty instance mounts nothing, is removed by the runtime with --rm, and carries this repository's hash and worktree" \
+        || fail "$probe_bad of the empty instance's four start properties are missing from the shipped line"
+fi
+printf '%s\n' 'docker run -d --label "stackgraft.repo=$hash8" -v "$src":/data "$image"' > "$vfx/badprobe"
+if grep -q -- '--rm' "$vfx/badprobe"; then
+    fail "the leaking-probe fixture carries --rm, so it exercises the wrong condition"
+elif grep -qE ' -v |--volume' "$vfx/badprobe"; then
+    ok "rejected: an empty instance started without --rm and with state mounted into it, which is a copy nobody seeded and a container nothing removes"
+else
+    fail "the probe reader cannot see a start line that mounts state and leaves the container behind"
+fi
+
+# The probe must NOT carry stackgraft.store: the copy's four-label set is what a
+# copy is, and a probe answering that query would be a copy nothing ever seeded.
+printf '%s\n' "$PROBE_START" | grep -qF 'stackgraft.store' \
+    && fail "the empty instance carries stackgraft.store, so the copy's own scoped query would return it" \
+    || ok "the empty instance carries no stackgraft.store, so no query for a copy can ever return it"
+
+rm -rf "$vfx"
+
+# --- the verification RUN for real: skipped loudly, never quietly passed -----
+# Everything above reads a rule or runs a reader over values. These rows obtain
+# the values: a real base store, a real copy, a real empty instance, and the
+# route out of the shipped table issued three times against them.
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 \
+   && [ -f "$PROVIDER" ] && [ -n "${ROUTE:-}" ]; then
+    VH=deadbe02
+    vwt=$(mktemp -d)
+    vsrc=sg-verify-base
+    vimg=alpine/git
+
+    # TWO envelopes, and the second one is a repair rather than belt and braces.
+    # The name filter alone covers the fixtures this block creates by hand, and
+    # it does NOT cover the object most likely to leak: the copy, whose name the
+    # provider derives from the worktree hash and which begins with neither
+    # prefix. A leak row that cannot see the most likely leak is the shape this
+    # whole file exists to catch, so the label query - which is what a copy and
+    # the probe both answer - is asked as well.
+    v_inventory() {
+        docker volume ls --quiet --filter "label=stackgraft.repo=$VH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter "label=stackgraft.repo=$VH" 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker volume ls --quiet --filter name=sg-verify 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter name=sg-verify 2>/dev/null | sort | tr '\n' ' '
+    }
+    v_before=$(v_inventory)
+    [ "$v_before" = '|||' ] \
+        && ok "the runtime holds no object of this section's before it runs, so its inventory rows read only what it made" \
+        || fail "the runtime already holds one of this section's objects, so its inventory rows cannot be trusted: $v_before"
+
+    # ...and the label envelope can SEE such an object, which is what makes the
+    # widening a check rather than a claim. The fixture carries this run's label
+    # and NEITHER fixture name prefix, so the name filter alone is blind to it -
+    # which is exactly the shape a leaked copy has.
+    docker volume create --label "stackgraft.repo=$VH" sgleak4b >/dev/null 2>&1
+    if [ "$(v_inventory)" = "$v_before" ]; then
+        fail "the leak envelope cannot see a labelled object outside the fixture name prefix, so it could not see a leaked copy either"
+    elif docker volume ls --quiet --filter name=sg-verify 2>/dev/null | grep -qxF sgleak4b; then
+        fail "the leak fixture matches the name filter, so it exercises the wrong envelope"
+    else
+        ok "rejected: an object carrying this run's label and neither fixture name - the leak envelope reports it, which the name filter alone could not"
+    fi
+    docker volume rm sgleak4b >/dev/null 2>&1
+
+    # Issues the candidate the way the shipped table says to, with the instance
+    # and the argument vector supplied the way the table's own placeholders name
+    # them. The route is the shipped string, run verbatim.
+    issue() { _i=$1; shift; instance=$_i sh -c "$ROUTE" _ "$@" 2>/dev/null; }
+
+    docker volume create "$vsrc" >/dev/null 2>&1
+    docker run --rm --entrypoint sh -v "$vsrc":/data "$vimg" \
+        -c 'printf one > /data/a; printf two > /data/b' >/dev/null 2>&1
+    vbase=$(docker run -d --name sg-verify-base-instance --entrypoint sh -v "$vsrc":/data "$vimg" \
+        -c 'sleep 900' 2>/dev/null)
+
+    if [ -z "$vbase" ]; then
+        fail "the fixture base store would not start, so no verification run row proved anything"
+    else
+        vout=$( sh "$ROOT/$PROVIDER" provision "$VH" "$vwt" fixturestore "$vsrc" "$vimg" "$vbase" \
+                    "stackgraft.labels=1" "stackgraft.repo=$VH" "stackgraft.worktree=$vwt" 2>&1 )
+        vrc=$?
+        vcopy=$(printf '%s\n' "$vout" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+        if [ "$vrc" -ne 0 ] || [ -z "$vcopy" ]; then
+            fail "the fixture provision exited $vrc and named instance '$vcopy', so every readback row below proves nothing"
+        else
+            ok "a copy and an instance on it exist, so the readback below has something to read"
+
+            # The empty instance: same image, no volume, --rm, labelled with this
+            # repository's hash and worktree and NOT with stackgraft.store.
+            vprobe=$(docker run -d --rm --entrypoint sh \
+                --label "stackgraft.repo=$VH" --label "stackgraft.worktree=$vwt" \
+                --label "stackgraft.probe=fixturestore" \
+                --name sg-verify-probe "$vimg" -c 'sleep 300' 2>/dev/null)
+            [ -n "$vprobe" ] \
+                && ok "an empty instance of the same image started with no volume, so it can hold no state" \
+                || fail "the empty instance would not start, so the discriminator rows below prove nothing"
+
+            # --- V49  a discriminating candidate, issued three times ---------
+            d_base=$(issue "$vbase" wc -c /data/a /data/b)
+            d_empty=$(issue "$vprobe" wc -c /data/a /data/b)
+            d_copy=$(issue "$vcopy" wc -c /data/a /data/b)
+            case $(readback "$d_base" "$d_empty" "$d_copy" yes) in
+                isolated*) ok "a candidate that reads what the instance carries discriminates against the empty instance, and the copy matches the base store byte for byte" ;;
+                *)         fail "the discriminating candidate did not clear: base '$d_base' empty '$d_empty' copy '$d_copy'" ;;
+            esac
+            [ -n "$d_base" ] && [ "$d_base" != "$d_empty" ] \
+                && ok "the empty instance really answers differently, so the discrimination is measured rather than assumed" \
+                || fail "base and empty answered the same thing ('$d_base'), so the fixture cannot show a discrimination"
+
+            # --- V49  the shipped negative shape: a constant answer ----------
+            # This is redis-cli ping and pg_isready in the one image this suite
+            # is allowed to assume: a program whose output is the same whatever
+            # the instance holds.
+            c_base=$(issue "$vbase" echo PONG)
+            c_empty=$(issue "$vprobe" echo PONG)
+            c_copy=$(issue "$vcopy" echo PONG)
+            case $(readback "$c_base" "$c_empty" "$c_copy" yes) in
+                refuse*) ok "rejected as a query: a candidate measured answering '$c_empty' on the empty instance and on the base store alike" ;;
+                *)       fail "a constant-output candidate cleared the readback: base '$c_base' empty '$c_empty'" ;;
+            esac
+
+            # --- V51  a copy that does not carry the base's state ------------
+            # The copy loses bytes it was seeded with, which is what a copy that
+            # did not carry the base's state looks like at readback.
+            docker run --rm --entrypoint sh -v "$vcopy":/data "$vimg" -c ': > /data/b' >/dev/null 2>&1
+            t_copy=$(issue "$vcopy" wc -c /data/a /data/b)
+            v_verdict=$(readback "$d_base" "$d_empty" "$t_copy" yes)
+            case $v_verdict in
+                destroy*) ok "rejected: a truncated copy - it does not answer the base store's answer, so it is destroyed and the pair refuses" ;;
+                *)        fail "a truncated copy cleared the readback: base '$d_base' copy '$t_copy'" ;;
+            esac
+
+            # ...and the refusal really destroys and really does not fall back.
+            # Inspecting what the overlay WOULD have been wired to is the whole
+            # of the negative: the copy has to be gone, and the address the run
+            # can still obtain must name no base store.
+            sh "$ROOT/$PROVIDER" destroy "$VH" "$vwt" fixturestore >/dev/null 2>&1
+            a_out=$( sh "$ROOT/$PROVIDER" address "$VH" "$vwt" fixturestore 2>&1 )
+            a_rc=$?
+            if docker container inspect "$vcopy" >/dev/null 2>&1; then
+                fail "the copy's instance survived a failed verification"
+            elif [ "$a_rc" -ne 3 ]; then
+                fail "after a failed verification the run could still address something, exit $a_rc"
+            elif printf '%s\n' "$a_out" | grep -qF "$vbase"; then
+                fail "the address after a failed verification names the base store, which is the silent fall back"
+            else
+                ok "after a failed verification the copy is gone, nothing is addressable, and no address names the base store - there is no fall back to wire to"
+            fi
+
+            docker stop -t 1 "$vprobe" >/dev/null 2>&1
+        fi
+
+        # --- V53  lifetime and age, on a copy made once and reused -----------
+        vout2=$( sh "$ROOT/$PROVIDER" provision "$VH" "$vwt" fixturestore "$vsrc" "$vimg" "$vbase" \
+                     "stackgraft.labels=1" "stackgraft.repo=$VH" "stackgraft.worktree=$vwt" 2>&1 )
+        v2rc=$?
+        vinst=$(printf '%s\n' "$vout2" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+        if [ "$v2rc" -ne 0 ] || [ -z "$vinst" ]; then
+            fail "the lifetime fixture could not provision a copy, exit $v2rc"
+        else
+            # Two launches, one identity. The second launch does not provision:
+            # the same verb over the same triple refuses rather than seeding a
+            # half-old volume, which is what makes a refresh explicit.
+            again=$( sh "$ROOT/$PROVIDER" provision "$VH" "$vwt" fixturestore "$vsrc" "$vimg" "$vbase" \
+                         "stackgraft.labels=1" "stackgraft.repo=$VH" "stackgraft.worktree=$vwt" 2>&1 )
+            agrc=$?
+            if [ "$agrc" -eq 3 ] && printf '%s\n' "$again" | grep -q 'already exists'; then
+                ok "rejected: a second provision from the same worktree - the copy is made once and reused, and a refresh has to be asked for"
+            else
+                fail "a second provision exited $agrc rather than refusing: $(printf '%s' "$again" | tr '\n' ' ' | cut -c1-120)"
+            fi
+
+            # The age, on a run that provisions nothing, refreshes nothing and
+            # destroys nothing: `address` is what such a run calls, so `address`
+            # is where the age has to be.
+            q1=$( sh "$ROOT/$PROVIDER" address "$VH" "$vwt" fixturestore "$vbase" 2>&1 )
+            q2=$( sh "$ROOT/$PROVIDER" address "$VH" "$vwt" fixturestore "$vbase" 2>&1 )
+            id1=$(printf '%s\n' "$q1" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+            id2=$(printf '%s\n' "$q2" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+            [ -n "$id1" ] && [ "$id1" = "$id2" ] \
+                && ok "two launches from one worktree reach one instance identity: $id1" \
+                || fail "two launches named different instances: '$id1' and '$id2'"
+
+            age_taken=$(printf '%s\n' "$q1" | awk -F'\t' '$1 == "age" && $2 == "taken" { print $3; exit }')
+            age_elapsed=$(printf '%s\n' "$q1" | awk -F'\t' '$1 == "age" && $2 == "elapsed" { print $3; exit }')
+            age_base=$(printf '%s\n' "$q1" | awk -F'\t' '$1 == "age" && $2 == "base" { print $3; exit }')
+            age_subject=$(printf '%s\n' "$q1" | awk -F'\t' '$1 == "age" && $2 == "subject" { print $3; exit }')
+            case ${age_elapsed:-x} in
+                *[!0-9]*) fail "the run reported an elapsed age of '$age_elapsed', which is not a number of seconds" ;;
+                *)        ok "a run that provisioned nothing still reports the copy's age: taken $age_taken, $age_elapsed second(s) ago" ;;
+            esac
+            [ -n "$age_taken" ] \
+                && ok "the age carries the absolute timestamp the copy was taken, not an interval alone" \
+                || fail "the run reported no absolute timestamp for the copy"
+            printf '%s\n' "$age_subject" | grep -qi 'age of the copy' \
+                && ok "the run states in its own output that this is the age of the COPY and not of what it holds" \
+                || fail "the run's age records carry no statement of what the age is the age of: '$age_subject'"
+            case ${age_base:-} in
+                changed | unchanged | unread) ok "the run answers the one observable question beside the age - the base store's runtime instance identity is $age_base" ;;
+                *) fail "the run's base-identity comparison answered '$age_base', which is none of changed, unchanged or unread" ;;
+            esac
+
+            # ...and the comparison is NOT MADE rather than assumed where the
+            # base instance cannot be read. Same verb, no base instance named.
+            q3=$( sh "$ROOT/$PROVIDER" address "$VH" "$vwt" fixturestore 2>&1 )
+            [ "$(printf '%s\n' "$q3" | awk -F'\t' '$1 == "age" && $2 == "base" { print $3; exit }')" = unread ] \
+                && ok "rejected: a run with no base instance to compare against says the comparison was not made rather than reporting agreement" \
+                || fail "a run that could not read the base store's identity did not say so: $(printf '%s' "$q3" | tr '\n' ' ' | cut -c1-120)"
+
+            # The negative for the age rows themselves: the same reader over an
+            # address output with its age records stripped must reject it. Without
+            # the transition test the rows above would pass over any output.
+            stripped=$(printf '%s\n' "$q1" | awk -F'\t' '$1 != "age"')
+            if printf '%s\n' "$stripped" | awk -F'\t' '$1 == "age"' | grep -q . ; then
+                fail "the age-stripping fixture left age records behind, so it exercises the wrong condition"
+            elif [ -z "$(printf '%s\n' "$stripped" | awk -F'\t' '$1 == "age" && $2 == "taken" { print $3 }')" ]; then
+                ok "rejected: a run whose output carries no age record - its absence fails the row rather than passing quietly"
+            else
+                fail "the age reader cannot notice an output with no age in it"
+            fi
+
+            sh "$ROOT/$PROVIDER" destroy "$VH" "$vwt" fixturestore >/dev/null 2>&1
+        fi
+    fi
+
+    vbase_anon=$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$vbase" 2>/dev/null | grep -vxF "$vsrc" | grep . || printf '')
+    docker rm -f -v "$vbase" >/dev/null 2>&1
+    docker volume rm "$vsrc" >/dev/null 2>&1
+    rm -rf "$vwt"
+
+    # Nothing this section made may outlive it, and that includes the one kind of
+    # object no label query here could ever report. Asserted rather than assumed:
+    # the suite already carries eighteen anonymous volumes leaked by older
+    # fixtures, and a nineteenth added here would be indistinguishable from them.
+    vleft=$(v_inventory)
+    vanon=0
+    for _v in $vbase_anon; do
+        docker volume inspect "$_v" >/dev/null 2>&1 && vanon=$((vanon + 1))
+    done
+    [ "$vleft" = '|||' ] && [ "$vanon" -eq 0 ] \
+        && ok "this section left no labelled object, no fixture, no probe and no unnamed volume behind" \
+        || fail "this section leaked '$vleft' and $vanon unnamed volume(s)"
+else
+    printf '  skip  verification runtime rows (no docker daemon, no alpine/git image, no provider script, or no route in the shipped table)\n'
 fi
 
 # ----------------------------------------------------------------- reap -----

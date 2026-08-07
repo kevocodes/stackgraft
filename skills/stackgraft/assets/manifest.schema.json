@@ -137,6 +137,16 @@
             "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
             "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies."
           },
+          "nameForm": {
+            "type": "object",
+            "required": ["value", "reason"],
+            "additionalProperties": false,
+            "description": "Which member of the name family this store's namespace grammar accepts (references/coordination-identity.md). DISCOVERED FROM THE SUBSTRATE'S OWN REJECTION SURFACE rather than looked up in a per-engine table in the skill, which is the table this change exists to stop growing: a recorded field grows without an edit to any shipped file and expires with the backingStores map its entry sits in. OPTIONAL, and its absence is not a default: a store recording neither form is undetermined, which refuses, because handing a substrate the nearest fitting name is how every bucket this skill could name came to be rejected by the substrate itself. One form is never substituted for another.",
+            "properties": {
+              "value": { "type": "string", "enum": ["sql-identifier", "label"], "description": "sql-identifier is {{isolationIdent}}, sg_<slug>_<hash8>; label is {{isolationLabel}}, sg-<slug>-<hash8>, which carries no underscore and is at most 63 characters. Both derive from one branch hash and differ only by the separator their projection supplies." },
+              "reason": { "type": "string", "minLength": 1, "description": "What established it — the grammar the substrate documents, or the rejection it produced. It is required for the reason every evidence field here is: a form recorded without one is a form somebody guessed, and a guess that is wrong is a name the substrate refuses at the moment the overlay needs it." }
+            }
+          },
           "isolation": {
             "type": "object",
             "required": ["mechanism"],
@@ -177,12 +187,12 @@
               },
               "command": {
                 "type": "string",
-                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. The placeholder set is closed and is exactly the one in references/shared-state.md, which is the authority: {{isolationName}}, {{store}}, {{worktree}}, {{repoRoot}}, {{port}}. Every member has a defined source — generated name, backingStores key, overlay checkout, this manifest's repoRoot, and the port picked this run. Any other {{...}} invalidates the template, which makes mechanism \"none\". It must invoke one program: shell metacharacters are rejected in the raw template the repository wrote, and the check after substitution is structural — every placeholder value must occupy exactly one argv element and never be re-split — because under argv a metacharacter inside a host path is inert and re-denying it would refuse every store on that host. That inertness lasts only while nothing downstream re-parses the element, so the program itself may not take a command line or program text as an argument: a shell, env, eval, xargs and awk are rejected outright, and a language runtime is rejected when given a -c/-e style flag, because sh -c '... {{repoRoot}} ...' hands the substituted path back to shell grammar inside one argv element. A pipeline belongs in a task target the repo already defines."
+                "description": "Templated isolation command DISCOVERED FROM THE REPOSITORY, never embedded by this skill. The placeholder set is closed and is exactly the one in references/shared-state.md, which is the authority: {{isolationIdent}}, {{isolationLabel}}, {{store}}, {{worktree}}, {{repoRoot}}, {{port}}. Every member has a defined source — the two members of the name family derived in references/coordination-identity.md, the backingStores key, the overlay checkout, this manifest's repoRoot, and the port picked this run. NO MEMBER YIELDS AN ALLOCATED VALUE: every one is a pure derivation, none is drawn from a bounded pool, and none can run out or need releasing, which is why the retired {{isolationName}} has two successors rather than a third numeric one. A template asking for the form its store does not accept is not handed the other one — see nameForm. Any other {{...}} invalidates the template, which makes mechanism \"none\". It must invoke one program: shell metacharacters are rejected in the raw template the repository wrote, and the check after substitution is structural — every placeholder value must occupy exactly one argv element and never be re-split — because under argv a metacharacter inside a host path is inert and re-denying it would refuse every store on that host. That inertness lasts only while nothing downstream re-parses the element, so the program itself may not take a command line or program text as an argument: a shell, env, eval, xargs and awk are rejected outright, and a language runtime is rejected when given a -c/-e style flag, because sh -c '... {{repoRoot}} ...' hands the substituted path back to shell grammar inside one argv element. A pipeline belongs in a task target the repo already defines."
               },
               "teardownCommand": {
                 "type": "string",
-                "description": "Templated command that removes the isolated namespace when the overlay is done, DISCOVERED FROM THE REPOSITORY exactly as command is. The whole template contract in references/shared-state.md governs it — same closed placeholder set, same deny-list on the raw template, same structural check after substitution, same argv execution, same one-program rule, same destructive-verb rule, same approval — because it is equally repository-supplied and equally executed against the running store, and it is the half more likely to be destructive. Dropping {{isolationName}} is the accepted case; anything that removes a namespace not derived from it is rejected, and a rejected teardown makes the whole isolation record mechanism \"none\".",
-                "examples": ["docker compose exec -T postgres dropdb --if-exists {{isolationName}}"]
+                "description": "Templated command that removes the isolated namespace when the overlay is done, DISCOVERED FROM THE REPOSITORY exactly as command is. The whole template contract in references/shared-state.md governs it — same closed placeholder set, same deny-list on the raw template, same structural check after substitution, same argv execution, same one-program rule, same destructive-verb rule, same approval — because it is equally repository-supplied and equally executed against the running store, and it is the half more likely to be destructive. Dropping the name family member this template substituted is the accepted case; anything that removes a namespace not derived from the family is rejected, and a rejected teardown makes the whole isolation record mechanism \"none\".",
+                "examples": ["docker compose exec -T postgres dropdb --if-exists {{isolationIdent}}"]
               },
               "env": {
                 "type": "object",
@@ -378,9 +388,9 @@
               "additionalProperties": false,
               "allOf": [
                 {
-                  "$comment": "A recorded identity that never reaches the launched process changes nothing about what the overlay attaches under, and step 2 of references/shared-state.md clears X only for a value actually applied. overlayCommand's placeholders are closed to three and isolation.env belongs to the store — every service paired with it shares those overrides — so without this field there is no channel at all. Recording the value therefore obliges recording the channel, the same way a create command obliges its teardown.",
+                  "$comment": "A recorded identity that never reaches the launched process changes nothing about what the overlay attaches under, and references/coordination-identity.md counts a value as an answer to X only when it is distinct, delivered and substrate-confirmed. Each of the first two obliges a field: baseIdentity is what distinctness is measured against, overlayIdentityEnv and deliveryRoute are what delivery is measured by. Requiring all three WITH the value is what stops a recording from being a re-classification — the material the proof reads cannot be omitted from the record that claims it. overlayCommand's placeholders are closed to three and isolation.env belongs to the store, so without a recorded route there is no channel at all. The third leg is not a field: the substrate table in that file confirms it, and no manifest may assert it.",
                   "if": { "required": ["overlayIdentity"] },
-                  "then": { "required": ["overlayIdentityEnv"] }
+                  "then": { "required": ["overlayIdentityEnv", "baseIdentity", "deliveryRoute"] }
                 }
               ],
               "properties": {
@@ -399,6 +409,26 @@
                   "type": "string",
                   "description": "The env var the overlay's launch sets to overlayIdentity — the channel that carries the distinct identity into the process it must configure. It is per service, which is what the store's isolation.env cannot be: that map is shared by every service paired with the store, so one overlay's group.id would be handed to all of them. DISCOVERED FROM THE SERVICE's own configuration — the variable it already reads that identity key from — never invented, because a variable the service does not read applies nothing while looking like it did. Required whenever overlayIdentity is present; step 2 of references/shared-state.md then treats the pair as undetermined, and refuses it, when the value was recorded but the launch did not apply it. Naming the variable is not delivering it: a container-run overlay inherits nothing from the launching shell, since docker compose run builds the container environment from the compose file and overlayCommand takes no -e flag at substitution time, so the launch carries it by a route references/discovery.md section 6 names — the worktree compose file, a run form that already passes it, or the exported environment of a host-run overlay. Where the launch method has no such route the pair is undetermined and refuses.",
                   "examples": ["KAFKA_GROUP_ID"]
+                },
+                "baseIdentity": {
+                  "type": "object",
+                  "required": ["value", "source"],
+                  "additionalProperties": false,
+                  "description": "What the BASE STACK attaches under for this knob, READ FROM THE BASE STACK'S OWN CONFIGURATION rather than assumed. It is the only thing overlayIdentity can be compared against, and references/coordination-identity.md counts a value that cannot be compared as not distinct: unreadable is not different. Its absence is therefore never a licence — a pair whose base value was never read leaves X undetermined and refuses, which is why this field is required beside overlayIdentity rather than offered as a nicety.",
+                  "properties": {
+                    "value": { "type": "string", "description": "The value the base stack is configured with, e.g. the group.id its own consumer joins under." },
+                    "source": { "type": "string", "minLength": 1, "description": "Where it was read — the compose service's environment, the resolver output, the base stack's config file. Required for the reason every evidence field here is: a value with no account of where it came from is indistinguishable from one somebody expected to be true." }
+                  }
+                },
+                "deliveryRoute": {
+                  "type": "object",
+                  "required": ["value", "reason"],
+                  "additionalProperties": false,
+                  "description": "The route by which the launch sets overlayIdentityEnv in the OVERLAY's environment, which for a container-run overlay is not the launching shell's. Naming the variable is not delivering it, and references/discovery.md section 6 enumerates the routes that exist: the worktree's own compose file naming it under that service, a run form the repository already wrote that passes it, or the exported environment of a host-run overlay. \"none\" is a legal, honest answer and refuses BEFORE anything launches rather than after — the same outcome as never setting the variable, reached while it is still cheap.",
+                  "properties": {
+                    "value": { "type": "string", "enum": ["worktree-compose", "run-form", "host-environment", "none"], "description": "\"none\" means the launch method carries no route at all, which leaves X undetermined and refuses. It is recorded rather than omitted so the next run knows the question was asked." },
+                    "reason": { "type": "string", "minLength": 1, "description": "The fact the route rests on, e.g. the compose file and service that names the variable. It survives into the refusal message, so a developer is told which channel was missing rather than that isolation was unavailable." }
+                  }
                 }
               }
             }

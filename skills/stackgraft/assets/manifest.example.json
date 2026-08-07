@@ -29,12 +29,13 @@
     "postgres": {
       "substrate": "postgres",
       "locality": { "value": "local", "reason": "compose declares it here with a named volume on this host; the resolved address is the base stack's own container" },
+      "nameForm": { "value": "sql-identifier", "reason": "an unquoted database name is an SQL identifier here; the server folds anything else to lower case or rejects it" },
       "isolation": {
         "mechanism": "database",
         "applyVia": "compose-exec",
-        "command": "make -C {{repoRoot}} db-create DB={{isolationName}}",
-        "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationName}}",
-        "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationName}}" },
+        "command": "make -C {{repoRoot}} db-create DB={{isolationIdent}}",
+        "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationIdent}}",
+        "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationIdent}}" },
         "discoveredFrom": "Makefile",
         "confidence": "declared"
       },
@@ -50,7 +51,8 @@
       "locality": { "value": "local", "reason": "compose declares it here; its data lives in a local volume on this host" },
       "isolation": { "mechanism": "none", "confidence": "declared" },
       "notes": [
-        "Deliberately mechanism none. SELECT isolates the keyspace but NOT pub/sub: a message published on database 10 reaches a subscriber on database 1, so channel names collide across every logical database.",
+        "Deliberately mechanism none, and deliberately carrying no nameForm: nothing here needs a generated name, and recording a form nobody established would be a guess this file exists to show is unnecessary. A store recording neither form is undetermined, which refuses — see references/coordination-identity.md.",
+        "Choosing a numeric position inside the instance would isolate the keyspace and NOT pub/sub: a message published on one database reaches a subscriber on another, so channel names collide across every one of them. It is never done here for a second reason too — a position inside a running instance is drawn from a fixed set nothing owns, so two worktrees can take the same one and never find out.",
         "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly.",
         "Subscribing here is fan-out, not competition: every subscriber receives every message, so an overlay consumer takes nothing from the base stack. It is therefore never recorded in competesOn — the hazard it does carry is duplicate processing."
       ]
@@ -59,12 +61,13 @@
     "kafka": {
       "substrate": "kafka",
       "locality": { "value": "local", "reason": "compose declares it here with a local log directory; nothing in the address resolves off-host" },
+      "nameForm": { "value": "sql-identifier", "reason": "topic names here accept the identifier form as written; the broker rejected neither underscore nor hyphen when the prefix was created" },
       "isolation": {
         "mechanism": "topic-prefix",
         "applyVia": "compose-exec",
-        "command": "make -C {{repoRoot}} topic-create TOPIC={{isolationName}}.book-events",
-        "teardownCommand": "make -C {{repoRoot}} topic-delete TOPIC={{isolationName}}.book-events",
-        "env": { "KAFKA_TOPIC_PREFIX": "{{isolationName}}." },
+        "command": "make -C {{repoRoot}} topic-create TOPIC={{isolationIdent}}.book-events",
+        "teardownCommand": "make -C {{repoRoot}} topic-delete TOPIC={{isolationIdent}}.book-events",
+        "env": { "KAFKA_TOPIC_PREFIX": "{{isolationIdent}}." },
         "discoveredFrom": "Makefile",
         "confidence": "declared"
       },

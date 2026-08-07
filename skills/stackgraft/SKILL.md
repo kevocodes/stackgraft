@@ -3,10 +3,10 @@ name: stackgraft
 description: "Trigger: git worktree, run only the changed service on another port, test branches in parallel. Overlay modified services onto an already-running base stack. Local development: one host, one base stack, N worktrees."
 compatibility: "Needs a POSIX shell: macOS, Linux, WSL, and Git Bash on Windows, all CI-tested. PowerShell and cmd are out of scope. Required unconditionally: git 2.5+ (worktree, --git-common-dir) and a POSIX shell with awk. Minimal images often lack both — install git where a package manager exists (apk add git). Host-overlay ownership needs ps -o lstart=; busybox and MSYS lack it, so those overlays are report-only. Container tooling (docker compose) is needed only for container repos and store copies."
 license: Apache-2.0
-version: "1.1.0"
+version: "2.0.0"
 metadata:
   author: kevocodes
-  version: "1.1.0"
+  version: "2.0.0"
 ---
 
 ## Activation Contract

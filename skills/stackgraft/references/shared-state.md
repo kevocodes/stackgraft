@@ -149,6 +149,54 @@ A discovered template is repository data, so it is treated as untrusted input.
 
 Rejected examples, one per rule: `psql -c 'CREATE DATABASE {{dbName}}'` (unknown placeholder) · `createdb {{isolationIdent}} && echo ok` (`&`) · ``createdb `whoami` `` (backtick) · `createdb $DB` (`$`) · `createdb a; dropdb b` (`;`) · `createdb x | tee log` (`|`) · `createdb x > out` (`>`) · `pg_dump < in` (`<`) · `sh -c 'make -C {{repoRoot}} db-create'` (the program re-parses: the substituted path is shell source again inside `-c`, and `xargs`, `env` and `python -c` fail the same way) · `createdb {{repoDbName}}` (repo-supplied name) · `docker compose exec -T postgres dropdb -U app app` (destructive verb: it drops the base database, and matches no literal spelling — which is why the rule is about the effect) · `redis-cli FLUSHALL` (empties a whole instance). Accepted by contrast: `psql -v ON_ERROR_STOP=1 -c '…'` — `-v` here is a client variable, not `--volumes`. Accepted after substitution too, and the reason the check there is structural: `make -C {{repoRoot}} db-create DB={{isolationIdent}}` run from a checkout at `/Users/dev/R&D/app` puts an `&` inside one argv element, where no shell ever sees it — one element, unsplit, nothing else changed. A lexical re-check would have refused that developer's every store with nothing they could do about it.
 
+## When the only thing missing is a lifecycle target, the run offers to write one
+
+The zero-disk road above is preferred wherever it is available, and on most repositories it is unavailable for exactly one reason: nothing in the repository defines a lifecycle target for the store. That is a wall rather than a choice — the rungs are there, the substrate offers a namespace, and the only absent thing is a file somebody never wrote. So where a pair would reach rung 4 with everything present except a target, the run **offers to write one**.
+
+**The offer is never a precondition of anything.** A decline, an offer nobody approved, and a repository that cannot be written to all leave the **default seeded copy**, which asks the repository for nothing, and **no refusal is issued** for the missing target while that road is open. Generating a target buys zero disk; it never buys the difference between isolation and a stop.
+
+**The family is three files, not two: a create, a drop, and a read.** A create and a drop are a lifecycle and neither of them reads anything, so a family of two supplies `references/isolation-providers.md`'s second rung with nothing at all — the copy is provisioned, no query can be derived for it, and the pair **refuses for want of a query** after the bytes have already been copied. The read is that rung's source. All three are generated together or none of them is.
+
+| File | Name | What it does |
+|---|---|---|
+| create | `db-create-<store>` | creates the namespace it is given, reaching the store the way the repository's own targets reach it |
+| drop | `db-drop-<store>` | removes that same namespace, by the name the family generated and by no other |
+| read | `db-read-<store>` | counts what the instance it is given carries, so one file answers for the base store, an empty instance and the copy alike |
+
+**Where they go.** Three **new executable files**, placed in the repository's **existing script directory** — `bin/` or `scripts/`, whichever one discovery already found — and **never a new convention**, never a directory this skill invents because it liked the shape of it. A file under a directory rung 1 already reads is discoverable with no edit to anything a human owns.
+
+**The skill never appends to** `Makefile`, `Taskfile.yml`, `justfile` or `package.json`.
+
+More generally it **never edits a file it did not author**. Appending edits repository source in a grammar where a recipe line indented with spaces is a silent break, in a file whose `.PHONY`, variable and include context nothing here can model; it entangles the diff with the developer's own work; and it turns a rollback from deleting a file into text surgery on one somebody else is still writing. The prohibition is not scoped to build files: a generated name that would land on a file already sitting in the chosen directory is a collision, and the offer is withdrawn rather than resolved.
+
+**The skill never stages, never commits and never pushes.** The three files land in the working tree and the human's own pull request is the review — a run that staged them would put this skill's authorship inside a commit nobody read.
+
+**Three constraints on the offer, because a create is harmless and a drop aimed at the wrong database is not.**
+
+1. **The store name comes from the discovered `backingStores` key and is never invented** — not inferred from a service name, not defaulted from a substrate, not read off an image tag. Where discovery recorded no key for the store, **no target is generated and no offer is made**, because the name would have to be invented to make one.
+2. **The content is shown in full before anything is written** — all three files, whole, not summarised and not described.
+3. It is written only on **explicit approval**, into the repository, where it is versioned, reviewable, and thereafter the repository's own rather than something synthesised at run time.
+
+### Two falsifiers, and neither of them is the skill's to write
+
+A file this skill wrote is discoverable at rung 1 as `declared`, the highest confidence there is, and the fingerprint that would expire it is the fingerprint of a file this skill itself authored. Every other `declared` record has something independent whose drift re-derives it. Two things supply that independence here.
+
+**A generated target is recorded `inferred` until a run has observed its create, its drop *and* its read succeed** against the discovered store, each recorded as an event carrying its **timestamp and exit status**. Only that observation raises it to `declared`. Recording it `declared` on write would make the claim and its evidence **the same author**, which is what a gate on a field the claimant fills in always is. Nothing is lost by waiting: until the observation the pair is answered by the seeded copy, which was always going to answer it.
+
+**The approval is fingerprinted over the three files as the human approved them**, hashed **all three together** in the order create, drop, read with the same `sh scripts/fingerprint.sh` every other source fingerprint is computed with, and stored as the `sourceFingerprint` of an approval whose `discoveredFrom` names the create. Any later edit — **the skill's own included** — moves that value, drops the approval, and the three files are **shown again** before anything runs. It covers all three because the human approved three: a value taken over one of them would leave the other two editable under a consent nobody gave for them.
+
+**The teardown stays inert until at least one run has observed that target's create succeed.** A drop that has never seen its own create work is a destructive command with no evidence it is aimed where it believes it is, so until then the run names the namespace and **the command a human would run** instead of running it. A create that ran and *failed* is an observation too and it is not a success: the exit status is recorded, the teardown stays inert, the pair falls back to the seeded copy or refuses, and the failure is reported beside the command that produced it.
+
+### The generator's output is repository input, with no exemption for being ours
+
+Every rule in *Template contract* above governs these three files exactly as it governs a template the repository wrote, and **no exemption** is granted on the ground that this skill authored them. The **destructive-verb class, judged by effect, is applied to the drop before it is shown**.
+It **may remove only** a namespace the name family generated: `{{isolationIdent}}` or `{{isolationLabel}}`.
+A drop naming a literal, or naming `{{store}}` — which is the base stack's own namespace and not the overlay's — is rejected, and no offer is made from it. Each recorded command invokes **one program with arguments**, satisfying the argv rule, the deny-list and the no-re-parse rule unchanged. What each file *contains* is the repository's business, exactly as a rung-1 target's is: a repository that needs a shell puts the line in its own task target, and that is what these three now are.
+
+**The generated read is held to `references/isolation-providers.md`'s discriminator like any other candidate.** It qualifies only once its output on the base store has been observed to differ from its output on an empty instance of the same image, and **a generated `SELECT 1` fails that test and must, exactly as `pg_isready` does** — both answer the same thing on an instance holding nothing, which is the one distinction the whole road exists to make. So what is generated is schema-agnostic: something that **counts what an instance carries** rather than naming a table the repository owns, which this skill does not know and may not guess. An empty instance **answers zero** and a seeded one does not.
+
+**The generated read is issued on the host**, because it is a file in the repository rather than a program inside the store's image, and it is given the instance to read as its one argument. That is a different route from a rung-1 healthcheck vector, which is already inside the image, and both are held to the same rule: all three issues of the candidate — the base store, the empty instance and the copy — go through **one route**, because a candidate issued one way here and another way there manufactures the very difference it is being read for.
+
 ## Per substrate
 
 **The catch is what this table is for.** Its *In-instance isolation* column is gone: the mechanism half of it belonged to a question this skill stopped answering per engine, and the identity half moved to `references/coordination-identity.md`. What stays is the column four of the six cases below rest on — deleting the table deletes the evidence for those refusals.

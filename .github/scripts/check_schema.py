@@ -187,10 +187,80 @@ rejects(
     "/properties/sources/items/properties/covers/items/not",
 )
 
+# --- schemaVersion 3, the fields it retired, and the record that replaced them
+# There is no migration path and its absence is the design: everything the
+# manifest holds is re-derivable, so an unrecognised version is discarded whole.
+# That only works while the version itself is pinned.
+#
+# `writes` is rejected BY NAME rather than by additionalProperties, so the
+# failure says why it is gone instead of reading as a typo.
+#
+# The record fixtures reach through setdefault/get so a fixture aimed at a rule
+# the schema does not carry reports as rejected-by-the-wrong-rule rather than
+# raising: a traceback names no missing rule.
+SVC = "/properties/services/additionalProperties"
+DET = f"{SVC}/properties/determinacy/additionalProperties"
+MIG = f"{SVC}/properties/migrates"
+
+
+def record(doc, unit="catalog-api", store="postgres"):
+    return doc["services"][unit].setdefault("determinacy", {}).setdefault(store, {})
+
+
+def svc(doc, unit="catalog-api"):
+    return doc["services"][unit]
+
+
+# Emptiness is a claim that needs evidence, and checked-and-none is the claim
+# this record makes cheapest to write, so the evidence floor is one character
+# rather than mere presence: an empty string is what a pass that did not look
+# would leave behind.
+for _label, _mutate, _rule in [
+    ("a manifest still written at schemaVersion 2",
+     lambda d: d.update(schemaVersion=2), "/properties/schemaVersion/const"),
+    ("a service-level writes array",
+     lambda d: svc(d).update(writes=["postgres"]), f"{SVC}/properties/writes/not"),
+    ("a retired healthPath",
+     lambda d: svc(d).update(healthPath="/health"), f"{SVC}/additionalProperties"),
+    ("a retired dockerfile",
+     lambda d: svc(d).update(dockerfile="Dockerfile"), f"{SVC}/additionalProperties"),
+    ("the retired static kind",
+     lambda d: svc(d).update(kind="static"), f"{SVC}/properties/kind/not"),
+    ("a determinacy record with no fingerprint to expire it",
+     lambda d: record(d).pop("serviceFingerprint", None), f"{DET}/required"),
+    ("a determinacy record that answers W and leaves X unsaid",
+     lambda d: record(d).pop("competes", None), f"{DET}/required"),
+    ("a mutation claim carrying no evidence",
+     lambda d: record(d).get("mutates", {}).pop("evidence", None),
+     f"{DET}/properties/mutates/required"),
+    ("checked-and-none evidenced by an empty string",
+     lambda d: record(d).get("competes", {}).update(evidence=""),
+     f"{DET}/properties/competes/properties/evidence/minLength"),
+    ("a determinacy record on a unit that is never launched",
+     lambda d: svc(d, "shared-contracts").update(determinacy={"postgres": record(d)}),
+     f"{SVC}/allOf/0/then/properties"),
+    ("a store recorded with no locality to decide provider eligibility from",
+     lambda d: d["backingStores"]["postgres"].pop("locality"),
+     "/properties/backingStores/additionalProperties/required"),
+    ("migrates as the unit-level boolean it used to be",
+     lambda d: svc(d).update(migrates=True), f"{MIG}/type"),
+    ("a migration recorded as pointed at nothing",
+     lambda d: svc(d).update(migrates={"pointing": "recorded", "stores": []}),
+     f"{MIG}/properties/stores/minItems"),
+    ("an unknown pointing that still names the stores it never established",
+     lambda d: svc(d).update(migrates={"pointing": "unknown", "stores": ["postgres"]}),
+     f"{MIG}/allOf/0/else/properties"),
+]:
+    rejects(_label, _mutate, _rule)
+
 # --- and the legitimate shapes still pass -----------------------------------
 accepts(
     "a store named the way real orchestrators name them",
     lambda d: d["backingStores"].update({"Postgres.main": d["backingStores"]["postgres"]}),
+)
+accepts(
+    "a unit whose entrypoint migrates against a store nobody could name",
+    lambda d: d["services"]["catalog-api"].update(migrates={"pointing": "unknown"}),
 )
 
 
@@ -237,6 +307,122 @@ if "/properties/portPolicy/required" in _probe_rules:
     fail("the rule match accepts a rule the fixture never tripped")
 else:
     ok("the rule match tells one validator rule from another")
+
+# --- a record is evidence about ONE pair, and about no other ----------------
+# The schema can make a record structurally per-pair; it cannot make the READING
+# per-pair. So the reading is performed here and then falsified: each fixture
+# must MOVE an answer that the shipped example leaves where it is. A reading
+# that quietly widened - any record on the unit standing in for the pair's own,
+# a degraded record counted - would answer the same for all four rows and say so
+# nowhere.
+def determined(doc, unit, store):
+    """W and X for one pair, from that pair's own record or not at all."""
+    entry = doc["services"].get(unit, {})
+    rec = entry.get("determinacy", {}).get(store)
+    if rec is None or rec.get("confidence") != "declared":
+        return None
+    return (rec["mutates"]["value"], rec["competes"]["value"])
+
+
+def reads(label, mutate, unit, store, want):
+    doc = copy.deepcopy(example)
+    if mutate:
+        mutate(doc)
+    got = determined(doc, unit, store)
+    got_l = "undetermined" if got is None else f"W={got[0]} X={got[1]}"
+    want_l = "undetermined" if want is None else f"W={want[0]} X={want[1]}"
+    if got == want:
+        ok(f"{label}: {got_l}")
+    else:
+        fail(f"{label}: read {got_l}, wanted {want_l}")
+
+
+# The three answers the shipped example must give, then the three fixtures that
+# MOVE one - so the rows above are not three spellings of "this reading never
+# finds anything".
+_pg = ("catalog-api", "postgres")
+_ev = ("catalog-api", "events")
+reads("(catalog-api, postgres) is answered by its own record", None, *_pg, (True, False))
+reads("(catalog-api, events) has no record and stays", None, *_ev, None)
+reads("(search-indexer, postgres) is not answered by catalog-api's record", None,
+      "search-indexer", "postgres", (False, False))
+reads("rejected: (catalog-api, events) once its own record is written",
+      lambda d: svc(d)["determinacy"].update(events=copy.deepcopy(svc(d)["determinacy"]["postgres"])),
+      *_ev, (True, False))
+reads("rejected: a declared record degraded to inferred stops counting",
+      lambda d: svc(d)["determinacy"]["postgres"].update(confidence="inferred"), *_pg, None)
+reads("rejected: a record written for another unit answers nothing here",
+      lambda d: svc(d, "storefront")["determinacy"]["postgres"].update(
+          mutates={"value": True, "evidence": "planted"}), *_ev, None)
+
+# --- the pair set's derivation is reported and reproducible -----------------
+# 39 x 4 = 156 rather than 43 x 4 = 172 is only a usable regression baseline
+# while the derivation behind it is stated. At example scale the same rule runs.
+def derive(doc):
+    units = sorted(n for n, e in doc["services"].items() if e.get("runnable") is not False)
+    stores = sorted(doc["backingStores"])
+    return len(units), len(stores), len(units) * len(stores)
+
+
+derived = derive(example)
+recorded_pairs = sum(
+    len(example["services"][u].get("determinacy", {}))
+    for u in example["services"]
+    if example["services"][u].get("runnable") is not False
+)
+ok(f"the pair set derives from {derived[0]} runnable units x {derived[1]} stores = {derived[2]} pairs")
+
+if derive(copy.deepcopy(example)) == derived:
+    ok("two derivations of the same manifest report the same three counts")
+else:
+    fail("the derivation is not reproducible against one manifest")
+
+_extra = copy.deepcopy(example)
+_extra["services"]["ghost"] = {"runnable": False, "paths": ["p/**"], "consumers": ["catalog-api"]}
+_more = copy.deepcopy(example)
+_more["services"]["billing"] = copy.deepcopy(example["services"]["storefront"])
+
+if derive(_extra) == derived:
+    ok("rejected: a runnable: false unit contributes no pairs and no unit count")
+else:
+    fail("a non-runnable unit moved the derived counts")
+
+if derive(_more)[2] == derived[2] + derived[1]:
+    ok("rejected: the derived count moves by one store-set when a runnable unit arrives")
+else:
+    fail("the derivation cannot see a runnable unit arriving, so the row above proves nothing")
+
+# The example must SHOW the partially-informed pass, not merely permit it: a
+# record for one store and none at all for the next is the shape `writes` could
+# not express, and an example recording every pair would document the old
+# all-or-nothing world in new field names.
+if 0 < recorded_pairs < derived[2]:
+    ok(f"the example records {recorded_pairs} of {derived[2]} pairs, so it demonstrates the partially-informed pass")
+else:
+    fail(f"the example records {recorded_pairs} of {derived[2]} pairs, so it demonstrates no granularity")
+
+_unknown = sorted(
+    f"{u}::{s}"
+    for u, e in example["services"].items()
+    for s in e.get("determinacy", {})
+    if s not in example["backingStores"]
+)
+if _unknown:
+    fail(f"determinacy records name stores that are in no backingStores entry: {_unknown}")
+else:
+    ok("every determinacy record names a store the pair set was derived from")
+
+_ghost = copy.deepcopy(example)
+_ghost["services"]["catalog-api"]["determinacy"]["nosuchstore"] = record(_ghost)
+if [
+    s
+    for e in _ghost["services"].values()
+    for s in e.get("determinacy", {})
+    if s not in _ghost["backingStores"]
+]:
+    ok("rejected: a determinacy record for a store the pair set never contained")
+else:
+    fail("the unknown-store row cannot fire")
 
 # --- every field the documents name must exist ------------------------------
 names = set()

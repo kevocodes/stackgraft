@@ -1028,8 +1028,8 @@ grep -v 'Scope, stated up front' README.md > "$sf/no-readme.md"
 # presence test: stating the scope is worth nothing while another sentence
 # claims the skill applies everywhere. Case-insensitive and intent-blind, so it
 # fires in prose and in a comment alike - hence written narrowly enough not to
-# fire on "no matter what `writes` says" or "any host running this probe", both
-# shipped text about something else.
+# fire on "no matter what its determinacy record says" or "any host running this
+# probe", both shipped text about something else.
 UNIVERSAL='works (with|on|for) any (stack|host|repo|repository|setup|environment|machine)|runs (anywhere|on any (host|machine|stack))|universally applicable|works everywhere|any environment|every environment|whatever your (stack|host|machine|setup)|regardless of where|suitable for (all|every)'
 if grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" >/dev/null 2>&1; then
     fail "a shipped file claims universal applicability: $(grep -rniE "$UNIVERSAL" README.md SECURITY.md CONTRIBUTING.md docs/ "$SKILL" | head -1)"
@@ -1237,6 +1237,157 @@ else
     fail "the truncation-removed recipe yielded '${h8bad:-nothing}' (${#h8bad} chars), which is no whole object id, so a length that is not 8 proves nothing about truncation"
 fi
 rm -rf "$hf"
+
+# --------------------------------------------------------- determinacy ------
+section "determinacy"
+
+SCHEMA_JSON="$SKILL/assets/manifest.schema.json"
+EXAMPLE_JSON="$SKILL/assets/manifest.example.json"
+
+# --- V68  schemaVersion is 3, declared once, and a 2 is discarded whole ------
+# There is no migration path and its absence is the design, so the ONLY thing
+# standing between a v2 cache and a v3 reader is this number. A cache silently
+# misread as the wrong version is the failure mode: every field would be
+# re-read at a granularity it was never written at.
+#
+# The count is asserted beside the value because the chain must carry exactly
+# ONE transition. A second `const` declaration anywhere in the file is a second
+# transition sitting in the tree waiting for a reader to pick the other one.
+SCHEMA_VERSION_RECORDED=3
+# The value is read across lines rather than off one: the declaration carries a
+# description, so keying on `"schemaVersion"` and `"const"` sharing a line read
+# the schema as declaring NO version at all - measured, and it failed loudly
+# only because the recorded figure is a literal.
+schema_version()       { awk '/"schemaVersion"/ { on = 1 } on && match($0, /"const"[ \t]*:[ \t]*[0-9]+/) { s = substr($0, RSTART, RLENGTH); sub(/.*:[ \t]*/, "", s); print s; exit }' "$1"; }
+schema_version_decls() { grep -cE '"schemaVersion"[ \t]*:[ \t]*\{' "$1"; }
+example_version()      { awk 'match($0, /"schemaVersion"[ \t]*:[ \t]*[0-9]+/) { s = substr($0, RSTART, RLENGTH); sub(/.*:[ \t]*/, "", s); print s; exit }' "$1"; }
+
+sv=$(schema_version "$SCHEMA_JSON")
+[ "${sv:-nothing}" = "$SCHEMA_VERSION_RECORDED" ] \
+    && ok "the schema declares schemaVersion const $sv" \
+    || fail "the schema declares schemaVersion '${sv:-nothing}', not $SCHEMA_VERSION_RECORDED"
+
+sv_n=$(schema_version_decls "$SCHEMA_JSON")
+[ "$sv_n" -eq 1 ] \
+    && ok "schemaVersion is declared exactly once, so the chain carries one transition" \
+    || fail "schemaVersion is declared $sv_n times, so a second transition can hide in the file"
+
+ev=$(example_version "$EXAMPLE_JSON")
+[ "${ev:-nothing}" = "$SCHEMA_VERSION_RECORDED" ] \
+    && ok "the shipped example is written at schemaVersion $ev" \
+    || fail "the shipped example is at schemaVersion '${ev:-nothing}', not $SCHEMA_VERSION_RECORDED"
+
+vf=$(mktemp -d)
+awk '/"schemaVersion"/ { on = 1 } on && sub(/"const"[ \t]*:[ \t]*3/, "\"const\": 2") { on = 0 } { print }' "$SCHEMA_JSON" > "$vf/schema.json"
+[ "$(schema_version "$vf/schema.json")" = 2 ] \
+    && ok "rejected: a schema left at const 2 - a v2 cache would be read as current" \
+    || fail "the schemaVersion row cannot tell 3 from 2"
+
+{ cat "$SCHEMA_JSON"; printf '    "schemaVersion": { "const": 2 },\n'; } > "$vf/twice.json"
+[ "$(schema_version_decls "$vf/twice.json")" -eq 2 ] \
+    && ok "rejected: a second schemaVersion const declaration, which is a second transition" \
+    || fail "the single-declaration row cannot see a second const"
+
+awk '/"schemaVersion"/ { sub(/:[ \t]*3/, ": 2") } { print }' "$EXAMPLE_JSON" > "$vf/example.json"
+[ "$(example_version "$vf/example.json")" = 2 ] \
+    && ok "rejected: an example manifest left at schemaVersion 2" \
+    || fail "the example-version row cannot tell 3 from 2"
+rm -rf "$vf"
+
+# --- V68  the retired field may not survive as a current one -----------------
+# `writes` must still be NAMED: the spec requires the defect stated in its own
+# terms - `writes: ["postgres"]` as a positive claim - so a blanket grep would
+# fail on text this change is obliged to carry. The rule is narrower and is the
+# one that matters: every line presenting it as a FIELD must also say it is
+# gone, so a reader cannot meet it as something to write today.
+RETIRED_FIELD='`writes`|"writes"|writes: \['
+RETIREMENT='RETIRED|retired|no longer|replaced|was a'
+retired_as_current() { grep -rnE "$RETIRED_FIELD" "$@" 2>/dev/null | grep -cvE "$RETIREMENT"; }
+
+rc=$(retired_as_current "$SKILL" README.md docs/)
+[ "$rc" -eq 0 ] \
+    && ok "no shipped file presents the retired writes array as a current field" \
+    || fail "$rc line(s) present writes as a current field: $(grep -rnE "$RETIRED_FIELD" "$SKILL" README.md docs/ | grep -vE "$RETIREMENT" | head -1)"
+
+rf=$(mktemp -d)
+printf -- '- `writes` — backing stores this service mutates. An empty array means checked and none.\n' > "$rf/fixture.md"
+[ "$(retired_as_current "$rf")" -ge 1 ] \
+    && ok "rejected: a line documenting writes as a field a manifest still carries" \
+    || fail "the retired-field grep cannot fire"
+rm -rf "$rf"
+
+# --- V59  determinacy is read at the granularity it was recorded -------------
+# Every row here is one SENTENCE, not one file, and every negative is that
+# sentence deleted from a copy. C1's lesson applies unchanged: a link check
+# proves a file exists and nothing more, and the rule that has to survive this
+# slice is a rule a reader can act on, not a filename.
+SHARED="$SKILL/references/shared-state.md"
+
+# The defect in the spec's own terms. Stating it wrongly is how the next pass
+# reintroduces it: the missing capability was GRANULARITY, and a reader who
+# takes it as "a negative could not be written" adds a field whose presence
+# asserts checked-and-none for every store at once, which is the same defect.
+defect_missing()      { awk '/writes: \[/ && /positive/ && /checked-and-none/ { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+granularity_missing() { awk '/granularity/ && /negative/                     { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+siblings_missing()    { awk '/absence/ && /siblings/ && /undetermined/       { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+# Emptiness is the claim this record makes cheapest to write, so the rule that
+# an omitted record is never checked-and-none is asserted where discovery
+# writes it, not only where the gate reads it.
+#
+# `omitted record` and not `omit`: the looser spelling was GREEN against the
+# shipped file before this slice wrote anything, because the `dependsOn` bullet
+# already carries "omitting" beside "checked-and-none" for an unrelated reason.
+# Measured, and it is the shape slice 1a found twice - a row passing over the
+# very absence it exists to report.
+omission_missing()    { awk '/omitted record/ && /checked-and-none/          { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+counts_missing()      { awk '/39/ && /156/ && /172/                          { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+
+determinacy_sentences() {
+    _n=0
+    [ "$(defect_missing "$1")" -eq 0 ]      || _n=$((_n + 1))
+    [ "$(granularity_missing "$1")" -eq 0 ] || _n=$((_n + 1))
+    [ "$(siblings_missing "$1")" -eq 0 ]    || _n=$((_n + 1))
+    printf '%s\n' "$_n"
+}
+
+[ "$(determinacy_sentences "$SHARED")" -eq 0 ] \
+    && ok "shared-state.md names the defect, the missing granularity, and one store's absence as no claim about its siblings" \
+    || fail "shared-state.md is missing $(determinacy_sentences "$SHARED") of the three determinacy sentences"
+
+[ "$(omission_missing "$DISCOVERY")" -eq 0 ] \
+    && ok "discovery.md forbids an omitted record being written as, or read as, checked-and-none" \
+    || fail "discovery.md does not forbid reading an omitted record as checked-and-none"
+
+[ "$(counts_missing "$DISCOVERY")" -eq 0 ] \
+    && ok "discovery.md states the pair-set derivation with its counts" \
+    || fail "discovery.md does not state the pair-set derivation counts"
+
+# ...and each of those can go missing on its own. One fixture per sentence,
+# every one of which must FAIL - a row keyed on the file rather than on the
+# sentence reports a stated rule over a file that states nothing.
+df=$(mktemp -d)
+awk '!(/writes: \[/ && /positive/)'  "$SHARED"    > "$df/no-defect.md"
+awk '!(/granularity/ && /negative/)' "$SHARED"    > "$df/no-granularity.md"
+awk '!(/absence/ && /siblings/)'     "$SHARED"    > "$df/no-siblings.md"
+awk '!(/omitted record/ && /checked-and-none/)' "$DISCOVERY" > "$df/no-omission.md"
+awk '!(/39/ && /156/)'                "$DISCOVERY" > "$df/no-counts.md"
+
+[ "$(defect_missing "$df/no-defect.md")" -eq 1 ] \
+    && ok "rejected: shared-state.md with the positive-claim sentence deleted" \
+    || fail "the defect row cannot notice its sentence going missing"
+[ "$(granularity_missing "$df/no-granularity.md")" -eq 1 ] \
+    && ok "rejected: shared-state.md with the granularity sentence deleted" \
+    || fail "the granularity row cannot notice its sentence going missing"
+[ "$(siblings_missing "$df/no-siblings.md")" -eq 1 ] \
+    && ok "rejected: shared-state.md with the sibling-absence sentence deleted" \
+    || fail "the sibling row cannot notice its sentence going missing"
+[ "$(omission_missing "$df/no-omission.md")" -eq 1 ] \
+    && ok "rejected: discovery.md with the omission rule deleted" \
+    || fail "the omission row cannot notice its sentence going missing"
+[ "$(counts_missing "$df/no-counts.md")" -eq 1 ] \
+    && ok "rejected: discovery.md with the derivation counts deleted" \
+    || fail "the counts row cannot notice its sentence going missing"
+rm -rf "$df"
 
 # ------------------------------------------------- instrumentation ----------
 section "instrumentation"

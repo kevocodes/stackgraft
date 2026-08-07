@@ -215,6 +215,30 @@
                 "then": { "required": ["teardownCommand"] }
               },
               {
+                "$comment": "A generated family is three files this skill wrote into somebody's repository, so consent is not optional and cannot be implied by the record existing. approval is required beside it, and the rule above then obliges discoveredFrom, so a generated record always carries the file its fingerprint is taken against.",
+                "if": { "required": ["generated"] },
+                "then": { "required": ["approval", "command", "teardownCommand"] }
+              },
+              {
+                "$comment": "DS37's first falsifier, made structural: a generated target may not be declared until a run has OBSERVED all three halves succeed. declared-on-write makes the claim and its evidence the same author, which is the shape a gate on an optional field always has, so the schema refuses to express it: declared requires create, drop AND read observed, each at exit 0. Two of three is DS37 as originally written and is exactly what DS42 corrected — a create and a drop that never read leave rung 2 with no source. A non-zero exit is an observation and not a success, so it may be recorded, but only beside inferred.",
+                "if": {
+                  "required": ["generated", "confidence"],
+                  "properties": { "confidence": { "const": "declared" } }
+                },
+                "then": {
+                  "properties": {
+                    "generated": {
+                      "properties": {
+                        "observed": {
+                          "required": ["create", "drop", "read"],
+                          "additionalProperties": { "properties": { "exit": { "const": 0 } } }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
                 "$comment": "A provider reference is only usable where the store's state is local. locality is recorded per store beside this record and an undetermined locality is read as remote, so a provider record on a store this host does not hold would be a copy nobody can take — refused at the gate rather than attempted. Stated structurally here so the two records cannot disagree in a manifest that still validates.",
                 "if": { "required": ["provider"] },
                 "then": {
@@ -301,7 +325,49 @@
                   "by": { "type": "string" },
                   "sourceFingerprint": {
                     "type": "string",
-                    "description": "The fingerprint of the discoveredFrom file when the command was approved, produced by fingerprintTool. Without it \"re-prompt when discoveredFrom drifts\" has no baseline to compare against, so an approval outlives the command it approved and a rewritten template runs unprompted. The entry is treated as ABSENT once this stops matching, exactly as acceptedRisks.serviceFingerprint works: the human approved a command that no longer exists, so the substituted command is shown again before the first run."
+                    "description": "The fingerprint of the discoveredFrom file when the command was approved, produced by fingerprintTool. Without it \"re-prompt when discoveredFrom drifts\" has no baseline to compare against, so an approval outlives the command it approved and a rewritten template runs unprompted. The entry is treated as ABSENT once this stops matching, exactly as acceptedRisks.serviceFingerprint works: the human approved a command that no longer exists, so the substituted command is shown again before the first run. WHERE generated IS PRESENT THE VALUE COVERS ALL THREE GENERATED FILES, hashed together in the order create, drop, read, because the human approved three files: a value taken over one of them would leave the other two editable under a consent nobody gave for them."
+                  }
+                }
+              },
+              "generated": {
+                "type": "object",
+                "required": ["at", "directory", "files", "observed"],
+                "additionalProperties": false,
+                "description": "The lifecycle family this skill wrote INTO THE REPOSITORY, on a human's explicit approval, where the store offered a namespace and nothing defined a target for it (references/shared-state.md). It is the only record here describing files this skill authored rather than found, which is why it carries what would otherwise be implied: where they went, what they are, and what a run has actually seen them do. NOTHING HERE NAMES A STORE ENGINE — the files are named from the discovered backingStores key and their contents are the repository's own.",
+                "properties": {
+                  "at": { "type": "string", "format": "date-time" },
+                  "directory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The repository's own existing script directory the three files were placed in, recorded rather than re-derived so a later run can tell a file this skill wrote from one that was already there. It is never a directory this skill invented: where discovery found none, no target is generated."
+                  },
+                  "files": {
+                    "type": "object",
+                    "required": ["create", "drop", "read"],
+                    "additionalProperties": false,
+                    "description": "ALL THREE ARE REQUIRED, and that is DS42 made structural. A create and a drop are a lifecycle and neither of them reads, so a family of two supplies references/isolation-providers.md's second rung with nothing: the copy is provisioned and then the pair refuses for want of a query. A record naming two files would be a chain that does not close, expressed as though it did.",
+                    "properties": {
+                      "create": { "type": "string", "minLength": 1, "description": "Path, relative to repoRoot, of the target that creates the namespace." },
+                      "drop": { "type": "string", "minLength": 1, "description": "Path of the target that removes it, by the name the family generated and no other." },
+                      "read": { "type": "string", "minLength": 1, "description": "Path of the target that counts what the instance it is given carries. It is the rung-2 candidate, and it is held to the same discriminator as a harvested one: a generated SELECT 1 answers the same on an empty instance and is refused exactly as pg_isready is." }
+                    }
+                  },
+                  "observed": {
+                    "type": "object",
+                    "propertyNames": { "enum": ["create", "drop", "read"] },
+                    "description": "What a RUN has seen these files do. Required as a key and legitimately empty on first write, because an absent field and a family nobody has run yet are the same state and the difference has to be writable. One shape for all three rather than three copies of it: three inline copies of a two-field object is how one of them stops requiring the exit status.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": ["at", "exit"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": { "type": "string", "format": "date-time" },
+                        "exit": {
+                          "type": "integer",
+                          "description": "The exit status the run observed. Recorded whatever it was: a create that ran and FAILED is an observation too, and recording only the successes would make the absence of a record mean two different things. Only a zero counts toward declared — see the conditional above — and until all three are zero the teardown stays inert and the pair is answered by the seeded copy."
+                        }
+                      }
+                    }
                   }
                 }
               }

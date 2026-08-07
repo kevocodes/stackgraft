@@ -46,6 +46,16 @@ whole_object_id() {
     esac
 }
 
+# The two intent-blind greps, named once each and defined here rather than beside
+# their first fixture, because three sections now read them: the instrumentation
+# fixtures that prove each can fire, the shipped tree-wide row at the bottom of
+# this file, and the coordination-identity section, which widens the portability
+# list for the files that carry no legacy reason to name any of it. With a second
+# copy anywhere, editing one leaves the other proving an expression that no
+# longer runs.
+PORTABILITY='~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData'
+GNUISM='newermt|stat -c|readlink -f|--date='
+
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
@@ -1575,6 +1585,593 @@ else
 fi
 rm -rf "$tf"
 
+# ------------------------------------------------ coordination identity -----
+section "coordination identity"
+
+IDENTITY="$SKILL/references/coordination-identity.md"
+
+# Two measured lessons govern every row in this section, and both are stated once
+# here rather than beside each fixture that obeys them.
+#
+# ONE - position, not words. Against the shipped tree before this slice wrote a
+# byte, all three legs of the identity proof already matched shared-state.md,
+# because step 2 of the verdict table is where the procedure lived at 1.1.0:
+#
+#     awk '/base stack/ && /configuration/ && /differ/'  matched shared-state.md
+#     awk '/environment/ && /overlay/ && /route/'        matched shared-state.md
+#     awk '/substrate/ && /ends the competition/'        matched shared-state.md
+#
+# So a row keyed on the WORDS anywhere in the tree reported a three-part proof
+# over a tree with no coordination-identity.md in it at all. Fourth slice, fourth
+# false green of the same family. The repair is the move this change actually
+# makes: three legs in the file that owns the rule, zero in the file that used to,
+# one home across the whole directory.
+#
+# TWO - assert the TRANSITION, never the end state. Six negatives in this section
+# printed ok while the file was absent, because a fixture that strips a sentence
+# out of nothing leaves nothing and a fixture that adds one to a file which
+# already has it changes nothing. Each now checks that the shipped file is on the
+# right side of the line BEFORE its fixture crosses it.
+if [ -s "$IDENTITY" ]; then
+    ok "references/coordination-identity.md ships"
+else
+    fail "references/coordination-identity.md is absent, so every row below reads an empty file"
+fi
+
+# The legs are keyed on what a restatement CANNOT avoid saying rather than on
+# this file's own spelling, which is what lets one row see a second copy of the
+# rule appear anywhere in the tree in anybody's words.
+proof_legs() {
+    _n=0
+    awk '/base stack/ && /configuration/ && /differ/ { f = 1 } END { exit f ? 0 : 1 }' "$1" && _n=$((_n + 1))
+    awk '/environment/ && /overlay/    && /route/    { f = 1 } END { exit f ? 0 : 1 }' "$1" && _n=$((_n + 1))
+    awk '/substrate/    && /ends the competition/    { f = 1 } END { exit f ? 0 : 1 }' "$1" && _n=$((_n + 1))
+    printf '%s\n' "$_n"
+}
+
+[ "$(proof_legs "$IDENTITY")" -eq 3 ] \
+    && ok "coordination-identity.md states all three legs of the identity proof" \
+    || fail "coordination-identity.md states $(proof_legs "$IDENTITY") of the three proof legs"
+
+[ "$(proof_legs "$SHARED")" -eq 0 ] \
+    && ok "shared-state.md links to the identity procedure rather than restating it" \
+    || fail "shared-state.md still restates $(proof_legs "$SHARED") leg(s) of the identity proof, so the tree carries two texts with two outcomes"
+
+# The row names the home rather than counting to one: a count of one is equally
+# satisfied by the rule sitting in the WRONG file, which is the state the tree
+# was in before this slice.
+proof_home() {
+    _h=''
+    for _f in "$SKILL"/references/*.md; do
+        [ "$(proof_legs "$_f")" -eq 3 ] && _h="$_h $(basename "$_f")"
+    done
+    printf '%s\n' "${_h# }"
+}
+[ "$(proof_home)" = "coordination-identity.md" ] \
+    && ok "the identity proof has exactly one home, and it is coordination-identity.md" \
+    || fail "the identity proof lives in '$(proof_home)'; it has one home and that home is coordination-identity.md"
+
+# The negative is the measured false green itself, standing rather than in a
+# comment: shared-state.md with 1.1.0's step-2 procedure put back, in 1.1.0's
+# words rather than in this change's.
+cif=$(mktemp -d)
+{
+    cat "$SHARED"
+    printf '%s\n' '| 2 | X = yes | Supply a distinct identity. On re-entry X is no only if that value is verified distinct, which is three things: (a) it differs from the value the base stack attaches under, read out of the base configuration rather than assumed; (b) the launch sets that variable in the overlay environment, and the value crosses only by a route the launch already has; (c) the substrate table below confirms that a distinct identity ends the competition on that substrate. |'
+} > "$cif/restated.md"
+if [ "$(proof_legs "$SHARED")" -ne 0 ]; then
+    fail "the restatement fixture adds a procedure shared-state.md still carries, so it rejects nothing"
+elif [ "$(proof_legs "$cif/restated.md")" -eq 3 ] && [ "$(proof_home)" = "coordination-identity.md" ]; then
+    ok "rejected: shared-state.md with 1.1.0's identity procedure restated beside the link"
+else
+    fail "the one-home row cannot see the procedure restated in the file that used to hold it"
+fi
+
+# --- V64  what the substrate table answers, and what it must never answer ----
+KNOB_H="## What is this substrate's identity knob"
+
+knob_section() { section_of "$1" "$KNOB_H"; }
+knob_data()    { knob_section "$1" | awk -F'|' 'NF >= 5 && $2 !~ /Coordination primitive/ && $2 !~ /^[ -]*$/'; }
+knob_rows()    { knob_data "$1" | awk 'END { print NR + 0 }'; }
+knob_tokens()  { knob_data "$1" | awk -F'|' '{ if (match($3, /`[^`]+`/)) print substr($3, RSTART + 1, RLENGTH - 2) }'; }
+knob_answers() { knob_data "$1" | awk -F'|' '{ gsub(/^[ \t]+/, "", $4); print $4 }'; }
+
+# The one question the table may not answer. These are the CELLS of the column
+# this slice deletes from shared-state.md, so the negative is not a hypothetical
+# regression: it is the deleted column being moved into the new table instead of
+# being retired, which is the same finite prose table one door along.
+NAMESPACE_PROCEDURE='TEMPLATE|search_path|New database|New schema|Copy the file|Separate vhost|Separate bucket|Separate index|SELECT [n0-9]'
+knob_procedures() { knob_section "$1" | grep -cE "$NAMESPACE_PROCEDURE"; }
+
+_kr=$(knob_rows "$IDENTITY")
+[ "$_kr" -ge 6 ] \
+    && ok "the knob table carries $_kr coordination primitives" \
+    || fail "the knob table carries $_kr row(s); the six knobs the spec names need six"
+
+_missing_knob=''
+for _k in group.id durable queue subject-prefix advisory-lock replication-slot; do
+    knob_tokens "$IDENTITY" | grep -qx "$_k" || _missing_knob="$_missing_knob $_k"
+done
+[ -z "$_missing_knob" ] \
+    && ok "every knob the spec names has a row: group.id, durable, queue, subject-prefix, advisory-lock, replication-slot" \
+    || fail "the knob table names no knob for:$_missing_knob"
+
+# Both rows below are guarded on the table being there at all: an empty table
+# names no creation procedure and carries no unparseable answer, so each would
+# report a property of a table that does not exist. Lesson two, above.
+if [ "$_kr" -eq 0 ]; then
+    fail "the knob table is empty, so the no-creation-procedure row reads nothing"
+elif [ "$(knob_procedures "$IDENTITY")" -eq 0 ]; then
+    ok "no knob row answers how to create a namespace inside the substrate"
+else
+    fail "the knob table names a namespace-creation procedure: $(knob_section "$IDENTITY" | grep -nE "$NAMESPACE_PROCEDURE" | head -1)"
+fi
+
+# Every answer is parseable, so an unreadable cell is a failure rather than a
+# silent refusal - the reader in check_schema.py treats anything that is not an
+# unconditional Yes as unconfirmed, and a row it cannot parse would refuse for
+# the wrong reason and look like the rule working.
+_bad_answer=$(knob_answers "$IDENTITY" | grep -cvE '^\*\*(Yes|No)\*\*')
+if [ "$_kr" -eq 0 ]; then
+    fail "the knob table is empty, so the answer-shape row reads nothing"
+elif [ "$_bad_answer" -eq 0 ]; then
+    ok "every knob row answers Yes or No to whether a distinct value ends the competition"
+else
+    fail "$_bad_answer knob row(s) answer neither Yes nor No, so the reader cannot tell a confirmation from a refusal"
+fi
+
+# ...and the shape row must be able to fire, or "every answer is Yes or No" is a
+# property of a table nobody could have written wrongly.
+knob_answers "$IDENTITY" | awk 'NR == 1 { print "**Probably** - it depends"; next } { print }' > "$cif/answers.txt"
+[ "$(grep -cvE '^\*\*(Yes|No)\*\*' "$cif/answers.txt")" -ge 1 ] \
+    && ok "rejected: a knob row answering neither Yes nor No" \
+    || fail "the answer-shape row cannot see an unparseable answer"
+
+# Both answers must occur. A table of all-Yes has reclassified the cases with no
+# safe answer as solvable by an identity, which the spec forbids by name; a table
+# of all-No confirms nothing and every pair refuses.
+_yes=$(knob_answers "$IDENTITY" | grep -c '^\*\*Yes\*\*')
+_no=$(knob_answers "$IDENTITY" | grep -c '^\*\*No\*\*')
+{ [ "$_yes" -ge 1 ] && [ "$_no" -ge 1 ]; } \
+    && ok "the knob table confirms $_yes substrate(s) and refuses $_no, so it can do both" \
+    || fail "the knob table answers Yes $_yes time(s) and No $_no time(s); a table that only ever gives one answer decides nothing"
+
+# Every sentence this file has to carry, in one loop and one predicate rather
+# than one loop per rule: three copies of this body is three places a later row
+# can be added with a weaker test. Each case names two literal fragments that
+# must land on ONE line, because a rule split across two paragraphs is two
+# statements a reader can act on separately.
+IDENTITY_SENTENCES='
+distinct identity:never by a copy:X is answered by a distinct identity and never by a copy
+X and not W:volume and instance inventory unchanged:an X-only pair leaves the runtime inventory unchanged
+X and W:copy alone leaves X undetermined:a W-and-X pair takes both mechanisms and the copy never answers X
+any one unproven:undetermined:any one leg unproven leaves X undetermined
+isolation.env:shared by every service:a store-level environment map is not the identity channel
+every message the base stack receives:duplicated:the run says the overlay now receives every message the base stack does
+absent from this table:undetermined:a substrate absent from the knob table is undetermined, which refuses
+not given a name anyway:no name ends:a substrate whose competition no name ends is not given a name anyway
+separator belongs to the projection:no form is produced from another:the separator is the projection'"'"'s and no form is produced from another
+neither form:undetermined:a store recording neither form is undetermined, which refuses'
+
+states_it() { awk -v a="$2" -v b="$3" 'index($0, a) && index($0, b) { f = 1 } END { exit f ? 0 : 1 }' "$1"; }
+
+# Fed by a REDIRECT and never by a pipe. `... | while read` puts the loop in a
+# subshell, where every `fail` increments a copy of the counter that dies with
+# it: the rows would print FAIL and the suite would still exit 0. Caught while
+# writing this loop, and it is the same family as everything else in this file -
+# a check that reports a failure nobody is counting is a check that cannot fail.
+printf '%s\n' "$IDENTITY_SENTENCES" > "$cif/sentences.txt"
+
+while IFS= read -r _case; do
+    [ -n "$_case" ] || continue
+    _a=${_case%%:*}; _rest=${_case#*:}; _b=${_rest%%:*}; _what=${_rest#*:}
+    if states_it "$IDENTITY" "$_a" "$_b"; then
+        ok "$_what"
+    else
+        fail "coordination-identity.md does not state: $_what"
+    fi
+done < "$cif/sentences.txt"
+
+# ...and each can go missing on its own, transition asserted per lesson two.
+while IFS= read -r _case; do
+    [ -n "$_case" ] || continue
+    _a=${_case%%:*}; _rest=${_case#*:}; _b=${_rest%%:*}; _what=${_rest#*:}
+    awk -v a="$_a" -v b="$_b" 'index($0, a) && index($0, b) { next } { print }' "$IDENTITY" > "$cif/stripped.md"
+    if ! states_it "$IDENTITY" "$_a" "$_b"; then
+        fail "the fixture for '$_what' deletes a sentence coordination-identity.md never carried"
+    elif ! states_it "$cif/stripped.md" "$_a" "$_b"; then
+        ok "rejected: coordination-identity.md with '$_what' deleted"
+    else
+        fail "the row for '$_what' cannot notice its sentence going missing"
+    fi
+done < "$cif/sentences.txt"
+
+# --- V57  the column leaves shared-state.md; the table and its catches stay ---
+# Deleting the table deletes the evidence four of the six cases with no safe
+# answer rest on, which is the same hazard the narrowing rule carries: a reader
+# who takes the instruction one word too wide removes the refusals. So the row
+# asserts BOTH directions - the column gone AND the table still there - and has a
+# negative for each.
+SUBSTRATE_H='## Per substrate'
+substrate_rows()   { section_of "$1" "$SUBSTRATE_H" | awk -F'|' 'NF >= 3 && $2 !~ /^[ -]*$/ && $2 !~ /Substrate/ { n++ } END { print n + 0 }'; }
+# A COLUMN, not a mention. Keyed on table rows because the file is obliged to
+# name what it deleted - "its In-instance isolation column is gone" is the
+# sentence a reader needs and an intent-blind grep read it as the column still
+# being there, measured. The width row beside it closes the other direction: a
+# column renamed on its way back in is still a third column.
+substrate_column() { section_of "$1" "$SUBSTRATE_H" | grep -c '^|.*In-instance isolation'; }
+substrate_width()  { section_of "$1" "$SUBSTRATE_H" | awk -F'|' '/^\| Substrate \|/ { print NF - 2; exit }'; }
+
+_sr=$(substrate_rows "$SHARED")
+[ "$_sr" -ge 14 ] \
+    && ok "the per-substrate table survives with $_sr rows and its catches" \
+    || fail "the per-substrate table has $_sr row(s); deleting it deletes the evidence the refuse-cases rest on"
+
+[ "$(substrate_column "$SHARED")" -eq 0 ] \
+    && ok "the In-instance isolation column is gone from the per-substrate table" \
+    || fail "the per-substrate table still carries the In-instance isolation column"
+
+_sw=$(substrate_width "$SHARED")
+[ "${_sw:-0}" -eq 2 ] \
+    && ok "the per-substrate table is two columns wide: the substrate and its catch" \
+    || fail "the per-substrate table is ${_sw:-no} columns wide, so a third column came back under another name"
+
+grep -v -- "$SUBSTRATE_H" "$SHARED" > "$cif/no-table.md"
+[ "$(substrate_rows "$cif/no-table.md")" -eq 0 ] \
+    && ok "rejected: shared-state.md with the per-substrate table removed whole" \
+    || fail "the table-survives row cannot tell a present table from an absent one"
+
+awk '/^\| Substrate \|/ { print "| Substrate | In-instance isolation | The catch |"; next } { print }' "$SHARED" > "$cif/column-back.md"
+if [ "$(substrate_column "$SHARED")" -ne 0 ]; then
+    fail "the column-restored fixture restores a column the shipped table still has, so it rejects nothing"
+elif [ "$(substrate_column "$cif/column-back.md")" -ge 1 ]; then
+    ok "rejected: the In-instance isolation column restored to the table"
+else
+    fail "the deleted-column row cannot see the column come back"
+fi
+
+# The six cases with no safe answer, frozen. The list was diffed against v1.1.0
+# before this slice and is identical, so these literals ARE 1.1.0's - which is
+# what the requirement asks be preserved, in number and in wording.
+NO_SAFE_H='## Cases with no safe answer'
+no_safe_n() { section_of "$1" "$NO_SAFE_H" | grep -cE '^[0-9]+\. '; }
+
+_ns=$(no_safe_n "$SHARED")
+[ "$_ns" -eq 6 ] \
+    && ok "the six cases with no safe answer are still six" \
+    || fail "there are $_ns cases with no safe answer, not the six 1.1.0 shipped"
+
+_lost=''
+while IFS= read -r _c; do
+    grep -qF "$_c" "$SHARED" || _lost="$_lost | $_c"
+done <<NO_SAFE_CASES
+A migration against a shared database too large or slow to clone.
+Redis pub/sub. Logical database selection does not isolate channels
+Externally visible side effects. No infrastructure trick un-sends an email
+Host singletons
+When the shared state *is* what is under test.
+Exactly-once consumption while the base consumer is being observed.
+NO_SAFE_CASES
+[ -z "$_lost" ] \
+    && ok "each of the six cases is word-for-word what 1.1.0 shipped" \
+    || fail "a case with no safe answer was reworded or removed:$_lost"
+
+awk '!/Exactly-once consumption/' "$SHARED" > "$cif/five-cases.md"
+[ "$(no_safe_n "$cif/five-cases.md")" -eq 5 ] \
+    && ok "rejected: the list with the exactly-once case removed" \
+    || fail "the case-count row cannot notice a case going missing"
+
+# --- V56  one hash, one separator-free slug, two projections -----------------
+# The generator below reads its parameters OUT OF THE SHIPPED TABLE - prefix,
+# separator and truncation - and the baseline it is compared against is 1.1.0's
+# transform frozen here. Two independent readings, so a prose edit that changes
+# what the skill would generate moves one side and not the other.
+FORMS_H='## The name family: one hash, one slug, two projections'
+
+form_cell() {
+    section_of "$1" "$FORMS_H" | awk -F'|' -v f="$2" -v c="$3" '
+        index($2, f) && $2 !~ /^[ -]*$/ {
+            v = $(c + 0)
+            gsub(/`/, "", v)
+            gsub(/^[ \t]+|[ \t]+$/, "", v)
+            print v
+            exit
+        }'
+}
+# The truncation is read from the prose for the reason C1's cut length is: a
+# hard-coded 28 would supply the very step whose absence is the defect.
+slug_max() {
+    section_of "$1" "$FORMS_H" | awk '/slug/ && match($0, /\*\*[0-9]+\*\*/) {
+        print substr($0, RSTART + 2, RLENGTH - 4); exit }'
+}
+# ...and so is the hashing command, which is the C1 pattern applied to a second
+# recipe: the command is taken out of the table and RUN, rather than reviewed.
+hash8_recipe() {
+    section_of "$1" "$FORMS_H" | awk '
+        {
+            s = $0
+            gsub(/\\\|/, "|", s)
+            while (match(s, /`[^`]*`/)) {
+                c = substr(s, RSTART + 1, RLENGTH - 2)
+                if (c ~ /git hash-object/) { print c; exit }
+                s = substr(s, RSTART + RLENGTH)
+            }
+        }'
+}
+hash8_for() {
+    _cmd=$(hash8_recipe "$2")
+    [ -n "$_cmd" ] || return 0
+    _cmd=$(printf '%s' "$_cmd" | awk -v b="$1" '{ sub(/<full branch name>/, b); print }')
+    _cut=$(section_of "$2" "$FORMS_H" | awk '/hash8/ && match($0, /first [0-9]+ characters/) {
+        print substr($0, RSTART + 6, RLENGTH - 17); exit }')
+    [ -n "$_cut" ] || return 0
+    sh -c "$_cmd" 2>/dev/null | cut -c1-"$_cut"
+}
+
+# The slug is a LIST OF SEGMENTS and the separator belongs to the projection, so
+# the internal spelling below uses a character no segment can contain and each
+# form joins with its own. That is the property being tested, not decoration: a
+# generator that produced one string and substituted its separator afterwards
+# would pass every grammar row and still be the defect F1 came from.
+name_form() {
+    _prefix=$(form_cell "$2" "$3" 4)
+    _join=$(form_cell "$2" "$3" 5)
+    _max=$(slug_max "$2")
+    _hash=$(hash8_for "$1" "$2")
+    # Any parameter unreadable and the generator stands down loudly rather than
+    # supplying the missing step itself, which is C1's lesson: a checker that
+    # assumes the truncation is a checker that cannot see it go missing.
+    [ -n "$_prefix" ] && [ -n "$_join" ] && [ -n "$_max" ] && [ -n "$_hash" ] || return 0
+    _slug=$(printf '%s' "$1" | awk -v j="$_join" -v m="$_max" '
+        {
+            s = tolower($0)
+            gsub(/[^a-z0-9]+/, "/", s)
+            gsub(/^\/+|\/+$/, "", s)
+            s = substr(s, 1, m)
+            sub(/\/+$/, "", s)
+            if (s == "") s = "x"
+            gsub(/\//, j, s)
+            print s
+        }')
+    printf '%s%s%s%s\n' "$_prefix" "$_slug" "$_join" "$_hash"
+}
+
+# 1.1.0's rule, frozen: one substitution over the whole string, truncate, strip a
+# separator the cut left trailing. A different algorithm from the one above, on
+# purpose - byte-identity between two spellings of the same rule is the assertion.
+sql_form_110() {
+    printf 'sg_%s_%s\n' \
+        "$(printf '%s' "$1" | awk '{
+            s = tolower($0)
+            gsub(/[^a-z0-9]+/, "_", s)
+            gsub(/^_+|_+$/, "", s)
+            s = substr(s, 1, 28)
+            sub(/_+$/, "", s)
+            if (s == "") s = "x"
+            print s
+        }')" \
+        "$(printf '%s' "$1" | git hash-object --stdin | cut -c1-8)"
+}
+
+SQL_FORM='SQL identifier'
+LABEL_FORM='DNS and object-store label'
+BRANCHES='feat/pfi-coordination-identity feature/checkout-rewrite-phase-two Release/2.0.0 ___ x'
+
+_drift=''
+for _b in $BRANCHES; do
+    _got=$(name_form "$_b" "$IDENTITY" "$SQL_FORM")
+    _want=$(sql_form_110 "$_b")
+    [ -n "$_got" ] && [ "$_got" = "$_want" ] || _drift="$_drift | $_b: $_got != $_want"
+done
+[ -z "$_drift" ] \
+    && ok "the SQL form is byte-identical to 1.1.0's on every branch shape tested" \
+    || fail "the SQL form has drifted from 1.1.0's:$_drift"
+
+_bad_label=''
+for _b in $BRANCHES; do
+    _l=$(name_form "$_b" "$IDENTITY" "$LABEL_FORM")
+    case ${_l:-} in
+        '')                       _bad_label="$_bad_label | $_b: nothing generated" ;;
+        *_*)                      _bad_label="$_bad_label | $_l carries an underscore" ;;
+        *[!a-z0-9-]*)             _bad_label="$_bad_label | $_l is not lowercase alphanumeric or hyphen" ;;
+        -* | *-)                  _bad_label="$_bad_label | $_l begins or ends with a hyphen" ;;
+    esac
+    [ "${#_l}" -le 63 ] || _bad_label="$_bad_label | $_l is ${#_l} characters"
+done
+[ -z "$_bad_label" ] \
+    && ok "the label form carries no underscore, is at most 63 characters and is alphanumeric at both ends" \
+    || fail "the label form is not a legal label:$_bad_label"
+
+# Two branches whose slugs truncate identically must differ in BOTH forms,
+# because hash8 is taken over the untruncated branch name.
+TWIN_A='feature/checkout-rewrite-phase-two-alpha'
+TWIN_B='feature/checkout-rewrite-phase-two-beta'
+_sa=$(name_form "$TWIN_A" "$IDENTITY" "$SQL_FORM");   _sb=$(name_form "$TWIN_B" "$IDENTITY" "$SQL_FORM")
+_la=$(name_form "$TWIN_A" "$IDENTITY" "$LABEL_FORM"); _lb=$(name_form "$TWIN_B" "$IDENTITY" "$LABEL_FORM")
+if [ -z "$_sa" ] || [ -z "$_la" ]; then
+    fail "the twin-branch row generated nothing, so a difference between two empty strings proves nothing"
+elif [ "$_sa" != "$_sb" ] && [ "$_la" != "$_lb" ]; then
+    ok "two branches sharing a truncated slug differ in both forms ($_sa vs $_sb)"
+else
+    fail "two branches sharing a truncated slug collide: SQL $_sa/$_sb, label $_la/$_lb"
+fi
+
+# ...and that row must be able to see a collision, or it is reporting on a
+# property no generator in this file could violate. The variant takes hash8 over
+# the TRUNCATED slug, which is the one mistake the rule names by name.
+hash8_over_truncated() {
+    _s=$(printf '%s' "$1" | awk '{ s = tolower($0); gsub(/[^a-z0-9]+/, "_", s); gsub(/^_+|_+$/, "", s); print substr(s, 1, 28) }')
+    printf 'sg_%s_%s\n' "$_s" "$(printf '%s' "$_s" | git hash-object --stdin | cut -c1-8)"
+}
+[ "$(hash8_over_truncated "$TWIN_A")" = "$(hash8_over_truncated "$TWIN_B")" ] \
+    && ok "rejected: a generator taking hash8 over the truncated slug, which collides on those two branches" \
+    || fail "the collision fixture does not collide, so the twin-branch row is untested"
+
+# The generator is driven by the shipped table, and these three fixtures prove
+# it: edit the table and the output moves. A generator with the parameters
+# hard-coded would pass all three while reading nothing.
+awk -F'|' -v f="$LABEL_FORM" '
+    index($2, f) && $2 !~ /^[ -]*$/ { sub(/`-`/, "`_`", $5); print $1 "|" $2 "|" $3 "|" $4 "|" $5 "|" $6 "|"; next }
+    { print }
+' "$IDENTITY" > "$cif/underscore-label.md"
+_ul=$(name_form "$TWIN_A" "$cif/underscore-label.md" "$LABEL_FORM")
+case ${_ul:-} in
+    *_*) ok "rejected: a label projection joining with an underscore ($_ul)" ;;
+    *)   fail "the label grammar row does not read the table's separator: got '${_ul:-nothing}'" ;;
+esac
+
+awk -F'|' -v f="$SQL_FORM" '
+    index($2, f) && $2 !~ /^[ -]*$/ { sub(/`sg_`/, "`sg-`", $4); print $1 "|" $2 "|" $3 "|" $4 "|" $5 "|" $6 "|"; next }
+    { print }
+' "$IDENTITY" > "$cif/wrong-prefix.md"
+_wp=$(name_form "$TWIN_A" "$cif/wrong-prefix.md" "$SQL_FORM")
+[ -n "$_wp" ] && [ "$_wp" != "$(sql_form_110 "$TWIN_A")" ] \
+    && ok "rejected: an SQL projection under a different prefix, which is no longer 1.1.0's output" \
+    || fail "the byte-identity row does not read the table's prefix: got '${_wp:-nothing}'"
+
+awk '{ if (/slug/) gsub(/\*\*[0-9]+\*\*/, "the joined length"); print }' "$IDENTITY" 2>/dev/null > "$cif/no-truncation.md"
+if [ -z "$(name_form "$TWIN_A" "$IDENTITY" "$SQL_FORM")" ]; then
+    fail "the truncation fixture strips a step from a derivation that generates nothing anyway"
+elif [ -z "$(name_form "$TWIN_A" "$cif/no-truncation.md" "$SQL_FORM")" ]; then
+    ok "rejected: a derivation stating no truncation - the generator stands down rather than assuming 28"
+else
+    fail "a derivation with no truncation still produced a name, so the missing step was supplied by the checker"
+fi
+
+# The two sentences this section rests on - the separator being the projection's,
+# and a store recording neither form - are asserted with the rest of the file's
+# sentences in $IDENTITY_SENTENCES above, each with its own deletion fixture.
+
+# --- V57  names are derived, and nothing is drawn from a pool ----------------
+# The vocabulary is greped for, not the concept, and the exclusion is ONE word:
+# `never`. A looser exclusion would have been a bypass rather than a rule -
+# measured, `no ` excuses the shipped rung-3 bullet, which names Redis SELECT n
+# beside "no create command, no drop command" and would have gone on shipping
+# the allocator under a grep that reported it gone.
+# It is also NARROWER than "any word about allocation", and that is measured too:
+# `allocate a candidate port` ships in docs/HOW-IT-WORKS.md about the port
+# picker, which is a legitimate allocation of something that is not a namespace
+# name, and `Logical database selection does not isolate channels` is one of the
+# six cases with no safe answer, whose wording this slice may not touch. So the
+# pattern names the retired vocabulary itself and requires a name beside the
+# generic verb.
+ALLOCATOR='16 logical|sixteen host-global|SELECT n[^a-z]|logical-database index|slot pool|exhaustion case|release obligation|allocated (name|namespace|index|database|value|per )|allocates? an? (name|namespace|index|database|slot)'
+allocator_hits() { grep -rniE "$ALLOCATOR" "$@" 2>/dev/null | grep -cvE '\bnever\b'; }
+
+_ah=$(allocator_hits "$SKILL" README.md docs/)
+[ "$_ah" -eq 0 ] \
+    && ok "no shipped file describes an allocation, a pool, an exhaustion case or a release obligation for a namespace name" \
+    || fail "$_ah line(s) describe an allocated namespace name: $(grep -rniE "$ALLOCATOR" "$SKILL" README.md docs/ | grep -vE '\bnever\b' | head -1)"
+
+af=$(mktemp -d)
+printf '%s\n' '| Redis keyspace | `SELECT n` — 16 logical databases, allocated per worktree and released on teardown | many clients pin database 0 |' > "$af/fixture.md"
+[ "$(allocator_hits "$af")" -ge 1 ] \
+    && ok "rejected: a row handing out one of sixteen logical databases per worktree" \
+    || fail "the allocator grep cannot fire"
+rm -rf "$af"
+
+# The retired placeholder, on the terms the retired `writes` array is held to:
+# it may still be NAMED - this change is obliged to say what it replaced - but no
+# line may present it as a placeholder a template writes today.
+RETIRED_PLACEHOLDER='{{isolationName}}'
+retired_placeholder_hits() { grep -rnF "$RETIRED_PLACEHOLDER" "$@" 2>/dev/null | grep -cvE "$RETIREMENT|was one|replaced by"; }
+
+_rp=$(retired_placeholder_hits "$SKILL" README.md docs/)
+[ "$_rp" -eq 0 ] \
+    && ok "no shipped file presents {{isolationName}} as a placeholder a template still uses" \
+    || fail "$_rp line(s) still use the retired {{isolationName}}: $(grep -rnF "$RETIRED_PLACEHOLDER" "$SKILL" README.md docs/ | grep -vE "$RETIREMENT|was one|replaced by" | head -1)"
+
+rpf=$(mktemp -d)
+printf '%s\n' 'command: make -C {{repoRoot}} db-create DB={{isolationName}}' > "$rpf/fixture.md"
+[ "$(retired_placeholder_hits "$rpf")" -ge 1 ] \
+    && ok "rejected: a template still substituting the retired {{isolationName}}" \
+    || fail "the retired-placeholder grep cannot fire"
+rm -rf "$rpf"
+
+# The set stays CLOSED, and closed is an equality rather than a floor: a seventh
+# member is how a placeholder yielding an allocated value gets in.
+PLACEHOLDER_SET='{{isolationIdent}} {{isolationLabel}} {{port}} {{repoRoot}} {{store}} {{worktree}}'
+placeholders_in() {
+    awk '/^\| Placeholders \|/ {
+        while (match($0, /\{\{[A-Za-z]+\}\}/)) {
+            print substr($0, RSTART, RLENGTH)
+            $0 = substr($0, RSTART + RLENGTH)
+        }
+    }' "$1" | sort -u | tr '\n' ' ' | awk '{ $1 = $1; print }'
+}
+
+_ps=$(placeholders_in "$SHARED")
+[ "$_ps" = "$PLACEHOLDER_SET" ] \
+    && ok "the closed placeholder set is exactly the six recorded members" \
+    || fail "the closed placeholder set reads '$_ps', not '$PLACEHOLDER_SET'"
+
+awk '/^\| Placeholders \|/ { sub(/Closed set of six/, "Closed set of seven, plus {{isolationIndex}} drawn from the sixteen slots,") } { print }' "$SHARED" > "$cif/seventh.md"
+if [ "$_ps" != "$PLACEHOLDER_SET" ]; then
+    fail "the seventh-placeholder fixture cannot be told from a shipped set that already differs from the recorded one"
+elif [ "$(placeholders_in "$cif/seventh.md")" != "$PLACEHOLDER_SET" ]; then
+    ok "rejected: a seventh placeholder added to a set the rule calls closed"
+else
+    fail "the closed-set row cannot see a member added"
+fi
+
+# --- V42 slice-3 half  the new reference file is held to the shipped floor ---
+# A WIDER pattern than $PORTABILITY and a NARROWER subject, on purpose. The extra
+# names are real absences on the supported floor, but they are named in shipped
+# files today for legitimate reasons - `with-lock.sh` says "no flock", traps.md
+# tells the agent to read `lsof` on the host - so widening the tree-wide grep
+# would fail rows about text that is already correct. The new files carry none of
+# them and are checked against the wider list.
+PORTABILITY_NEW="$PORTABILITY"'|\bflock\b|\btimeout\b|\blsof\b|\bss\b|\bnode\b'
+if [ ! -f "$IDENTITY" ]; then
+    fail "coordination-identity.md is absent, so the portability row scans nothing"
+elif grep -niE "$PORTABILITY_NEW" "$IDENTITY" >/dev/null 2>&1; then
+    fail "coordination-identity.md names an unavailable tool: $(grep -niE "$PORTABILITY_NEW" "$IDENTITY" | head -1)"
+else
+    ok "coordination-identity.md names no tool absent from the supported floor"
+fi
+
+pnf=$(mktemp -d)
+printf '%s\n' 'A comment: the value could be delivered with timeout 5 flock, which is not portable.' > "$pnf/fixture.md"
+grep -niE "$PORTABILITY_NEW" "$pnf/fixture.md" >/dev/null 2>&1 \
+    && ok "rejected: an unavailable tool named inside a comment, the grep being intent-blind" \
+    || fail "the widened portability grep cannot fire"
+rm -rf "$pnf"
+
+if [ ! -f "$IDENTITY" ]; then
+    fail "coordination-identity.md is absent, so the GNU-only row scans nothing"
+elif grep -nE "$GNUISM" "$IDENTITY" >/dev/null 2>&1; then
+    fail "coordination-identity.md names a GNU-only construct"
+else
+    ok "coordination-identity.md names no GNU-only construct"
+fi
+
+# --- V61 slice-3 half  the pointers in a reference file resolve too ----------
+# The shipped link loop reads SKILL.md alone. The body may not name this file -
+# V40 asserts exactly that - so the only thing that can prove its pointers
+# resolve is the same loop run over the references directory, which is also what
+# catches the backlink shared-state.md now carries to it.
+ref_link_n=0
+ref_broken=0
+for _f in "$SKILL"/references/*.md; do
+    for _p in $(link_targets "$_f"); do
+        ref_link_n=$((ref_link_n + 1))
+        [ -e "$SKILL/$_p" ] || { ref_broken=$((ref_broken + 1)); fail "link is broken in $(basename "$_f"): $_p"; }
+    done
+done
+[ "$ref_link_n" -ge 5 ] \
+    && ok "the references directory names $ref_link_n backticked skill paths and all resolve" \
+    || fail "the references directory names $ref_link_n backticked skill path(s), so this row proved nothing"
+
+grep -qF '`references/coordination-identity.md`' "$SHARED" \
+    && ok "shared-state.md points at the identity procedure by a resolving path" \
+    || fail "shared-state.md carries no backticked pointer to references/coordination-identity.md"
+
+{ cat "$IDENTITY" 2>/dev/null; printf -- '- `references/renamed-away.md`\n'; } > "$cif/broken-link.md"
+[ "$(link_unresolved "$cif/broken-link.md")" -ge 1 ] \
+    && ok "rejected: a reference file naming a backticked skill path that does not resolve" \
+    || fail "the reference link loop cannot report a broken link"
+rm -rf "$cif"
+
 # ------------------------------------------------- instrumentation ----------
 section "instrumentation"
 
@@ -1644,14 +2241,13 @@ grep -vF 'up catalog-api' "$REAPING" > "$ph/reaping.md"
 rm -rf "$ph"
 
 # --- V29  the portability grep is intent-blind, and must be able to fire -----
-# One pattern, named once, for the fixture here and for the shipped check in the
-# portability section at the bottom of this file - the same reason $GNUISM below
-# is a variable rather than two copies of one regex. With two copies, editing
-# the shipped check left this fixture proving an expression that no longer runs:
-# it went on reporting "the portability grep can fail" about a pattern the
-# shipped row had stopped using.
-PORTABILITY='~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData'
-
+# One pattern, named once at the top of this file, for the fixture here, for the
+# shipped check in the portability section at the bottom, and for the widened
+# list the coordination-identity section applies to the new reference file - the
+# same reason $GNUISM is a variable rather than two copies of one regex. With two
+# copies, editing the shipped check left this fixture proving an expression that
+# no longer runs: it went on reporting "the portability grep can fail" about a
+# pattern the shipped row had stopped using.
 pf=$(mktemp -d)
 printf 'a fixture that names an unavailable tool: jq\n' > "$pf/fixture.md"
 if grep -rniE "$PORTABILITY" "$pf" >/dev/null 2>&1; then
@@ -1662,7 +2258,6 @@ fi
 rm -rf "$pf"
 
 # --- V30  parsing is not running: a GNU-only flag parses fine everywhere -----
-GNUISM='newermt|stat -c|readlink -f|--date='
 if grep -nE "$GNUISM" "$SKILL"/scripts/*.sh >/dev/null 2>&1; then
     fail "a shipped script names a GNU-only construct"
 else

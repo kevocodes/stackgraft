@@ -166,13 +166,75 @@ rejects(
     lambda d: d["backingStores"]["postgres"]["isolation"].pop("teardownCommand"),
     f"{ISOLATION}/allOf/2/then/required",
 )
+COMPETES_ON = "/properties/services/additionalProperties/properties/competesOn/items"
+
+# The three-part proof needs material, and a record that may omit the material is
+# a record that can claim the proof without it. Each fixture below records the
+# VALUE and leaves out one thing the proof reads - the same shape as an isolation
+# command with no teardown, one rule along.
 rejects(
     "a distinct consumer identity with no channel to the process",
+    lambda d: d["services"]["search-indexer"]["competesOn"][0].update(overlayIdentity="sg-x"),
+    f"{COMPETES_ON}/allOf/0/then/required",
+)
+rejects(
+    "a distinct identity with nothing to compare it against",
     lambda d: d["services"]["search-indexer"]["competesOn"][0].update(
-        overlayIdentity="sg-x"
+        overlayIdentity="sg-x",
+        overlayIdentityEnv="KAFKA_GROUP_ID",
+        deliveryRoute={"value": "worktree-compose", "reason": "named under the service"},
     ),
-    "/properties/services/additionalProperties/properties/competesOn"
-    "/items/allOf/0/then/required",
+    f"{COMPETES_ON}/allOf/0/then/required",
+)
+rejects(
+    "a distinct identity with no recorded route into the overlay's environment",
+    lambda d: d["services"]["search-indexer"]["competesOn"][0].update(
+        overlayIdentity="sg-x",
+        overlayIdentityEnv="KAFKA_GROUP_ID",
+        baseIdentity={"value": "book-indexer", "source": "the compose environment"},
+    ),
+    f"{COMPETES_ON}/allOf/0/then/required",
+)
+rejects(
+    "a base value recorded with no account of where it was read",
+    lambda d: d["services"]["search-indexer"]["competesOn"][0].update(
+        overlayIdentity="sg-x",
+        overlayIdentityEnv="KAFKA_GROUP_ID",
+        baseIdentity={"value": "book-indexer"},
+        deliveryRoute={"value": "worktree-compose", "reason": "named under the service"},
+    ),
+    f"{COMPETES_ON}/properties/baseIdentity/required",
+)
+rejects(
+    "a delivery route this run does not recognise",
+    lambda d: d["services"]["search-indexer"]["competesOn"][0].update(
+        overlayIdentity="sg-x",
+        overlayIdentityEnv="KAFKA_GROUP_ID",
+        baseIdentity={"value": "book-indexer", "source": "the compose environment"},
+        deliveryRoute={"value": "exported-shell", "reason": "the caller exported it"},
+    ),
+    f"{COMPETES_ON}/properties/deliveryRoute/properties/value/enum",
+)
+
+# The name family's per-store field. Absence is undetermined and must stay
+# EXPRESSIBLE - a required field here would force a guess for every store that
+# never needs a generated name, which is the pressure that produces one.
+NAME_FORM = "/properties/backingStores/additionalProperties/properties/nameForm"
+rejects(
+    "a name form recorded with no account of what established it",
+    lambda d: d["backingStores"]["postgres"].update(nameForm={"value": "label"}),
+    f"{NAME_FORM}/required",
+)
+rejects(
+    "a name form outside the family",
+    lambda d: d["backingStores"]["postgres"].update(
+        nameForm={"value": "numeric-index", "reason": "sixteen positions inside the instance"}
+    ),
+    f"{NAME_FORM}/properties/value/enum",
+)
+accepts(
+    "a store recording no name form at all, which is undetermined and refuses",
+    lambda d: d["backingStores"]["postgres"].pop("nameForm"),
 )
 
 # --- untrusted repository data stays constrained ----------------------------
@@ -818,6 +880,213 @@ if not reports_both_counts(render(_front, overwrite=True), _front):
 else:
     fail("the both-counts row cannot see the derived count being overwritten")
 
+# --- D4: X resolves by a distinct identity, and never by a copy -------------
+# The rule is three properties of a READING, exactly as the narrowing above is,
+# so a grep over the prose cannot falsify any of them: whether a pair that needs
+# only a name creates nothing, whether each leg of the proof is load-bearing on
+# its own, and whether a copy can be mistaken for an answer to X. What runs here
+# is that reading over the shipped example.
+#
+# One thing is modelled rather than shipped, and it is named rather than left to
+# be discovered: the copy itself belongs to the data hazard's provider, which is
+# a later slice. What the reader models is what the RULE says the W half buys - a
+# runtime object - because without it "an X-only pair provisions nothing" is
+# satisfied by a reader in which nothing ever provisions at all.
+IDENTITY_MD = SKILL / "references/coordination-identity.md"
+KNOB_HEADING = "## What is this substrate's identity knob"
+
+
+def knob_table(text=None):
+    """{knob: does a distinct value end the competition}, read out of the file.
+
+    Parsed rather than restated here. A reader carrying its own copy of the
+    table would certify a file it never opened, and the substrate confirmation
+    is the one leg of the proof that lives in prose rather than in a manifest.
+    """
+    rows, inside = {}, False
+    for line in (text if text is not None else IDENTITY_MD.read_text()).splitlines():
+        if line.startswith("## "):
+            inside = line.strip() == KNOB_HEADING
+            continue
+        if not inside or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 3 or cells[0].startswith("Coordination") or set(cells[0]) <= set("- "):
+            continue
+        token = re.search(r"`([^`]+)`", cells[1])
+        if token:
+            # Anything that is not an unconditional Yes is unconfirmed. The
+            # fail-closed direction for "does a name help here" is that it does
+            # not, and verify.sh rejects an answer this cannot parse rather than
+            # letting it become a refusal for the wrong reason.
+            rows[token.group(1)] = cells[2].startswith("**Yes**")
+    return rows
+
+
+KNOBS = knob_table()
+
+if len(KNOBS) >= 6 and any(KNOBS.values()) and not all(KNOBS.values()):
+    ok(f"the knob table reads: {sum(KNOBS.values())} of {len(KNOBS)} knobs end the competition")
+else:
+    fail(f"the knob table read as {KNOBS}, which cannot both confirm and refuse")
+
+
+def identity_proof(doc, unit, store, applied=True):
+    """None when the identity is proven; otherwise why it is not.
+
+    Distinct, delivered, substrate-confirmed - and any one unproven leaves X
+    undetermined rather than still yes, which is what makes the loop terminate
+    on evidence instead of on another attempt.
+    """
+    entry = doc["services"].get(unit, {})
+    rec = next((c for c in entry.get("competesOn", []) if c.get("store") == store), None)
+    if rec is None or "overlayIdentity" not in rec:
+        return "no distinct identity is recorded"
+    base = (rec.get("baseIdentity") or {}).get("value")
+    if not base:
+        return "the base stack's own value could not be read, so nothing was compared"
+    if rec["overlayIdentity"] == base:
+        return "the recorded value equals the value the base stack attaches under"
+    if not rec.get("overlayIdentityEnv"):
+        return "no variable of the service's own carries the value"
+    if (rec.get("deliveryRoute") or {}).get("value") in (None, "none"):
+        return "no route sets that variable in the overlay's environment"
+    if not applied:
+        return "the launch completed without applying the recorded variable"
+    knob = rec.get("identity")
+    if knob not in KNOBS:
+        return f"the substrate table covers no knob named {knob!r}"
+    if not KNOBS[knob]:
+        return f"no distinct value ends the competition on {knob!r}"
+    return None
+
+
+def resolve(doc, unit, store, applied=True):
+    """What resolving one pair does, and what it creates while doing it."""
+    w, x = booleans(doc, unit, store)
+    unproven = identity_proof(doc, unit, store, applied) if x else None
+    by_identity = bool(x) and unproven is None
+    if x:
+        x = False if by_identity else None
+    if w is None or x is None:
+        return {"verdict": "REFUSE", "mechanisms": [], "provisions": [], "unproven": unproven}
+    mechanisms = ["identity"] if by_identity else []
+    provisions = []
+    if w:
+        mechanisms.append("copy")
+        provisions = [f"volume:{store}", f"instance:{store}"]
+    return {
+        "verdict": "ISOLATE" if w else ("REUSE" if not by_identity else "REUSE"),
+        "mechanisms": mechanisms,
+        "provisions": provisions,
+        "unproven": None,
+    }
+
+
+PROVEN = {
+    "store": "kafka",
+    "identity": "group.id",
+    "overlayIdentity": "sg_feat_x_1a2b3c4d",
+    "overlayIdentityEnv": "KAFKA_GROUP_ID",
+    "baseIdentity": {"value": "book-indexer", "source": "the compose service's own environment"},
+    "deliveryRoute": {"value": "worktree-compose", "reason": "the worktree compose file names it under search-indexer"},
+}
+
+
+def paired(writes=False, **over):
+    """search-indexer::kafka, the shipped X-only pair, with its identity recorded."""
+    doc = copy.deepcopy(example)
+    entry = dict(PROVEN)
+    for key, value in over.items():
+        if value is None:
+            entry.pop(key, None)
+        else:
+            entry[key] = value
+    doc["services"]["search-indexer"]["competesOn"] = [entry]
+    if writes:
+        doc["services"]["search-indexer"]["determinacy"]["kafka"]["mutates"]["value"] = True
+    return doc
+
+
+# An X-only pair is answered by a name and creates nothing.
+_x_only = resolve(paired(), "search-indexer", "kafka")
+if _x_only["mechanisms"] == ["identity"] and _x_only["provisions"] == []:
+    ok("a pair carrying X and not W is resolved by identity and leaves the runtime inventory unchanged")
+else:
+    fail(f"an X-only pair resolved as {_x_only}")
+
+# ...and the inventory row must be able to SEE a provision, or it passes because
+# nothing in the fixture ever provisions anything.
+_both = resolve(paired(writes=True), "search-indexer", "kafka")
+if _both["mechanisms"] == ["identity", "copy"] and _both["provisions"]:
+    ok(f"a pair carrying X and W takes both mechanisms and provisions {len(_both['provisions'])} runtime object(s)")
+else:
+    fail(f"a W-and-X pair resolved as {_both}, so the inventory row cannot see a provision")
+
+# The copy is not an answer to X. With the identity unrecorded the same writing
+# pair refuses, and provisions nothing while refusing.
+_copy_only = resolve(paired(writes=True, overlayIdentity=None), "search-indexer", "kafka")
+if _copy_only["verdict"] == "REFUSE" and _copy_only["provisions"] == []:
+    ok("rejected: a copy offered for a pair that also carries X - X stays undetermined and the pair refuses")
+else:
+    fail(f"a copy answered X on its own: {_copy_only}")
+
+# Each leg of the proof, failing on its own. Four readers of one rule would be
+# four spellings of a reader that proves nothing; each row here names the leg and
+# the pair must refuse for THAT reason.
+for _label, _doc, _applied, _want in [
+    ("the value equals the base stack's",
+     paired(overlayIdentity="book-indexer"), True, "equals the value the base stack"),
+    ("the base stack's value could not be read",
+     paired(baseIdentity={"value": "", "source": "the resolver was unavailable"}), True, "could not be read"),
+    ("no route carries the variable into the overlay",
+     paired(deliveryRoute={"value": "none", "reason": "the run form passes no environment"}), True, "no route sets"),
+    ("the identity was recorded and never applied",
+     paired(), False, "without applying the recorded variable"),
+    ("a knob the substrate table does not cover",
+     paired(identity="scheduler-slot"), True, "covers no knob"),
+    ("a knob the table answers No to - a queue the base stack already consumes",
+     paired(identity="queue"), True, "ends the competition"),
+]:
+    _got = resolve(_doc, "search-indexer", "kafka", _applied)
+    if _got["verdict"] != "REFUSE" or _got["mechanisms"]:
+        fail(f"{_label}: the pair resolved anyway as {_got}")
+    elif _want in (_got["unproven"] or ""):
+        ok(f"rejected: {_label} ({_got['unproven']})")
+    else:
+        fail(f"{_label}: refused for the wrong reason - {_got['unproven']}")
+
+# ...and the proven case must actually pass, or every row above is satisfied by a
+# reader that refuses everything put in front of it.
+if identity_proof(paired(), "search-indexer", "kafka") is None:
+    ok("the identity proof does clear a pair: distinct, delivered and substrate-confirmed")
+else:
+    fail("no pair can ever satisfy the proof, so the six refusals above prove nothing")
+
+# The whole verdict still comes from shared-state.md: a re-classified X follows W.
+if verdict(example, "search-indexer", "kafka") == "REFUSE" and resolve(paired(), "search-indexer", "kafka")["verdict"] == "REUSE":
+    ok("the shipped pair refuses with no identity recorded, and follows W once one is proven")
+else:
+    fail("recording an identity did not change the verdict, or changed it without the proof")
+
+# ...and the substrate leg is read OUT OF THE FILE rather than known. Flip the
+# one row the shipped fixture depends on and the same proof must stop clearing:
+# without this row, a reader that had quietly hard-coded "group.id is fine" would
+# pass every row above while the shipped table said the opposite.
+_flipped = KNOBS.copy()
+KNOBS = knob_table(
+    IDENTITY_MD.read_text().replace(
+        "| Kafka consumer group | `group.id` | **Yes**",
+        "| Kafka consumer group | `group.id` | **No**",
+    )
+)
+if KNOBS.get("group.id") is False and identity_proof(paired(), "search-indexer", "kafka"):
+    ok("rejected: a knob table answering No for group.id - the same proven pair stops clearing")
+else:
+    fail("the substrate leg does not come from the shipped table; flipping its answer changed nothing")
+KNOBS = _flipped
+
+
 # --- every field the documents name must exist ------------------------------
 names = set()
 
@@ -871,6 +1140,10 @@ referenced = {
 # legitimate edit to the prose would break.
 REFERENCED_FLOOR = 20
 
+def referenced_in(text):
+    return {t for t in re.findall(r"`([a-z][A-Za-z0-9]*)`", text) if re.search(r"[A-Z]", t)} - FOREIGN
+
+
 missing = sorted(referenced - names)
 if len(referenced) < REFERENCED_FLOOR:
     fail(
@@ -888,6 +1161,26 @@ if "definitelyNotAField" in names:
     fail("the field cross-check is comparing a set against itself")
 else:
     ok("the field cross-check is capable of failing")
+
+# ...and it must be able to fail ON THE NEW FILE specifically. The self-test
+# above proves the two sets differ; it does not prove this file is one of the
+# ones being read, and a references directory that stopped being globbed would
+# leave both rows green. So the fixture is that file's own text plus one
+# camelCase token that is not a manifest field.
+_new_prose = IDENTITY_MD.read_text()
+if referenced_in(_new_prose) - names:
+    fail(f"coordination-identity.md names fields absent from the schema: {sorted(referenced_in(_new_prose) - names)}")
+elif referenced_in(_new_prose + " `notAManifestField` ") - names == {"notAManifestField"}:
+    ok("rejected: coordination-identity.md backticking a camelCase token the schema does not define")
+else:
+    fail("the cross-check cannot fail on coordination-identity.md, so its field names are unchecked")
+
+# The new file must also be carrying real field references, or the row above is
+# a fixture test with nothing shipped behind it.
+if len(referenced_in(_new_prose)) >= 4:
+    ok(f"coordination-identity.md names {len(referenced_in(_new_prose))} manifest fields, all of which exist")
+else:
+    fail(f"coordination-identity.md names only {len(referenced_in(_new_prose))} manifest field(s), so the cross-check covers nothing there")
 
 print()
 sys.exit(1 if fails else 0)

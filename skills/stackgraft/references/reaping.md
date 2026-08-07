@@ -261,11 +261,12 @@ Two flags, and they are not one flag with two settings.
 |---|---|---|
 | neither | `REPORT` | `REPORT` |
 | mutation | `docker stop`, or `kill` for a host kind | reported and **skipped** — not counted as work done |
-| mutation + removal | `docker rm -f` | `docker rm -f` |
+| mutation + removal | `docker rm -f -v` | `docker rm -f -v` |
 | removal alone | nothing is mutated, and the run says the mutation flag is required | same |
 
-Three consequences worth stating on their own:
+Four consequences worth stating on their own:
 
+- **Removal takes the container's anonymous volumes with it, and nothing else.** An image declaring `VOLUME` in its own Dockerfile gives every container of it an unnamed volume whether or not the launch asked for one, and a removal without `-v` leaves an object with no name, no label and no owner — the shape this file exists to reclaim, in the one form nothing could afterwards find. `-v` reaches anonymous volumes only: a named volume is never removed by it, so a base stack's data and every copy this skill provisions — always named — are out of its reach by construction rather than by care.
 - **A stop leaves the logs readable.** An orphan is evidence of something that went wrong, and its logs are the only account of it. Freeing the port is the urgent part; freeing disk is not, which is the whole reason removal is a second flag.
 - **An exited container is a target only under removal.** Stopping something already stopped is a no-op that would report as work done, and a run that counts no-ops as work is a run whose count means nothing.
 - **Removal has no meaning for a process.** A `p:` target under the removal verb is refused by name, not silently downgraded to stopping it.

@@ -719,7 +719,20 @@ while [ -n "$rest" ]; do
                 unactionable=$((unactionable + 1))
             fi
         else
-            if docker rm -f "$a_id" >/dev/null 2>&1; then
+            # -v, and it is a correction rather than a flourish. An image that
+            # declares VOLUME in its own Dockerfile gives every container of it
+            # an anonymous volume whether or not the launch asked for one, so a
+            # removal without -v leaves behind an object with no name, no label
+            # and no owner - the exact shape this script exists to reclaim, in
+            # the one form it could never afterwards find. Measured: the
+            # verification suite's own overlay fixtures leaked one per removal.
+            #
+            # -v reaches ANONYMOUS volumes only; a named one is never removed by
+            # it, measured on Docker 29.5.3 against a container mounting both.
+            # That is what makes it safe here: a base stack's data volume is
+            # named, and so is every copy this skill provisions, so neither is
+            # reachable by this line.
+            if docker rm -f -v "$a_id" >/dev/null 2>&1; then
                 emit container "$a_id" "$a_state" "$a_svc" "$a_port" removed
                 acted=$((acted + 1))
             else

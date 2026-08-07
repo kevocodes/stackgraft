@@ -56,6 +56,32 @@ whole_object_id() {
 PORTABILITY='~/\.claude|codegraph|\bpython3\b|\bjq\b|sha256sum|AppData'
 GNUISM='newermt|stat -c|readlink -f|--date='
 
+# The shipped surface: what a READER is handed, named once because three sweeps
+# below ask about it and they had drifted into asking about three different
+# things. It is the skill folder plus the prose beside it - and SECURITY.md and
+# CONTRIBUTING.md are in it because leaving them out is not hypothetical: slice 3
+# retired `{{isolationName}}` and swept `skills/stackgraft README.md docs/` for
+# it, so for three slices the project's security page went on documenting *a
+# closed placeholder set of five* naming a placeholder no code substitutes and no
+# schema accepts. Nothing failed, because nothing was looking there.
+#
+# CHANGELOG.md is deliberately NOT in it. Its breaking-change entry says what
+# 1.1.0's `{{isolationName}}` could not name, and that sentence is true and has to
+# stay. Neither are `openspec/` or the archive: those are records of what was
+# decided, not text anybody is handed.
+SHIPPED_SURFACE="$SKILL README.md SECURITY.md CONTRIBUTING.md docs/"
+
+# ...and the list is held to the files it names, so a path renamed out from under
+# it fails here rather than quietly shrinking every sweep that uses it - the shape
+# the five shipped scripts are inventoried with just below.
+surface_missing() {
+    _n=0
+    for _p in $SHIPPED_SURFACE; do
+        [ -e "$_p" ] || _n=$((_n + 1))
+    done
+    printf '%s\n' "$_n"
+}
+
 # ---------------------------------------------------------------- shell -----
 section "scripts"
 
@@ -103,6 +129,20 @@ rm -f "$si/provider-docker.sh"
     && ok "rejected: a scripts directory with provider-docker.sh deleted" \
     || fail "the script inventory cannot notice the provider going away"
 rm -rf "$si"
+
+# The same treatment for the shipped SURFACE, and for the same reason: a sweep
+# that names a path which is not there reports clean over a file it never read.
+[ "$(surface_missing)" -eq 0 ] \
+    && ok "every path in the shipped surface exists: $SHIPPED_SURFACE" \
+    || fail "$(surface_missing) of the shipped-surface paths are missing, so every sweep over it is smaller than it reads"
+
+# ...and SECURITY.md is in it BY NAME. That file is where the retired placeholder
+# survived three slices, and a surface that quietly stopped covering it would
+# report exactly the green it reported then.
+case " $SHIPPED_SURFACE " in
+    *' SECURITY.md '*) ok "the shipped surface covers SECURITY.md by name, which is the file the retired placeholder survived in" ;;
+    *)                 fail "SECURITY.md is not in the shipped surface, so the drift it carried would go unreported again" ;;
+esac
 
 for f in "$SKILL"/scripts/*.sh; do
     name=$(basename "$f")
@@ -792,8 +832,28 @@ else
     fail "compatibility is unmeasurable or over the 500 cap: $compat"
 fi
 
+# ...and the MEASURED figure, asserted as a literal beside the ceiling, for the
+# reason the body count carries one: `-le 500` is equally satisfied by 494 and by
+# 120, so a slice that deleted half the field would pass the row above and change
+# nothing that anybody could see. The number is this counter's own output.
+COMPAT_BYTES_RECORDED=494
+[ "$compat" = "$COMPAT_BYTES_RECORDED" ] \
+    && ok "compatibility is the $COMPAT_BYTES_RECORDED bytes this chain measured and recorded" \
+    || fail "compatibility is $compat bytes; this chain recorded $COMPAT_BYTES_RECORDED"
+
 cf=$(mktemp -d)
 cfx="$cf/SKILL.md"
+
+# ...and that row can tell a legal-but-different value apart from the recorded
+# one, which is the whole difference between it and the ceiling row above. One
+# byte shorter: still inside the ceiling, still `pass` by the verdict, and it
+# must fail HERE.
+compat_fixture "$cfx" "compatibility: \"$(compat_value $((COMPAT_BYTES_RECORDED - 1)))\""
+if [ "$(compat_verdict "$cfx")" = pass ] && [ "$(compat_measure "$cfx")" != "$COMPAT_BYTES_RECORDED" ]; then
+    ok "rejected: a compatibility value of $(compat_measure "$cfx") bytes - inside the ceiling, and not the recorded $COMPAT_BYTES_RECORDED"
+else
+    fail "a one-byte drift is indistinguishable from the recorded figure ($(compat_measure "$cfx") against $COMPAT_BYTES_RECORDED)"
+fi
 
 compat_fixture "$cfx" ''
 if [ "$(compat_measure "$cfx")" = absent ] && [ "$(compat_verdict "$cfx")" = fail ]; then
@@ -945,8 +1005,25 @@ else
     fail "description is unmeasurable or over the 250 ceiling: $desc"
 fi
 
+# ...and the MEASURED figure as a literal, the third of the three counters to
+# carry one. D1 puts the scope in this field, so a slice that trimmed it back
+# would satisfy a 250 ceiling and lose the contract term the whole change is
+# about, silently.
+DESC_CHARS_RECORDED=215
+[ "$desc" = "$DESC_CHARS_RECORDED" ] \
+    && ok "description is the $DESC_CHARS_RECORDED characters this chain measured and recorded" \
+    || fail "description is $desc characters; this chain recorded $DESC_CHARS_RECORDED"
+
 df=$(mktemp -d)
 dfx="$df/SKILL.md"
+
+# ...and the recorded figure can be told apart from a legal-but-different one.
+desc_fixture "$dfx" "description: \"$(compat_value $((DESC_CHARS_RECORDED - 1)))\""
+if [ "$(desc_verdict "$dfx")" = pass ] && [ "$(desc_measure "$dfx")" != "$DESC_CHARS_RECORDED" ]; then
+    ok "rejected: a description of $(desc_measure "$dfx") characters - inside the ceiling, and not the recorded $DESC_CHARS_RECORDED"
+else
+    fail "a one-character drift is indistinguishable from the recorded figure ($(desc_measure "$dfx") against $DESC_CHARS_RECORDED)"
+fi
 
 desc_fixture "$dfx" ''
 if [ "$(desc_measure "$dfx")" = absent ] && [ "$(desc_verdict "$dfx")" = fail ]; then
@@ -997,6 +1074,38 @@ else
     fail "ACCEPTED but must be rejected: a multi-byte value silently measured in the wrong unit"
 fi
 rm -rf "$df"
+
+# --- the counters this project RECORDS are the counters that run --------------
+# `openspec/config.yaml` lists the verification methods a reader is meant to be
+# able to reproduce. For four slices it recorded the field-splitting
+# `awk -F'"' '/^compatibility:/{print length($2)}'` - the counter compat_measure
+# REPLACED, because it printed nothing for an absent field, `${compat:-0}` read 0,
+# and 0 was under the ceiling, so deleting the field passed outright. A project
+# whose recorded method is a check that cannot fail is telling the next reader to
+# reproduce the defect.
+CFG=openspec/config.yaml
+cfg_retired() { grep -cF '/^compatibility:/{print length(' "$1"; }
+
+if ! grep -qF 'compat_measure() in .github/scripts/verify.sh' "$CFG"; then
+    fail "$CFG does not name the compatibility counter that actually runs"
+elif [ "$(cfg_retired "$CFG")" -ne 0 ]; then
+    fail "$CFG still carries the retired field-splitting compatibility counter"
+else
+    ok "$CFG names compat_measure() as the compatibility counter, and carries the retired field split nowhere"
+fi
+
+# ...and the row can see the retired expression come back, exercised on a scratch
+# copy carrying it as a method again - which is the state this file was in for
+# four slices, not a shape invented for the row.
+cfgf=$(mktemp -d)
+{
+    cat "$CFG"
+    printf '%s\n' "    - \"compatibility bytes with awk -F'\\\"' '/^compatibility:/{print length(\$2)}'.\""
+} > "$cfgf/config.yaml"
+[ "$(cfg_retired "$cfgf/config.yaml")" -eq 1 ] \
+    && ok "rejected: the retired field-splitting counter recorded as a method again" \
+    || fail "the row cannot notice the retired compatibility counter coming back"
+rm -rf "$cfgf"
 
 # --- V38  the scope is stated in all three places, or in none of them --------
 # Silence about scope is what let an in-place isolation premise be adopted as a
@@ -1332,10 +1441,10 @@ RETIRED_FIELD='`writes`|"writes"|writes: \['
 RETIREMENT='RETIRED|retired|no longer|replaced|was a'
 retired_as_current() { grep -rnE "$RETIRED_FIELD" "$@" 2>/dev/null | grep -cvE "$RETIREMENT"; }
 
-rc=$(retired_as_current "$SKILL" README.md docs/)
+rc=$(retired_as_current $SHIPPED_SURFACE)
 [ "$rc" -eq 0 ] \
     && ok "no shipped file presents the retired writes array as a current field" \
-    || fail "$rc line(s) present writes as a current field: $(grep -rnE "$RETIRED_FIELD" "$SKILL" README.md docs/ | grep -vE "$RETIREMENT" | head -1)"
+    || fail "$rc line(s) present writes as a current field: $(grep -rnE "$RETIRED_FIELD" $SHIPPED_SURFACE | grep -vE "$RETIREMENT" | head -1)"
 
 rf=$(mktemp -d)
 printf -- '- `writes` — backing stores this service mutates. An empty array means checked and none.\n' > "$rf/fixture.md"
@@ -2076,10 +2185,10 @@ fi
 ALLOCATOR='16 logical|sixteen host-global|SELECT n[^a-z]|logical-database index|slot pool|exhaustion case|release obligation|allocated (name|namespace|index|database|value|per )|allocates? an? (name|namespace|index|database|slot)'
 allocator_hits() { grep -rniE "$ALLOCATOR" "$@" 2>/dev/null | grep -cvE '\bnever\b'; }
 
-_ah=$(allocator_hits "$SKILL" README.md docs/)
+_ah=$(allocator_hits $SHIPPED_SURFACE)
 [ "$_ah" -eq 0 ] \
     && ok "no shipped file describes an allocation, a pool, an exhaustion case or a release obligation for a namespace name" \
-    || fail "$_ah line(s) describe an allocated namespace name: $(grep -rniE "$ALLOCATOR" "$SKILL" README.md docs/ | grep -vE '\bnever\b' | head -1)"
+    || fail "$_ah line(s) describe an allocated namespace name: $(grep -rniE "$ALLOCATOR" $SHIPPED_SURFACE | grep -vE '\bnever\b' | head -1)"
 
 af=$(mktemp -d)
 printf '%s\n' '| Redis keyspace | `SELECT n` — 16 logical databases, allocated per worktree and released on teardown | many clients pin database 0 |' > "$af/fixture.md"
@@ -2094,10 +2203,10 @@ rm -rf "$af"
 RETIRED_PLACEHOLDER='{{isolationName}}'
 retired_placeholder_hits() { grep -rnF "$RETIRED_PLACEHOLDER" "$@" 2>/dev/null | grep -cvE "$RETIREMENT|was one|replaced by"; }
 
-_rp=$(retired_placeholder_hits "$SKILL" README.md docs/)
+_rp=$(retired_placeholder_hits $SHIPPED_SURFACE)
 [ "$_rp" -eq 0 ] \
     && ok "no shipped file presents {{isolationName}} as a placeholder a template still uses" \
-    || fail "$_rp line(s) still use the retired {{isolationName}}: $(grep -rnF "$RETIRED_PLACEHOLDER" "$SKILL" README.md docs/ | grep -vE "$RETIREMENT|was one|replaced by" | head -1)"
+    || fail "$_rp line(s) still use the retired {{isolationName}}: $(grep -rnF "$RETIRED_PLACEHOLDER" $SHIPPED_SURFACE | grep -vE "$RETIREMENT|was one|replaced by" | head -1)"
 
 rpf=$(mktemp -d)
 printf '%s\n' 'command: make -C {{repoRoot}} db-create DB={{isolationName}}' > "$rpf/fixture.md"
@@ -2360,6 +2469,49 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     docker_ready=1
 fi
 
+# --- the run's own anonymous volumes, tracked by name ------------------------
+# alpine/git - the fixture image every runtime row in this file starts - declares
+# `VOLUME /git` in its own Dockerfile. So EVERY container of it gets an anonymous
+# volume whether or not the caller asked for one, and that volume survives unless
+# the container is removed with -v. `--rm` normally does it for you; `docker rm
+# -f` on an --rm container beats the daemon's own autoremove to it and the volume
+# is left behind anyway, which is the one case here nobody would have predicted.
+#
+# The leak is a 64-hex name carrying no label, so no query in this file can find
+# it and no `docker volume prune` a developer dares run on a working machine will
+# remove it selectively. Measured at the chain close: exactly 18 per run, from
+# four `docker rm -f` calls missing their -v, with 380 accumulated on the machine
+# this was written on. Every one of the four now carries -v.
+#
+# This ledger is the assertion that it stays fixed. Each container that can hold
+# an anonymous volume registers its volumes here at CREATION - not before its
+# removal, so a container that is never removed at all is still covered - and the
+# row at the bottom of this file requires every registered name to be gone.
+#
+# Keyed to this run's OWN containers rather than to a before/after diff of the
+# whole runtime, and that is the difference between a check and a coin flip: a
+# developer's other stack starting a container while these rows run adds a volume
+# an unscoped diff would report as this suite's leak. This one cannot see it.
+ANON_LEDGER=$(mktemp)
+anon_note() {
+    [ -n "${1:-}" ] || return 0
+    docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$1" 2>/dev/null | grep -E '^[0-9a-f]{64}$' >> "$ANON_LEDGER"
+    return 0
+}
+anon_registered() { awk 'END { print NR + 0 }' "$ANON_LEDGER"; }
+# The survivors by name, not merely how many: a leak reported as a number is a
+# leak nobody can go and look at, and the name is the only handle this class of
+# object has.
+anon_survivors() {
+    while IFS= read -r _v; do
+        [ -n "$_v" ] || continue
+        docker volume inspect "$_v" >/dev/null 2>&1 && printf '%s\n' "$_v"
+    done < "$ANON_LEDGER"
+}
+anon_surviving() { anon_survivors | awk 'END { print NR + 0 }'; }
+
 # The rows below prove the SHIPPED SCRIPTS run on a minimal image. They used to
 # hand that image a repository by bind-mounting this checkout at /w, which
 # silently assumed a PRIMARY checkout: in a linked worktree `.git` is a FILE
@@ -2435,6 +2587,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         --label stackgraft.labels=1 --label "stackgraft.repo=$h" \
         --label "stackgraft.worktree=$wt" --label stackgraft.service=storefront \
         --label stackgraft.port=5174 alpine/git -c 'sleep 20' 2>/dev/null)
+    anon_note "$cid"
     if [ -n "$cid" ]; then
         bad=0
         for pair in "labels=1" "repo=$h" "worktree=$wt" "service=storefront" "port=5174"; do
@@ -2460,7 +2613,12 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         [ "$own_n" = 1 ] && [ "$foreign_n" = 0 ] \
             && ok "rejected: a query scoped to another repository's hash8 returns nothing" \
             || fail "a foreign hash8 matched this repository's overlay (own $own_n, foreign $foreign_n)"
-        docker rm -f "$cid" >/dev/null 2>&1
+        # -v on an --rm container is not belt and braces. `docker rm -f` races
+        # the daemon's own autoremove and wins, so the container goes and its
+        # anonymous volume stays - the least predictable of the four leaks the
+        # chain close measured, because the fixture asked for --rm and got the
+        # container half of it.
+        docker rm -f -v "$cid" >/dev/null 2>&1
     else
         fail "could not launch the labelled overlay fixture"
     fi
@@ -2876,6 +3034,18 @@ doc_states "a runtime that cannot be queried reports unknown, never zero copies"
 doc_states "destroy matches the worktree label by equality, not liveness and not a prefix" \
     'equals the worktree argument|worktree.*equal'
 
+# The three non-blocking open questions design.md carries, stated in the shipped
+# file as assumptions rather than resolved silently. Each pattern is the
+# DIRECTION clause rather than the topic, so an assumption stated without the way
+# it fails does not satisfy its row - which is the whole of what a stated
+# assumption is worth. An assumption whose failure mode is unstated is a claim.
+doc_states "the cache-directory assumption fails conservatively, never permissively" \
+    'never more permissive'
+doc_states "a store image that cannot host the copy refuses, rather than yielding an unverifiable copy" \
+    'never a copy that was taken'
+doc_states "a runtime that does not share Docker's volume and label vocabulary produces a refusal" \
+    'rather than an unlabelled copy'
+
 # The two set rows stay counted rather than folded in, because what they assert
 # is a COMPLETE set and a missing member has to be countable to be named.
 refusal_missing=0
@@ -3052,6 +3222,10 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     pother=$(mktemp -d)
     psrc=sg-verify-src
     pimg=alpine/git
+    # The one container name this section plants by hand, held outside the branch
+    # that plants it so the teardown at the bottom can remove it whether or not
+    # that branch was ever reached.
+    pplanted=''
 
     # One snapshot function for both object kinds, so a row asserting "the
     # inventory is unchanged" and a row asserting "the inventory moved" are
@@ -3084,6 +3258,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         -c 'printf seeded-by-the-base-stack > /data/marker' >/dev/null 2>&1
     pbase=$(docker run -d --entrypoint sh -e SG_FIXTURE=live -v "$psrc":/data "$pimg" \
         -c 'sleep 900' 2>/dev/null)
+    anon_note "$pbase"
 
     if [ -z "$pbase" ]; then
         fail "the fixture base store would not start, so no provider run row proved anything"
@@ -3238,6 +3413,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         # row is shown able to fail rather than passing over a copy that
         # disturbed nothing because nothing happened.
         pdis=$(docker run -d --entrypoint sh -v "$psrc":/data "$pimg" -c 'sleep 60' 2>/dev/null)
+        anon_note "$pdis"
         pdis_before=$(docker inspect --format '{{.State.Status}} {{.State.Pid}}' "$pdis" 2>/dev/null)
         docker stop -t 1 "$pdis" >/dev/null 2>&1
         pdis_after=$(docker inspect --format '{{.State.Status}} {{.State.Pid}}' "$pdis" 2>/dev/null)
@@ -3376,7 +3552,17 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         if [ -z "$pname" ]; then
             fail "the provision named no instance, so the part-way-failure fixture has nothing to block and plants nothing"
         else
+        # The name is handed to the section's teardown BEFORE the container
+        # exists, not after the row below has read it. A run killed between this
+        # line and the removal at the end of the block leaves a container in
+        # `Created` holding an anonymous volume, and a `Created` container holds
+        # one exactly as a running one does - so `docker volume rm` then answers
+        # "volume is in use" and a teardown that reached for the volume first
+        # left BOTH behind. That is not hypothetical: it is what an interrupted
+        # run of this file left on the machine the chain close was written on.
+        pplanted=$pname
         docker create --name "$pname" --entrypoint sh "$pimg" -c true >/dev/null 2>&1
+        anon_note "$pname"
         inv_pre_mid=$(runtime_inventory)
         pmid=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" fixturestore "$psrc" "$pimg" "$pbase" \
                     "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
@@ -3439,8 +3625,26 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     pbase_anon=$(docker inspect --format \
         '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
         "$pbase" 2>/dev/null | grep -vxF "$psrc" | grep . || printf '')
-    docker rm -f -v "$pbase" >/dev/null 2>&1
-    docker volume rm "$psrc" >/dev/null 2>&1
+
+    # Teardown by NAME and unconditionally, CONTAINERS BEFORE VOLUMES. Written
+    # this way for a measured reason rather than for symmetry, and it is the shape
+    # the generated-target section already carries: a container that holds a
+    # volume makes that volume unremovable - `docker volume rm` answers "volume is
+    # in use" and exits non-zero - so a teardown that reaches for the volume first
+    # leaves BOTH behind. A container in `Created` holds one exactly as a running
+    # one does, so the part-way-failure fixture above reaches that state without
+    # any failure of this section's own: a run killed between its `docker create`
+    # and its removal leaves the container, and the volume then survives every
+    # naive cleanup. That is what an interrupted run of this file left behind.
+    #
+    # Unconditionally, because the removals inside the branch above run only on
+    # the paths that reach them, and the state worth cleaning up is the one on a
+    # path that did not. Removing an object twice is free; removing it never is
+    # what costs the next run its inventory rows.
+    for _pc in "$pplanted" "$pbase"; do
+        [ -n "$_pc" ] && docker rm -f -v "$_pc" >/dev/null 2>&1
+    done
+    docker volume rm "$psrc" sg-verify-future sg-verify-unlabelled sg-verify-partial >/dev/null 2>&1
     rm -rf "$pwt" "$pother"
 
     # Nothing this section made may outlive it. Asserted rather than assumed,
@@ -3913,6 +4117,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         -c 'printf one > /data/a; printf two > /data/b' >/dev/null 2>&1
     vbase=$(docker run -d --name sg-verify-base-instance --entrypoint sh -v "$vsrc":/data "$vimg" \
         -c 'sleep 900' 2>/dev/null)
+    anon_note "$vbase"
 
     if [ -z "$vbase" ]; then
         fail "the fixture base store would not start, so no verification run row proved anything"
@@ -3932,6 +4137,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
                 --label "stackgraft.repo=$VH" --label "stackgraft.worktree=$vwt" \
                 --label "stackgraft.probe=fixturestore" \
                 --name sg-verify-probe "$vimg" -c 'sleep 300' 2>/dev/null)
+            anon_note "$vprobe"
             [ -n "$vprobe" ] \
                 && ok "an empty instance of the same image started with no volume, so it can hold no state" \
                 || fail "the empty instance would not start, so the discriminator rows below prove nothing"
@@ -4067,14 +4273,24 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     vbase_anon=$(docker inspect --format \
         '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
         "$vbase" 2>/dev/null | grep -vxF "$vsrc" | grep . || printf '')
-    docker rm -f -v "$vbase" >/dev/null 2>&1
+
+    # Containers before volumes, by name, unconditionally - the same teardown the
+    # provider and generated-target sections carry, and for the same measured
+    # reason. By NAME rather than by variable for the half a variable cannot
+    # cover: where `docker run -d` fails after the runtime has already registered
+    # the name, the variable is empty and `docker rm -f -v ""` removes nothing
+    # while a container sits there under a name this section chose.
+    for _vc in sg-verify-probe sg-verify-base-instance "$vbase"; do
+        [ -n "$_vc" ] && docker rm -f -v "$_vc" >/dev/null 2>&1
+    done
     docker volume rm "$vsrc" >/dev/null 2>&1
     rm -rf "$vwt"
 
     # Nothing this section made may outlive it, and that includes the one kind of
-    # object no label query here could ever report. Asserted rather than assumed:
-    # the suite already carries eighteen anonymous volumes leaked by older
-    # fixtures, and a nineteenth added here would be indistinguishable from them.
+    # object no label query here could ever report. Asserted rather than assumed,
+    # and it is now asserted for the whole run as well: the eighteen anonymous
+    # volumes older fixtures leaked per run are fixed at their four sources, and
+    # the ledger row at the bottom of this file requires the total to be zero.
     vleft=$(v_inventory)
     vanon=0
     for _v in $vbase_anon; do
@@ -4863,6 +5079,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         -c 'mkdir -p /data/one /data/two /data/three' >/dev/null 2>&1
     gbase=$(docker run -d --name sg-gen-base-instance --entrypoint sh -v "$gsrc":/data "$gimg" \
         -c 'sleep 900' 2>/dev/null)
+    anon_note "$gbase"
 
     if [ -z "$gbase" ]; then
         fail "the fixture base store would not start, so no generated-read row proved anything"
@@ -4879,6 +5096,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
             --label "stackgraft.repo=$GH" --label "stackgraft.worktree=$gwt" \
             --label "stackgraft.probe=fixturestore" \
             --name sg-gen-probe "$gimg" -c 'sleep 300' 2>/dev/null)
+        anon_note "$gprobe"
 
         if [ "$grc" -ne 0 ] || [ -z "$gcopy" ] || [ -z "$gprobe" ]; then
             fail "the generated-read fixture could not obtain a copy (exit $grc, instance '$gcopy') or an empty instance, so its rows prove nothing"
@@ -5244,6 +5462,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
                 --label "stackgraft.worktree=$_wt" --label "stackgraft.service=$_svc" \
                 --label "stackgraft.port=$_port" alpine/git -c "$_cmd" 2>/dev/null)
         fi
+        anon_note "$cid"
         [ -n "$cid" ] && fixture_ids="$fixture_ids $cid"
     }
 
@@ -5631,7 +5850,10 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         fail "remove against a p: target: exit $reap_rc, said '$reap_out'"
     fi
 
-    for id in $fixture_ids; do docker rm -f "$id" >/dev/null 2>&1; done
+    # -v: alpine/git declares a volume of its own, so each of these fourteen
+    # fixtures was leaving one anonymous volume nothing could ever find again -
+    # fourteen of the eighteen the suite leaked per run before the chain close.
+    for id in $fixture_ids; do docker rm -f -v "$id" >/dev/null 2>&1; done
     ( cd "$repo" && git worktree remove --force "$rf/wt" ) >/dev/null 2>&1
     rm -rf "$rf"
 else
@@ -5851,17 +6073,48 @@ rm -rf "$af"
 # come back inside this run.
 count_locks() { find "$1" -maxdepth 1 -name '*.lock' 2>/dev/null | wc -l | tr -d ' '; }
 
+# The registry file's name carries the MAIN WORKTREE'S DIRECTORY NAME, and these
+# fixtures used to hard-code this repository's. That made three rows a property of
+# where the checkout happens to sit: on a minimal Linux image the tree is mounted
+# at /w, so reap.sh looks for `w-00c0ffee.processes.json`, found nothing where the
+# fixture had planted `stackgraft-…`, and reported registry-missing. Three rows
+# failed on every commit including the baseline, and the diagnosis was the fixture
+# rather than the script both times somebody looked.
+#
+# So the fixtures bring their own repository, whose directory name they choose.
+# One arrangement now covers a primary checkout, a linked worktree and a bind
+# mount, which is the same repair the minimal-image reap rows took for the same
+# reason. And the name is not derived here from reap.sh's own expression - a
+# fixture that computes the answer cannot notice the answer changing - it is
+# asserted instead: the report PRINTS the file it read, and the row below requires
+# that to be the file this block planted.
+registry_fixture() {
+    mkdir -p "$1/stackgraft" "$1/$REGISTRY_REPO"
+    ( cd "$1/$REGISTRY_REPO" && git init -q . && fixture_commit -q --allow-empty -m init ) >/dev/null 2>&1
+}
+REGISTRY_REPO=sg-registry-fixture
+registry_reported() { printf '%s' "$1" | awk -F"$TAB" '$1 == "host" { print $NF; exit }'; }
+
 lf=$(mktemp -d)
-mkdir -p "$lf/stackgraft"
-sc="$lf/stackgraft/stackgraft-00c0ffee.processes.json"
+registry_fixture "$lf"
+sc="$lf/stackgraft/$REGISTRY_REPO-00c0ffee.processes.json"
 printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc"
 mkdir "$sc.lock"
 printf '%s\n-\n%s\n' "$$" "$(uname -n)" > "$sc.lock/owner"
 
 before_locks=$(count_locks "$lf/stackgraft")
-out=$(XDG_CACHE_HOME="$lf" sh "$REAP" report 00c0ffee 2>&1)
+out=$(XDG_CACHE_HOME="$lf" sh "$REAP" -C "$lf/$REGISTRY_REPO" report 00c0ffee 2>&1)
 rc=$?
 after_locks=$(count_locks "$lf/stackgraft")
+
+# The premise for all three registry rows, stated rather than assumed. Every one
+# of them concludes something from what the report says about a file; if the
+# report is reading a DIFFERENT file, each of them is a true statement about
+# nothing. This row is what turns that into a failure with the two paths in it.
+[ "$(registry_reported "$out")" = "$sc" ] \
+    && ok "the report reads the registry file this fixture planted, so the rows below are about that file" \
+    || fail "the report read '$(registry_reported "$out")' where the fixture planted '$sc', so no registry row proves anything"
+
 if [ "$rc" -eq 0 ] && [ "$before_locks" = "$after_locks" ] \
    && printf '%s' "$out" | grep -q "^host${TAB}checked${TAB}none"; then
     ok "the report completes and reads the registry while a writer holds its lock"
@@ -5876,12 +6129,20 @@ mkdir "$lf/stackgraft/fixture.lock"
 rm -rf "$lf"
 
 # --- V21  checked-and-none and not-checked are different claims --------------
+# The same fixture repository as the block above, and for the same reason: these
+# two rows are the other two that failed on a minimal Linux image at every commit
+# including the baseline, on a registry path nobody had noticed was a property of
+# the checkout rather than of the script.
 sf2=$(mktemp -d)
-mkdir -p "$sf2/stackgraft"
-sc2="$sf2/stackgraft/stackgraft-00c0ffee.processes.json"
+registry_fixture "$sf2"
+sc2="$sf2/stackgraft/$REGISTRY_REPO-00c0ffee.processes.json"
 
 printf '{"version":1,"repo":"00c0ffee","at":"x","overlays":[]}\n' > "$sc2"
-out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" -C "$sf2/$REGISTRY_REPO" report 00c0ffee 2>/dev/null)
+
+[ "$(registry_reported "$out")" = "$sc2" ] \
+    && ok "the report reads the registry file this block planted, so its three shape rows are about that file" \
+    || fail "the report read '$(registry_reported "$out")' where the fixture planted '$sc2', so no registry-shape row proves anything"
 
 # One expression for the checked-zero line, read once and used by both rows
 # below rather than grepped twice.
@@ -5911,7 +6172,7 @@ if [ "$docker_ready" -eq 1 ]; then
 fi
 
 rm -f "$sc2"
-out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" -C "$sf2/$REGISTRY_REPO" report 00c0ffee 2>/dev/null)
 if printf '%s' "$out" | grep -q "^host${TAB}unknown${TAB}registry-missing" \
    && ! printf '%s' "$out" | grep -q "^host${TAB}checked"; then
     ok "an absent registry reports unknown and names the file, never a zero"
@@ -5923,7 +6184,7 @@ printf '%s' "$out" | grep -q "^held${TAB}incomplete" \
     || fail "the held-port set claimed to be whole with a store unread"
 
 printf 'not a registry at all\n' > "$sc2"
-out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" report 00c0ffee 2>/dev/null)
+out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" -C "$sf2/$REGISTRY_REPO" report 00c0ffee 2>/dev/null)
 if printf '%s' "$out" | grep -q "^host${TAB}unknown${TAB}registry-damaged" \
    && ! printf '%s' "$out" | grep -q "^host${TAB}checked"; then
     ok "rejected: a damaged registry rendered as a zero - it reports unknown"
@@ -6011,6 +6272,8 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         --label stackgraft.labels=1 --label "stackgraft.repo=$H2" \
         --label stackgraft.worktree=/nowhere/two --label stackgraft.service=storefront \
         --label stackgraft.port=18202 alpine/git -c 'sleep 60' 2>/dev/null)
+    anon_note "$c1"
+    anon_note "$c2"
     if [ -n "$c1" ] && [ -n "$c2" ]; then
         short1=$(printf '%s' "$c1" | cut -c1-12)
         short2=$(printf '%s' "$c2" | cut -c1-12)
@@ -6028,7 +6291,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         else
             fail "the unfiltered listing did not return both, so the comparison proves nothing"
         fi
-        docker rm -f "$c1" "$c2" >/dev/null 2>&1
+        docker rm -f -v "$c1" "$c2" >/dev/null 2>&1
     else
         fail "could not launch the two-repo scoping fixture"
     fi
@@ -6043,6 +6306,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         --label "stackgraft.worktree=$(CDPATH= cd -- "$hpwt" && pwd -P)" \
         --label stackgraft.service=storefront --label stackgraft.port=18500 \
         alpine/git -c 'sleep 60' 2>/dev/null)
+    anon_note "$hpc"
     if [ -n "$hpc" ]; then
         held=$(sh "$REAP" report "$HP" 2>/dev/null | awk -F"$TAB" '$1 == "held" && $2 ~ /^[0-9]+$/ { print $2 }')
         if [ "$held" = 18500 ]; then
@@ -6057,7 +6321,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         [ -n "$cand" ] && [ "$cand" != 18500 ] \
             && ok "a held port fed to pick-port.sh is excluded from the candidate ($cand)" \
             || fail "pick-port returned '$cand' with 18500 excluded"
-        docker rm -f "$hpc" >/dev/null 2>&1
+        docker rm -f -v "$hpc" >/dev/null 2>&1
     else
         fail "could not launch the held-port fixture"
     fi
@@ -6126,6 +6390,113 @@ else
     printf '  skip  the two-repo and minimal-image reap rows (no docker daemon or alpine/git image)\n'
 fi
 
+# ----------------------------------------------------------- leak envelope ---
+section "leak envelope"
+
+# The whole run's own anonymous volumes, and there are none. Every container this
+# file starts registers its unnamed volumes in $ANON_LEDGER at creation, and this
+# is where the count is required to be zero.
+#
+# It is here rather than inside any one section because the leak it exists for was
+# never inside one: the suite leaked exactly 18 per run from four different
+# `docker rm -f` calls in four different sections, and every per-section envelope
+# above reported clean the whole time. Each of those envelopes only looked at the
+# objects its own block knew the names of, so the one kind of object nobody names
+# was the one kind nobody was counting.
+#
+# It also found a nineteenth that was not the harness's at all: reap.sh removed a
+# labelled overlay with `docker rm -f` and orphaned the container's anonymous
+# volume - the reaper leaving behind the one object class it could never
+# afterwards reclaim, since it carries no name, no label and no owner. The two
+# rows below hold the script and the file that documents it to the same spelling,
+# because repairing one of them alone is the two-texts-in-the-tree hazard rather
+# than a fix.
+reap_removal=$(grep -c 'docker rm -f -v "\$a_id"' "$SKILL/scripts/reap.sh")
+reap_documented=$(grep -c 'mutation + removal | `docker rm -f -v` | `docker rm -f -v`' "$SKILL/references/reaping.md")
+[ "$reap_removal" -eq 1 ] && [ "$reap_documented" -eq 1 ] \
+    && ok "the reaper's removal takes the container's anonymous volumes with it, in the script and in the flags table alike" \
+    || fail "the removal verb and its documented spelling disagree: script $reap_removal, reaping.md $reap_documented"
+
+# ...and the pair can notice a disagreement, which is the only thing that makes
+# the row above more than a grep for a string somebody put there.
+rvf=$(mktemp -d)
+sed 's/docker rm -f -v "\$a_id"/docker rm -f "$a_id"/' "$SKILL/scripts/reap.sh" > "$rvf/reap.sh"
+[ "$(grep -c 'docker rm -f -v "\$a_id"' "$rvf/reap.sh")" -eq 0 ] \
+    && ok "rejected: the reaper's removal with its -v reverted - the row reads the flag rather than the line" \
+    || fail "the removal row cannot notice -v going away"
+rm -rf "$rvf"
+
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1; then
+    # The safety premise that repair rests on, MEASURED rather than cited: a
+    # container mounting one named volume, and carrying one anonymous volume of
+    # the image's own, is removed with -v and the named volume must still be
+    # there afterwards. Every copy this skill provisions is named, and so is a
+    # base stack's data, so if -v reached a named volume the line above would be
+    # a data loss shipped as a tidy-up.
+    docker volume create sg-leak-named >/dev/null 2>&1
+    nv=$(docker run -d --entrypoint sh -v sg-leak-named:/data alpine/git -c 'sleep 30' 2>/dev/null)
+    nv_anon=$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$nv" 2>/dev/null | grep -E '^[0-9a-f]{64}$')
+    docker rm -f -v "$nv" >/dev/null 2>&1
+    if [ -z "$nv" ] || [ -z "$nv_anon" ]; then
+        fail "the named-volume fixture started no container or carried no anonymous volume, so it measures neither half: id '$nv'"
+    elif docker volume inspect "$nv_anon" >/dev/null 2>&1; then
+        fail "-v did not remove the container's anonymous volume, so the repair does not do what it claims"
+    elif docker volume inspect sg-leak-named >/dev/null 2>&1; then
+        ok "-v removes the container's anonymous volume and leaves the named one, which is what makes the reaper's removal safe for a copy"
+    else
+        fail "-v REMOVED A NAMED VOLUME - every copy this skill provisions is named, so the removal verb must not carry it"
+    fi
+    docker volume rm sg-leak-named >/dev/null 2>&1
+
+    # The NEGATIVE runs first, because the row after it is an absence and an
+    # absence is also what a ledger nobody ever wrote to reports. This fixture is
+    # the leak, built the way all eighteen were built: alpine/git declares
+    # `VOLUME /git`, the container is started without --rm, and it is removed
+    # without -v. The ledger must SEE the volume it leaves.
+    lk_before=$(anon_surviving)
+    lk=$(docker run -d --entrypoint sh alpine/git -c 'sleep 30' 2>/dev/null)
+    lk_anon=$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$lk" 2>/dev/null | grep -E '^[0-9a-f]{64}$')
+    anon_note "$lk"
+    docker rm -f "$lk" >/dev/null 2>&1
+    if [ -z "$lk" ] || [ -z "$lk_anon" ]; then
+        fail "the leak fixture started no container or claimed no anonymous volume, so it exercises nothing: id '$lk'"
+    elif [ "$(anon_surviving)" -gt "$lk_before" ]; then
+        ok "rejected: a container removed without -v - the ledger reports the anonymous volume it left behind"
+    else
+        fail "the ledger cannot see a volume left by a container removed without -v, so it could not have seen the eighteen either"
+    fi
+
+    # The fixture takes its own leak with it. By name, because the container it
+    # was attached to is already gone - which is the whole difficulty with this
+    # class of leak and the reason the repair had to be at the removal rather
+    # than in a sweep afterwards.
+    for _lv in $lk_anon; do
+        docker volume rm "$_lv" >/dev/null 2>&1
+    done
+
+    # ...and now the run's own figure. The registered count is asserted as a
+    # literal beside it: a survivor count of zero over a ledger with nothing in
+    # it is the false green this row would otherwise be, and it is the same
+    # premise the body-word row states about its own counter.
+    ANON_REGISTERED_RECORDED=26
+    lk_seen=$(anon_registered)
+    lk_left=$(anon_surviving)
+    if [ "$lk_seen" -ne "$ANON_REGISTERED_RECORDED" ]; then
+        fail "the ledger holds $lk_seen anonymous volumes where this run records $ANON_REGISTERED_RECORDED, so a zero survivor count would be measuring a run that did not happen"
+    elif [ "$lk_left" -eq 0 ]; then
+        ok "the $lk_seen anonymous volumes this run created are all gone: the suite leaks none"
+    else
+        fail "this run leaked $lk_left anonymous volume(s) of the $lk_seen it created: $(anon_survivors | tr '\n' ' ')"
+    fi
+else
+    printf '  skip  the run-wide anonymous-volume ledger (no docker daemon or alpine/git image)\n'
+fi
+rm -f "$ANON_LEDGER"
+
 # ------------------------------------------------------------ portability ---
 section "portability"
 
@@ -6137,6 +6508,7 @@ if grep -rniE "$PORTABILITY" "$SKILL" >/dev/null 2>&1; then
 else
     ok "no agent-specific coupling and no unavailable tool"
 fi
+
 
 # ------------------------------------------------------- release version ----
 section "release version"

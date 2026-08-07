@@ -22,8 +22,11 @@
 # exit:   0 ok
 #         2 usage error
 #         3 at least one object was refused. provision refuses before it creates
-#           anything, or removes what it made first, so exit 3 there always means
-#           nothing survives. destroy refuses PER OBJECT, reap.sh's rule: every
+#           anything, or removes what it made first AND READS THE REMOVAL BACK,
+#           so exit 3 there always means nothing survives - a copy that would not
+#           remove leaves by the exit below rather than as a refusal, because a
+#           refusal that reported a removal nobody verified is the leak with a
+#           success message over it. destroy refuses PER OBJECT, reap.sh's rule: every
 #           object that proved out is still removed and every one that did not is
 #           reported by name, so exit 3 there means at least one was left alone
 #         4 environment failure, including a copy the runtime would not remove
@@ -222,6 +225,53 @@ mine() {
 }
 
 # ---------------------------------------------------------------- provision --
+
+# EVERY PROVISION PATH THAT HAS MADE A COPY AND CANNOT KEEP IT REMOVES IT
+# THROUGH HERE, and it is one function because "and the copy was removed" is a
+# claim until the removal has been read back. Three call sites made that claim
+# out of a removal whose error was discarded, and one of them was measured
+# making it over a copy that survived: `volume is in use - [343e5542...]`,
+# swallowed by the redirect, exit 3, and the copy still on the disk.
+#
+# INSTANCE FIRST, COPY SECOND - destroy's own rule, which the verb that creates
+# both did not follow. A `docker run` that fails AFTER the container was created
+# leaves it in `Created`, and a container in `Created` holds a volume exactly as
+# a running one does, so the runtime will not remove the copy under it.
+#
+# THE CONTAINER IS REMOVED ONLY WHERE IT HOLDS THE COPY, and that is the
+# ownership test rather than a caution. The copy did not exist when this verb
+# started - a name already taken is refused far above, before a byte is written
+# - so this run created it, and anything mounting it was created after it was.
+# The container carrying that mount, under the name this script derived for this
+# run, is therefore this run's own and removing it is removing what this run
+# made. A container that merely carries the NAME and holds nothing is the orphan
+# an earlier run left behind, and it is left exactly where it was found: that is
+# what a provision failing on a name already taken must not disturb.
+#
+# `-v` is reap.sh's flag for reap.sh's reason: the anonymous volumes the image
+# declared and this run therefore created go with the container, while every
+# NAMED volume - the copy included - is left for the removal by name below.
+#
+# AND THE COPY IS READ BACK. Where it survives, something this run cannot remove
+# is holding it, and the honest report is the leak NAMED rather than a success
+# message over it - destroy's own unremovable-aside precedent, taken as an
+# ENVIRONMENT FAILURE rather than a refusal, because exit 3 here means nothing
+# survives and this is the case where something did.
+#
+# The reason is the caller's sentence and the ending is this function's, so no
+# path here can spell a removal that did not happen.
+refuse_removing_copy() {
+    case $(docker container inspect --format \
+        "{{range .Mounts}}{{if eq .Name \"$name\"}}holds{{end}}{{end}}" "$name" 2>/dev/null) in
+        *holds*) docker rm -f -v "$name" >/dev/null 2>&1 ;;
+    esac
+    docker volume rm "$name" >/dev/null 2>&1
+    if docker volume inspect "$name" >/dev/null 2>&1; then
+        envfail "$1, and the copy '$name' is still here: the runtime would not remove it, so it is named rather than reported removed"
+    fi
+    refuse "$1, and the copy was removed"
+}
+
 provision() {
     [ "$#" -ge 4 ] || usage "provision needs <source-volume> <image> <base-instance> <label>..."
     src=$1
@@ -383,16 +433,14 @@ provision() {
             -c 'cd /sg-src && cp -a . /sg-dst/' >/dev/null 2>&1; then
         # A partial copy does not survive a failed provision any more than it
         # survives a refusal. The volume list is left exactly as it was found.
-        docker volume rm "$name" >/dev/null 2>&1
-        refuse "the copy failed part-way and its partial volume was removed"
+        refuse_removing_copy "the copy failed part-way"
     fi
     elapsed=$((  $(date +%s) - started ))
 
     copied=$(probe -v "$name":/sg-dst:ro "$image" -c 'du -sb /sg-dst' | awk 'NR == 1 { print $1 }')
     case ${copied:-0} in
         '' | 0 | *[!0-9]*)
-            docker volume rm "$name" >/dev/null 2>&1
-            refuse "the copy measured no bytes, so it is not a copy"
+            refuse_removing_copy "the copy measured no bytes, so it is not a copy"
             ;;
     esac
 
@@ -419,8 +467,9 @@ $base_cmd
 SG_CMD
 
     if ! docker run "$@" >/dev/null 2>&1; then
-        docker volume rm "$name" >/dev/null 2>&1
-        refuse "the instance would not start on the copy, and the copy was removed"
+        # The container this run just named is exactly what a start failure
+        # leaves holding the copy, so it goes first and the copy goes after it.
+        refuse_removing_copy "the instance would not start on the copy"
     fi
 
     emit volume "$name"

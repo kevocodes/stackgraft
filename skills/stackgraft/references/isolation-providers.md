@@ -20,6 +20,8 @@ Three operations. Not two, and **not four**.
 
 Three exit meanings, and they are the same three every script here uses: refused is `3`, a usage error is `2`, and an environment failure is `4`. **A refusal creates nothing and removes nothing** — or, where it is discovered part-way, removes what it made before reporting.
 
+That removal is **read back rather than claimed**. The instance goes before the copy, because a container the runtime created and never started holds a volume exactly as a running one does and a removal reaching for the volume first leaves both behind. The only container removed is one **holding that copy** — which this run made, never the orphan an earlier run left under the same name. And where the copy survives anyway, the run **names it and fails as an environment failure**, because a refusal reporting a removal nobody verified is the leak with a success message over it.
+
 ## The Docker provider
 
 One provider ships: `scripts/provider-docker.sh`, because a local base stack already runs there.

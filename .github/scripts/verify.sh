@@ -3033,6 +3033,11 @@ doc_states "a runtime that cannot be queried reports unknown, never zero copies"
     'unknown, never zero|never zero copies|reports unknown'
 doc_states "destroy matches the worktree label by equality, not liveness and not a prefix" \
     'equals the worktree argument|worktree.*equal'
+# The DIRECTION clause again rather than the topic: a file saying the copy is
+# removed on a failed provision is saying what the defect said too. What has to
+# be stated is what happens when the removal does NOT take.
+doc_states "a copy the runtime will not remove is named and left as an environment failure, never reported as removed" \
+    'names it and fails as an environment failure'
 
 # The three non-blocking open questions design.md carries, stated in the shipped
 # file as assumptions rather than resolved silently. Each pattern is the
@@ -3177,6 +3182,67 @@ prov_rm_bad=$(grep -nE 'docker (rm|volume rm)' "$PROVIDER" 2>/dev/null \
 [ "$prov_rm_bad" -eq 0 ] \
     && ok "every removal in the provider names a target that came out of a scoped query or this script's own derivation" \
     || fail "$prov_rm_bad removal(s) in the provider act on something other than \$inst, \$vol or \$name"
+
+# --- V45  the shape of the one place a failed provision removes its copy -----
+# A provision that cannot keep its copy has three endings, and only two of them
+# can be reached from a fixture. The third - something this run did NOT create
+# holding the copy while both removals run - would need a holder planted in the
+# middle of the provision it interposes in, which is a race rather than a
+# fixture. So the SHAPE is read instead, and it is read here rather than beside
+# the runtime rows because it needs no runtime: this is the row that runs on a
+# machine with no container daemon at all, which is where a regression would
+# otherwise go unseen until someone happened to have one.
+#
+# Four things, in this order: the container removed FIRST and with -v, the
+# volume after it, the volume READ BACK after that, and an ending that names it.
+# The last one is why the readback exists - a removal whose error is discarded
+# and then reported as a removal is the defect this row was written for, and it
+# was measured: `volume is in use - [343e5542...]`, exit 3, copy still there.
+# Exit 3 means nothing survives, so the case where something does leaves by
+# envfail instead.
+#
+# ONE place, and the count is the other half of the row: a second place removing
+# the copy is a second place that can claim a removal nobody read back, which is
+# how the three call sites came to make the same unchecked claim.
+prov_removal_shape() {
+    awk '
+        /^refuse_removing_copy\(\)/ { in_f = 1; next }
+        in_f && $0 == "}" { in_f = 0 }
+        { if (index($0, "docker volume rm \"$name\"")) total++ }
+        in_f {
+            if (index($0, "docker rm -f -v \"$name\""))       con = NR
+            if (index($0, "docker volume rm \"$name\""))      vol = NR
+            if (index($0, "docker volume inspect \"$name\"")) back = NR
+            if (index($0, "envfail"))                         named = NR
+        }
+        END {
+            printf "%s %s %s %d\n", \
+                (con && vol && con < vol        ? "order"    : "ORDER"), \
+                (back && vol && back > vol      ? "readback" : "READBACK"), \
+                (named && back && named > back  ? "named"    : "NAMED"), \
+                total + 0
+        }
+    ' "$1"
+}
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so the copy-removal shape row reads nothing"
+else
+    psh=$(prov_removal_shape "$PROVIDER")
+    [ "$psh" = "order readback named 1" ] \
+        && ok "one place in the provider removes the copy, and it removes the container first with -v, reads the volume back after, and names it where it survived" \
+        || fail "the provider's copy removal reads '$psh', not 'order readback named 1'"
+fi
+
+# ...and the reader can see the defect's own shape, which is the only thing that
+# makes the row above mean anything.
+printf '%s\n' 'refuse_removing_copy() {' \
+    '    docker volume rm "$name" >/dev/null 2>&1' \
+    '    refuse "$1, and the copy was removed"' \
+    '}' > "$pcf/naive-removal.sh"
+prn=$(prov_removal_shape "$pcf/naive-removal.sh")
+[ "$prn" = "ORDER READBACK NAMED 1" ] \
+    && ok "rejected: a copy removal that reaches for the volume with nothing removed before it and nothing read back after it - the defect this row exists for" \
+    || fail "the removal-shape reader reported '$prn' for the defect's own shape"
 
 # --- the usage contract: exit 2 is a usage error and nothing else ------------
 if [ -f "$PROVIDER" ]; then
@@ -3576,6 +3642,96 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         docker rm -f -v "$pname" >/dev/null 2>&1
         fi
 
+        # --- V45  a start failure that leaves the container HOLDING the copy -
+        # The other half of a failed provision, and the one no row above could
+        # see. `docker run` can fail AFTER the runtime has created the
+        # container, which leaves it in `Created` holding the copy - and a
+        # container in `Created` holds a volume exactly as a running one does,
+        # so the runtime answers `volume is in use - [...]` to the removal. The
+        # provision discarded that error and reported that the copy was removed.
+        # Measured: exit 3, the sentence, and the copy still on the disk.
+        #
+        # The failure is arranged the way it happens for real rather than
+        # injected into the script: the base instance runs an entrypoint that
+        # lives on a volume of its OWN, so the copy - which is given the store's
+        # volume and not that one - is created with an entrypoint it does not
+        # have. Nothing in the provider is edited, stubbed or wrapped to produce
+        # it. The part-way fixture above cannot reach this state: a name already
+        # taken fails the container before it is created, so nothing holds the
+        # copy and the naive removal succeeded.
+        #
+        # THE ROW READS THE RUNTIME, not the exit status and not the sentence.
+        # Exit 3 and the words "the copy was removed" are exactly what the
+        # defect printed, so a row asserting them proves the defect.
+        docker volume create sg-verify-tools >/dev/null 2>&1
+        docker run --rm --entrypoint sh -v sg-verify-tools:/sg-tools "$pimg" \
+            -c 'printf "#!/bin/sh\nexec sleep 900\n" > /sg-tools/boot && chmod +x /sg-tools/boot' >/dev/null 2>&1
+        psf_base=$(docker run -d --name sg-verify-startfail-base -v sg-verify-tools:/sg-tools \
+            -v "$psrc":/data --entrypoint /sg-tools/boot "$pimg" 2>/dev/null)
+        anon_note sg-verify-startfail-base
+
+        # Both readbacks are the SCOPED LABEL QUERY rather than a name derived
+        # here. C1's lesson: a fixture that re-derives the expression under test
+        # cannot see that expression go wrong, and the four labels are what a
+        # copy is - so if the query cannot find it, nothing ever will.
+        #
+        # The store key is the parameter, so the row and its negative ask the
+        # SAME question of two different stores. They shared one key first and
+        # the negative read 2 where it expected 1 - counting the leak the row
+        # above had just found, which is a negative whose answer depends on
+        # whether the thing it is testing is broken.
+        scoped_copies() {
+            docker volume ls --quiet --filter "label=stackgraft.repo=$PH" \
+                --filter "label=stackgraft.store=$1" 2>/dev/null | awk 'END { print NR + 0 }'
+        }
+        scoped_copy_cons() {
+            docker container ls --all --quiet --filter "label=stackgraft.repo=$PH" \
+                --filter "label=stackgraft.store=$1" 2>/dev/null | awk 'END { print NR + 0 }'
+        }
+
+        if [ -z "$psf_base" ]; then
+            fail "the start-failure base instance would not start, so the rows below prove nothing"
+        else
+            inv_pre_sf=$(runtime_inventory)
+            psf=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" startfailstore "$psrc" "$pimg" \
+                       sg-verify-startfail-base \
+                       "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+            psfrc=$?
+            psf_v=$(scoped_copies startfailstore)
+            psf_c=$(scoped_copy_cons startfailstore)
+            inv_post_sf=$(runtime_inventory)
+            if [ "$psfrc" -eq 3 ] && [ "$psf_v" -eq 0 ] && [ "$psf_c" -eq 0 ] \
+               && [ "$inv_pre_sf" = "$inv_post_sf" ]; then
+                ok "a provision whose instance was created and then would not start leaves no copy and no container behind, and the inventory is identical"
+            else
+                fail "the start failure exited $psfrc and left $psf_v copy volume(s) and $psf_c container(s) the scoped query still finds, inventory $( [ "$inv_pre_sf" = "$inv_post_sf" ] && echo held || echo MOVED )"
+            fi
+            printf '%s\n' "$psf" | grep -q 'the instance would not start on the copy, and the copy was removed' \
+                && ok "...and the run says so in the sentence the runtime readback above is what makes true" \
+                || fail "the start failure did not report the copy removed: '$(printf '%s' "$psf" | tr '\n' ' ' | cut -c1-160)'"
+        fi
+
+        # The negative is the DEFECT ITSELF, reproduced by hand beside the row:
+        # a labelled copy held by a container in `Created`, removed volume-first
+        # with the error discarded, and then reported removed. The row's own
+        # predicate has to REPORT the survivor. A row that read the exit status
+        # and the sentence could not tell this apart from the repair, which is
+        # the defect wearing the check's clothes.
+        docker volume create --label stackgraft.labels=1 --label "stackgraft.repo=$PH" \
+            --label "stackgraft.worktree=$pwt" --label stackgraft.store=heldstore \
+            sg-verify-held >/dev/null 2>&1
+        docker create --name sg-verify-holder -v sg-verify-held:/h --entrypoint sh "$pimg" \
+            -c true >/dev/null 2>&1
+        anon_note sg-verify-holder
+        docker volume rm sg-verify-held >/dev/null 2>&1
+        if [ "$(scoped_copies heldstore)" -eq 1 ]; then
+            ok "rejected: a copy removed while a container held it - the removal errored, the error went to /dev/null, and the scoped query still finds the copy"
+        else
+            fail "the scoped readback cannot see a copy that survived its own removal, so the row above passes over the defect"
+        fi
+        docker rm -f -v sg-verify-holder >/dev/null 2>&1
+        docker volume rm sg-verify-held >/dev/null 2>&1
+
         # --- V65  a refusal is scoped: it does not cascade -------------------
         # One unit, two stores. The first has no local volume - which is what a
         # managed or remote store looks like from here - and the second is the
@@ -3641,10 +3797,11 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     # the paths that reach them, and the state worth cleaning up is the one on a
     # path that did not. Removing an object twice is free; removing it never is
     # what costs the next run its inventory rows.
-    for _pc in "$pplanted" "$pbase"; do
+    for _pc in "$pplanted" sg-verify-startfail-base sg-verify-holder "$pbase"; do
         [ -n "$_pc" ] && docker rm -f -v "$_pc" >/dev/null 2>&1
     done
-    docker volume rm "$psrc" sg-verify-future sg-verify-unlabelled sg-verify-partial >/dev/null 2>&1
+    docker volume rm "$psrc" sg-verify-future sg-verify-unlabelled sg-verify-partial \
+        sg-verify-tools sg-verify-held >/dev/null 2>&1
     rm -rf "$pwt" "$pother"
 
     # Nothing this section made may outlive it. Asserted rather than assumed,
@@ -6482,7 +6639,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     # literal beside it: a survivor count of zero over a ledger with nothing in
     # it is the false green this row would otherwise be, and it is the same
     # premise the body-word row states about its own counter.
-    ANON_REGISTERED_RECORDED=26
+    ANON_REGISTERED_RECORDED=28
     lk_seen=$(anon_registered)
     lk_left=$(anon_surviving)
     if [ "$lk_seen" -ne "$ANON_REGISTERED_RECORDED" ]; then

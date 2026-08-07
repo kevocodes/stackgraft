@@ -82,6 +82,72 @@ So the copy is **crash-consistent**: a file-level copy of a running engine is wh
 
 **Verification is what catches the cases where crash consistency was not enough**, which is why it is mandatory rather than advisory, and why a copy that started is not yet isolation.
 
+## Verifying the copy
+
+**A start is not proof.** A process that is running, a connection the port accepted, a health endpoint answering 200, a zero exit status and a log line announcing readiness are none of them evidence that the copy carries the base stack's state — not one of them, and not all five together. Until the copy has answered a real query it is not isolated.
+
+**Where the query fails, cannot be issued, or cannot be derived at all, the copy is destroyed and the pair refuses.** The overlay is not launched against an unverified copy and it is **never wired to the base store instead**: a silent fall back is the contamination the whole gate exists to prevent, and an unverified copy the overlay then writes into is a false green with the loss already committed. The absence of a derivable query is a refusal, not a waiver.
+
+### Where the candidate comes from
+
+| Rung | Source | What it yields |
+|------|--------|----------------|
+| 1 | the store service's **exec-form** `healthcheck.test`, as the resolver already reported it | an argument vector, already in the shape this skill runs |
+| 2 | a **read** command from the repository's own lifecycle target family for that store | the same, out of a file the repository owns |
+| 3 | nothing | destroy the copy, refuse the pair, name the store, and say that **no query could be derived** |
+
+A `CMD-SHELL` healthcheck is not a candidate: it is shell source again rather than an argument vector, and it falls through to rung 2 and then to rung 3. The template contract in `references/shared-state.md` governs the harvested vector unchanged — every rule there applies to every command this skill discovers and runs against a store — so a vector whose program re-parses its argument is rejected here for the reason it is rejected there.
+
+**Measured on the repository this change was written for: zero of its four stores supply a rung-1 candidate.**
+
+| store | exec form? | why it yields no query |
+|-------|-----------|------------------------|
+| postgres | no | `CMD-SHELL`, so the argv rule excludes it before anything else is asked |
+| timescaledb | no | `CMD-SHELL`, the same |
+| redis | yes | `redis-cli ping` answers `PONG` on an instance holding nothing, so it discriminates nothing |
+| minio | yes | a health endpoint, which is the one shape named above as never standing in for the query |
+
+So against a repository like that one, **this version provisions a copy and then refuses every writing pair**, for want of a rung-2 read. That is a shipped and temporary state, written here rather than met as a bug: rung 2's only source there is a read command generated into the repository, and generating one is the next step rather than this one.
+
+### The three outputs
+
+The candidate is issued three times, **through one route**, and two comparisons decide the pair.
+
+| Where the candidate runs | What starts it | How the candidate is issued |
+|--------------------------|----------------|-----------------------------|
+| the base store | nothing — it is the instance discovery recorded as `baseInstance` | `docker exec "$instance" "$@"` |
+| an empty instance of the same image | `docker run -d --rm --label "stackgraft.repo=$hash8" --label "stackgraft.worktree=$worktree" --label "stackgraft.probe=$store" "$image"` | `docker exec "$instance" "$@"` |
+| the copy | nothing — it is the instance `address` returned | `docker exec "$instance" "$@"` |
+
+**One route, and that is an assertion rather than a convenience.** A candidate issued one way against the empty instance and another way against the base store can differ for a reason that has nothing to do with the data — and a difference is exactly the signal being read, so a second route would manufacture the discrimination and admit a liveness ping as a query.
+
+- **The candidate is a query only once its output on the base store differs from its output on the empty instance.** A command that answers the same on an instance holding nothing cannot tell a copy from an empty namespace, which is the one distinction this whole road exists to make. Recorded once per store and command as `verification`, and re-run only once that record's `sourceFingerprint` stops matching.
+- **The copy is verified only once its output matches the base store's, byte for byte.** That is what proves the copy carries the base's state, and it knows no engine: nothing here has to understand what the bytes mean, only that two instances said the same thing and an empty one did not.
+
+**The empty instance carries no state and is removed by the runtime rather than by a query.** It mounts nothing, so it can hold nothing; it is started with `--rm`, so the runtime takes it and its anonymous volumes away when it stops and **no command here ever names an object to remove**. It carries this repository's hash and the worktree so that a run which died still leaves something a person can find, and it deliberately carries no `stackgraft.store`: the complete four-label set is what a copy *is*, and a probe that answered the copy's own query would be a copy nothing ever seeded.
+
+### The match is a property of the moment the copy was made
+
+The byte-for-byte comparison runs when the copy is **taken**, and again on every explicit refresh, because that is the only moment the copy and the base store are meant to hold the same state. It is not re-run later. From the first launch onwards **the overlay has been writing into the copy** — that is what the copy is for — and the base stack has moved on independently, so a comparison then would report the overlay's own work as a corrupt copy and destroy the thing reuse exists to keep.
+
+**What every later launch does still issue is the query, against the copy and against an empty instance.** The copy must **still answer differently from an instance holding nothing**. That costs one empty instance, runs on every launch, and is what stops a copy nobody verified — one left behind by a run that died between provisioning and reading back — from being put into service on the strength of existing. It proves the copy still carries state; it does not, and cannot, prove the copy still matches a base store that has moved.
+
+## The copy's lifetime, and its age
+
+**A copy is made once per `(worktree, store)`** and reused on every later launch from that worktree, so the first start pays the cost that run measured and every later one pays none.
+
+**A copy is re-provisioned only on an explicit refresh request.** No elapsed time, no size and no staleness heuristic refreshes one on its own, and none **refuses a launch on age** alone — an age is a number to report, never a verdict. A refresh is `destroy` followed by `provision`, spelled that way so that it stays something a person asked for, and the new copy is verified exactly as a first one is.
+
+**Every run that uses a copy reports that copy's age**, whether or not it provisioned, refreshed or destroyed anything. Three things are stated and no fourth:
+
+- the **absolute timestamp** the copy was taken,
+- the **elapsed** time since,
+- and the standing sentence that this is the age of the **copy**, and that what it holds is the base stack's state **as of that timestamp** — which says nothing whatever about how far the base store has moved since, because this run **did not compare** them and cannot.
+
+One further fact is reported because it is observed rather than inferred: where the base store's runtime **instance identity has changed** since the copy was taken — the container was recreated, which is what a restore or a reseed usually looks like — the run says so. Where that identity cannot be read, it says the **comparison was not made** rather than reporting agreement.
+
+**Four phrases may never appear beside a copy, and that is a requirement rather than a style note:** *up to date as of*, *stale*, *fresh*, and a data age of the form *the data is N old*. Every one of them is a comparison against the base store that no run here performed, and a developer who read one would believe a measurement nobody took.
+
 ## Refusals, by name
 
 A store this provider cannot copy locally refuses, naming the store, the reason, and the fact that nothing was attempted. Discovery's recorded reason for the store's `locality` travels into the message, so the refusal says what was actually observed rather than restating the rule.

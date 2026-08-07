@@ -4,7 +4,7 @@
 #
 # usage:  sh scripts/provider-docker.sh provision <hash8> <worktree> <store> \
 #             <source-volume> <image> <base-instance> <label>...
-#         sh scripts/provider-docker.sh address   <hash8> <worktree> <store>
+#         sh scripts/provider-docker.sh address   <hash8> <worktree> <store> [base-instance]
 #         sh scripts/provider-docker.sh destroy   <hash8> <worktree> <store>
 #
 # stdout: tab-separated records, one per line, the first field naming the kind:
@@ -16,6 +16,7 @@
 #         host       how a container-run overlay reaches the instance
 #         port       how a host-run overlay reaches it, if a port is published
 #         env        a value the caller could not derive from host and port
+#         age        the COPY's age - see the four shapes below
 #         copy       a copy that exists, with the exact command that removes it
 #         refused    a store this run would not act on, and why
 # exit:   0 ok
@@ -104,7 +105,7 @@ COPY_LABEL_KEYS='stackgraft.labels stackgraft.repo stackgraft.worktree stackgraf
 usage() {
     [ "$#" -eq 0 ] || printf '%s: %s\n' "$me" "$1" >&2
     printf 'usage: sh %s provision <hash8> <worktree> <store> <source-volume> <image> <base-instance> <label>...\n' "$0" >&2
-    printf '       sh %s address   <hash8> <worktree> <store>\n' "$0" >&2
+    printf '       sh %s address   <hash8> <worktree> <store> [base-instance]\n' "$0" >&2
     printf '       sh %s destroy   <hash8> <worktree> <store>\n' "$0" >&2
     exit 2
 }
@@ -429,6 +430,82 @@ SG_CMD
     emit copy "$name" "docker rm -f $name && docker volume rm $name"
 }
 
+# ---------------------------------------------------------------------- age --
+# An ISO-8601 timestamp to epoch seconds, in POSIX awk, because the two obvious
+# helpers are each absent from one supported platform: the flag that parses a
+# date string is GNU-only and its BSD spelling takes a different one, and this
+# repository ships nothing that is allowed to depend on either. The arithmetic is
+# the ordinary civil-from-days one and it needs no table and no library.
+#
+# The offset is read rather than assumed. The runtime answers with its own
+# offset for a volume and with Z for a container, and taking one for the other
+# moves the age by hours - in whichever direction the reader is standing.
+iso_epoch() {
+    awk -v s="${1:-}" '
+        function dfc(y, m, d,   era, yoe, doy, doe) {
+            if (m <= 2) y = y - 1
+            era = int((y >= 0 ? y : y - 399) / 400)
+            yoe = y - era * 400
+            doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+            doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+            return era * 146097 + doe - 719468
+        }
+        BEGIN {
+            if (s !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) exit
+            e = dfc(substr(s, 1, 4) + 0, substr(s, 6, 2) + 0, substr(s, 9, 2) + 0) * 86400 \
+                + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + substr(s, 18, 2)
+            tail = substr(s, 20)
+            if (match(tail, /[+-][0-9][0-9]:?[0-9][0-9]$/)) {
+                o = substr(tail, RSTART)
+                e -= (substr(o, 1, 1) == "-" ? -1 : 1) \
+                     * (substr(o, 2, 2) * 3600 + substr(o, length(o) - 1, 2) * 60)
+            }
+            print e
+        }'
+}
+
+# THE AGE REPORTED IS THE COPY'S, AND THE DATA'S AGE IS STATED AS UNMEASURED
+# rather than implied. The two clocks diverge the moment the base store is
+# restored, reseeded, or migrated, and this run compares nothing: it knows when
+# the copy was taken and it does not know what the base store has done since. So
+# a phrase like "up to date as of" is never written here or anywhere else this
+# skill ships, and neither is "stale", "fresh", or a data age of the form "the
+# data is N old" - every one of them is a comparison nobody performed.
+#
+# One further fact is reported because it is OBSERVED rather than inferred: the
+# base store's instance has or has not started since the copy was taken. Where
+# the caller named no base instance, or it cannot be inspected, the answer is
+# `unread` - the comparison was not made - never agreement by default.
+report_age() {
+    _created=$(docker volume inspect --format '{{.CreatedAt}}' "$name" 2>/dev/null)
+    _taken=$(iso_epoch "$_created")
+    _now=$(date +%s 2>/dev/null)
+    case ${_taken:-}x${_now:-} in
+        *[!0-9x]* | x* | *x)
+            emit age taken unread
+            emit age elapsed unread
+            ;;
+        *)
+            emit age taken "$_created"
+            emit age elapsed "$(( _now - _taken < 0 ? 0 : _now - _taken ))"
+            ;;
+    esac
+    emit age subject "this is the age of the copy; what it holds is the base store's state as of that timestamp, and this run did not compare the two"
+
+    _base=${1:-}
+    if [ -z "$_base" ]; then
+        emit age base unread
+        return
+    fi
+    _started=$(iso_epoch "$(docker inspect --format '{{.State.StartedAt}}' "$_base" 2>/dev/null)")
+    case ${_started:-}x${_taken:-} in
+        *[!0-9x]* | x* | *x) emit age base unread ;;
+        *) [ "$_started" -gt "$_taken" ] \
+               && emit age base changed \
+               || emit age base unchanged ;;
+    esac
+}
+
 # ------------------------------------------------------------------ address --
 address() {
     inst=$(scoped_instances | awk 'NR == 1 { print }')
@@ -451,6 +528,14 @@ address() {
     docker port "$inst" 2>/dev/null | awk -F: 'NF > 1 { print $NF }' | while IFS= read -r p; do
         [ -n "$p" ] && printf 'port\t%s\n' "$p"
     done
+
+    # The age is emitted HERE and not from provision, because this is the verb a
+    # run that provisions nothing, refreshes nothing and destroys nothing still
+    # calls: the copy has to be addressed before the overlay can be wired to it.
+    # Putting the age anywhere else would make it conditional on the run having
+    # done something, which is exactly the run that most needs to be told how old
+    # the state it is about to test against is.
+    report_age "${1:-}"
 
     # Zero env records, and the reason is stated rather than left as an absence:
     # the names a service reads its address from are the manifest's, not this
@@ -511,6 +596,6 @@ destroy() {
 # places deciding one thing is how they come to decide it differently.
 case $verb in
     provision) provision "$@" ;;
-    address)   [ "$#" -eq 0 ] || usage "address takes no further arguments"; address ;;
+    address)   [ "$#" -le 1 ] || usage "address takes at most one further argument, the base instance to compare the copy's age against"; address "$@" ;;
     destroy)   [ "$#" -eq 0 ] || usage "destroy takes no further arguments"; destroy ;;
 esac

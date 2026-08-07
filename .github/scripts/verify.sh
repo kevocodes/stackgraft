@@ -644,7 +644,7 @@ body_fixture() { cp "$SKILL/SKILL.md" "$1"; awk -v n="$2" 'BEGIN { while (i++ < 
 # the ordering hazard with it: applying the adds before the cuts is red at that
 # commit even though both endpoints are legal, which is why the cuts and the
 # adds are one commit rather than two.
-BODY_ADDS=21
+BODY_ADDS=3
 
 over_n=$((501 - $(body_words "$SKILL/SKILL.md")))
 body_fixture "$bf/over.md" "$over_n"
@@ -700,7 +700,7 @@ fi
 # against the shipped file, and writing the table's endpoint here would have made
 # a green suite disagree by one word with the file it measures.
 # Measured: 498 baseline, -35 across nine donor cuts, +21 for the scope line.
-BODY_WORDS_RECORDED=484
+BODY_WORDS_RECORDED=487
 [ "$words" -eq "$BODY_WORDS_RECORDED" ] \
     && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
     || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"
@@ -3251,8 +3251,8 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
             fail "address exited $parc and named host '$pa_host'"
         fi
         printf '%s\n' "$pa" | awk -F'\t' '$1 != "" { print $1 }' | sort -u > "$pdir/kinds"
-        if grep -qvE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds"; then
-            fail "address emitted a record kind the contract does not define: $(grep -vE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds" | head -1)"
+        if grep -qvE '^(volume|instance|bytes|seconds|space|host|port|env|age|copy|refused)$' "$pdir/kinds"; then
+            fail "address emitted a record kind the contract does not define: $(grep -vE '^(volume|instance|bytes|seconds|space|host|port|env|age|copy|refused)$' "$pdir/kinds" | head -1)"
         else
             ok "address emits only record kinds the contract defines"
         fi

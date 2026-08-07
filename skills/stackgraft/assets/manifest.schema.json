@@ -137,6 +137,48 @@
             "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
             "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies."
           },
+          "verification": {
+            "type": "object",
+            "required": ["command", "rung", "discriminates", "sourceFingerprint"],
+            "additionalProperties": false,
+            "description": "The candidate query a copy of this store must answer before the pair counts as isolated (references/isolation-providers.md). OPTIONAL, and its absence is NOT a pass: a store with no candidate has no query, which destroys the copy and refuses the pair. It is recorded per store rather than per copy because it is a fact about the command and the image, established once and re-established when the store's definition drifts — the copy's own readback is issued live on every launch and is never cached, since a cached claim about a runtime object is a claim nothing can re-check. NOTHING HERE NAMES A STORE ENGINE: the candidate is harvested from the repository's own healthcheck, and what makes it a query is measured against an empty instance rather than looked up in a table.",
+            "properties": {
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" },
+                "description": "The candidate as an ARGUMENT VECTOR, one element per item, harvested from an exec-form healthcheck.test and never re-written from a shell line. An array rather than a string is the requirement: a shell-form test is program text again, and the template contract in references/shared-state.md — argv, one program, and that program may not re-parse its argument — governs this vector unchanged, because it is equally repository-authored and equally executed against a running store."
+              },
+              "rung": {
+                "type": "integer",
+                "enum": [1, 2],
+                "description": "Where the candidate came from: 1 is the store service's exec-form healthcheck, 2 is a read command from the repository's own lifecycle target family. There is no rung 3 here — rung 3 IS the absence of a candidate, so a record claiming it would be a record about nothing."
+              },
+              "sourceFingerprint": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The fingerprint of the file this candidate was read from when the discriminator was established, produced by fingerprintTool. Without it the probe result never expires, so a candidate that stopped discriminating when the store's image changed goes on being read as a query. The record is treated as ABSENT once this stops matching, exactly as isolation.approval works one field along."
+              },
+              "discriminates": {
+                "type": "object",
+                "required": ["value", "evidence", "at"],
+                "additionalProperties": false,
+                "description": "Whether this candidate can tell a seeded instance from an empty one. Both members are required and the evidence has a minimum length for the reason every other evidence field here does: a record that can say yes is a record that can say it without having run the probe.",
+                "properties": {
+                  "value": {
+                    "type": "boolean",
+                    "description": "true only where the candidate's output on the base store was observed to DIFFER from its output on an empty instance of the same image. false is a real and useful answer — a liveness probe that answers identically is checked-and-not-a-query, which is worth keeping so the next pass does not re-derive it — and false refuses the pair exactly as an absent record does."
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What was observed, in words a later reader can judge: the two outputs, or the reason they were the same. This is the field that separates a probe that ran from a claim that it did."
+                  },
+                  "at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          },
           "nameForm": {
             "type": "object",
             "required": ["value", "reason"],

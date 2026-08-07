@@ -36,7 +36,7 @@ X is evaluated **before** W and independently of it. Writing is not the only way
 
 ## Empty is a claim, not an omission
 
-`writes: []` means *checked, and none*. An **absent** `writes` means nobody looked. Those are different, and conflating them is how a gate quietly dies.
+A recorded `mutates: false` means *checked, and none, for that one store*. A **missing** record for a pair means nobody looked at that pair. Those are different, and conflating them is how a gate quietly dies. The service-level `writes` array this replaced could not tell them apart across stores: it was a positive claim that asserted checked-and-none for every other store at the same time, so a partially-informed pass had to omit it and lose all of them.
 
 Because an empty list is unfalsifiable on its own — a lazy pass could emit it everywhere and permanently disarm the gate — any classification must carry a `stateReview` recording **how** it was reached and a fingerprint of the source it describes. When that fingerprint stops matching, the classification is stale, and stale is undetermined.
 

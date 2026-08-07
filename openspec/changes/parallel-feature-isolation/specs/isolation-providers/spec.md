@@ -172,12 +172,14 @@ A store whose locality cannot be determined MUST be treated as remote and refuse
 - WHEN the gate classifies both
 - THEN the remote pair refuses by name and the local pair still resolves to a verified seeded copy
 
-### Requirement: Free space is proven on the filesystem the copy will occupy, before the copy
+### Requirement: Free space is measured on the filesystem the copy will occupy, and reported as a candidate
 
 Before provisioning, the run MUST establish the free space of the filesystem the copy will **actually** occupy. On a virtualised container runtime that is not the filesystem the working directory reports, and the runtime's data disk is a sparse image that grows into the host — so the binding constraint is the host's free space, and a check made against the wrong filesystem is a check that reports comfort it cannot deliver.
 
-A copy that would not fit MUST be refused **before** it starts rather than failed during it, and a refusal MUST leave no partial copy behind. Where free space cannot be established, the copy MUST be refused: an unknown is not a permission. The run MUST state which filesystem it measured, so the number is checkable rather than trusted.
-(Verify: file review of the space check — it names the runtime's data root, not the working directory; a copy attempted against a filled filesystem; a run whose space probe fails; the filesystem the run reports compared against the one the runtime writes to.)
+A copy the measurement says would not fit MUST be refused before any bytes are written, and every refusal MUST leave no partial copy behind. **What the check produces is a candidate, not a guarantee**, and the run MUST say so in those terms: no worktree can see a copy another worktree has not yet made, so two runs that each pass their own check can still collide, and there is no host-global budget any run may claim to hold. The run MUST therefore print, beside the numbers, the blind spot it cannot see — another worktree's copy that does not exist yet, another repository's copies, and every other consumer of the disk. No shipped file MAY describe the outcome as enough space, guaranteed, reserved, or as a copy that will fit.
+
+A copy that runs out of space mid-write MUST remove its own partial, refuse the pair, and leave the runtime's object inventory as it found it. Where free space cannot be established for **either** filesystem, the copy MUST be refused: an unknown is not a permission. The run MUST state which filesystem it measured and which one bound the decision, so the number is checkable rather than trusted.
+(Verify: file review of the space check — it names the runtime's data root and the host filesystem backing it, not the working directory; a copy attempted against a filled filesystem with the runtime's volume list compared before and after; a run whose space probe fails; the report inspected for guarantee wording and for the blind-spot statement.)
 
 #### Scenario: Space sufficient
 
@@ -191,9 +193,22 @@ A copy that would not fit MUST be refused **before** it starts rather than faile
 - WHEN provisioning is considered
 - THEN the copy is refused before any bytes are written, the pair refuses, and no partial copy is left behind
 
+#### Scenario: Space exhausted mid-copy
+
+- GIVEN a copy that passed its own check and runs out of space while writing
+- WHEN the write fails
+- THEN the partial copy is removed, the pair refuses, and the runtime's volume inventory is identical to what it was before the attempt
+
+#### Scenario: The report is a candidate rather than a guarantee
+
+- GIVEN a run that measured both filesystems and found room
+- WHEN it reports
+- THEN it names the filesystem it measured, which one bound the decision, this repository's copies already on it, and the blind spot it cannot see
+- AND it does not describe the outcome as enough space, guaranteed, reserved, or as a copy that will fit
+
 #### Scenario: Free space undetermined
 
-- GIVEN the space probe cannot answer for the filesystem the copy would land on
+- GIVEN the space probe cannot answer for either filesystem the copy would land on
 - WHEN provisioning is considered
 - THEN the copy is refused and the reason names what could not be established
 

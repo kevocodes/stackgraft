@@ -68,8 +68,8 @@ Take the steps in order and stop at the first one that matches. **X is evaluated
 | 1 | **Any** of W, X, N undetermined | Treat that pair as `W=yes, X=yes, N=no` → **REFUSE**. |
 | 2 | **X = yes**, whatever W and N say | **REFUSE** a plain attach. Read-only is not enough when the read protocol competes: a consumer joining the base `group.id` takes partitions even if it only logs. Supply a distinct identity, **record the value as `competesOn[].overlayIdentity`**, then re-enter at step 1 with X evaluated again — the substitution alone never approves. **`references/coordination-identity.md` is the only source of what makes an identity count**, and it is not restated here: it holds the knob per coordination primitive, the three-part proof a recorded value has to pass before X is no, and the name family every generated value comes from. Any part of that proof unproven leaves X **undetermined**, which is step 1, which refuses. A copy answers X for no substrate, and pairs that file refuses — a shared queue, a lock, a replication slot, a scheduler singleton — go to step 5. |
 | 3 | X = no, W = no | **REUSE** the base store. The only unconditionally safe case. |
-| 4 | X = no, **W = yes**, N = yes | **ISOLATE** inside the running instance. Reuse the server process, never the namespace. |
-| 5 | X = no, **W = yes**, N = no | **REFUSE**, or run a dedicated store. Never reuse. |
+| 4 | X = no, **W = yes**, N = yes | **ISOLATE in place** — a namespace inside the running instance. Reuse the server process, never the namespace. The zero-disk road, taken where it is available. |
+| 5 | X = no, **W = yes**, N = no | **ISOLATE by a seeded copy** where the store records a usable provider — `references/isolation-providers.md`. **REFUSE** where it does not, or run a dedicated store. Never reuse. |
 
 **Step 1 is load-bearing, and it is an `any`, not an `all`.** One undetermined boolean refuses the pair; the other two being known changes nothing. A recorded `false` means checked-and-none *for that pair*; a missing record means nobody looked at that pair. Silence must resolve to unsafe or the gate is decoration. A pair with no verdict is not a pair that passed.
 
@@ -94,9 +94,21 @@ Force ISOLATE-or-REFUSE regardless of what the rest of the classification claims
 - The service's entrypoint is a scheduler, cron, beat, or worker singleton. Double-firing means duplicate emails and duplicate charges.
 - The service sends externally visible side effects: email, SMS, webhooks, payments.
 
+## ISOLATE has two roads, and the copy is the default one
+
+**W buys a copy. X buys a name.** They answer different hazards and neither is ever recorded as satisfying the other: a distinct identity stops the overlay taking work away from the base stack and protects not one byte of its data, and a copy carries the base stack's data and ends no competition on any substrate. A pair carrying both needs both.
+
+**A seeded copy is what ISOLATE means by default.** It is a second instance of the same image, started on a copy of the state the base stack holds — so it carries the data the base stack has and **asks the repository for nothing**: no task target, no discovered command, no template, no approval. `references/isolation-providers.md` is the whole of how it is made, what it costs, and which stores refuse.
+
+**An empty namespace is a different thing from a copy, and the difference is what a feature is tested against.** A freshly created database has the shape of the base stack's state and none of its contents; a copy has both. A change that reads what the base stack loaded cannot be exercised in the first and can in the second, which is why the empty namespace is the optimisation and the copy is the default rather than the other way round.
+
+**Half a lifecycle records `mechanism: "none"`, and that now selects the copy rather than a refusal.** A create discovered with no drop beside it is still not an isolation mechanism — nothing changed about that — but the pair it belongs to is no longer out of road. It goes to step 5 and is answered by a copy where the store records a usable provider.
+
 ## Isolating in place
 
 **Share compute, isolate state.** Application services are expensive to start and safe to share; stores are cheap to start and dangerous to share. Isolate *inside* the instance already running — a new database, vhost, or prefix — and no second container is needed at all.
+
+This is the **zero-disk optimisation**, and it keeps every rule it has ever had. It is preferred where it is available because it copies nothing, not because a copy is unsafe: the command is discovered and never embedded, no client binary is assumed present on the host, the placeholder set stays closed, the deny-list applies to the template's own grammar, the substituted command is executed as an argument vector with no shell fallback, a program that re-parses its argument is rejected, the destructive-verb class is judged by effect, and the create and its drop are approved together. Not one of them is relaxed by the existence of the other road.
 
 The isolation command is **discovered from the repository**, never embedded here. Four rungs:
 
@@ -113,7 +125,7 @@ Rung 2 is recorded `inferred`, so on the interlock above it does not satisfy the
 
 One namespace per branch accumulates until a human goes looking, so every isolation record answers what becomes of it.
 
-- **A `command` that creates a namespace is recorded with the `teardownCommand` that removes it.** The schema requires the pair, and the approval row below shows both before the first run for the same reason: approving a create without its drop approves half an operation. Discover them together — a rung-1 task target usually defines both, and at rung 2 the drop client sits in the same container as the create. **Where no teardown is discoverable, the record is `mechanism: "none"`**, which refuses; half a lifecycle is not an isolation mechanism, and writing the create alone would trade a correctness problem for a growing pile of databases nobody remembers.
+- **A `command` that creates a namespace is recorded with the `teardownCommand` that removes it.** The schema requires the pair, and the approval row below shows both before the first run for the same reason: approving a create without its drop approves half an operation. Discover them together — a rung-1 task target usually defines both, and at rung 2 the drop client sits in the same container as the create. **Where no teardown is discoverable, the record is `mechanism: "none"`**, which leaves this road; half a lifecycle is not an isolation mechanism, and writing the create alone would trade a correctness problem for a growing pile of databases nobody remembers. It is no longer the end of the pair: step 5 answers it with a seeded copy where the store records a usable provider, and refuses only where it does not.
 - **Rung 3 has nothing to remove by command, and its namespace is left behind on purpose.** A Mongo database that appears on first write, an S3 key prefix, a topic prefix: no create command, no drop command. That is legitimate, and it obliges the run to **name the namespace, its store, and how to remove it in the output**, because the only thing that will ever remove it is a person who was told it exists.
 - **The same naming applies whenever a teardown exists but did not run** — the overlay is still up, or the teardown failed. Report the exact substituted command and the exact namespace instead of assuming a later run tidies up: every member of the name family is derived from the branch, so a run on any other branch generates a different name and never revisits this one.
 

@@ -32,6 +32,20 @@ Every rule here applies to **every command this skill discovers and runs against
 - **The gate fails closed.** Unknown, absent, empty or degraded data resolves to refusal, never to permission. Emptiness is a claim that requires evidence at every level, and a pair with no verdict is not a pair that passed.
 - **Secrets are not read into the cache.** A gitignored `.env` is never hashed or copied; the constraint it implies is recorded, never the value.
 
+## The copy as a data surface
+
+Isolating a writing pair now means **copying the store's state**, so a run can leave a duplicate of whatever your base stack holds sitting on the same disk under a name this skill chose. Where the base stack holds a production-shaped dump, so does the copy. That is a surface, and it is named here rather than left implicit in `references/isolation-providers.md`.
+
+**The answer is ownership, labelling, a named lifetime and an output contract — not encryption.** Encrypting a copy the developer's own engine has to read would move the key onto the same disk and change nothing; what a developer actually needs is to know the copy exists, whose it is, and how to remove it.
+
+- **Every copy carries this repository's complete label set** — the label-set version, the repository hash, the worktree it belongs to, and the store key. Four labels, and the set is complete or the object is not ours. An object carrying three of them is reachable by no query this skill makes, and an unlabelled object is never provisioned over, never removed, and never named as a copy of ours.
+- **A copy's lifetime is its worktree.** It belongs to the worktree recorded on it, is reused by later launches from that worktree, and becomes reclaimable once that worktree is gone — judged against git's own worktree list, never against a timer.
+- **Every run names the copy and the exact command that removes it**, including a run that removed nothing because the overlay is still up or a removal failed. The only thing that will ever remove it otherwise is a person who was told it exists.
+- **Removal takes the removal flag in addition to the mutation flag**, which runs the opposite way to intuition on purpose: a copy destroyed by accident is state nothing on this host can reproduce, because the base stack has moved on since it was taken.
+- **The copy is taken live and is therefore crash-consistent.** A file-level copy of a running engine is what a power cut looks like. Engines are built to recover from that, and an engine with an fsync-ordering dependency may not — stated as the residual it is, in `references/isolation-providers.md`, beside the statement that the copy is live.
+
+**What this does not do**, in the same plain terms as the section below. The copy inherits the confidentiality of the disk it sits on and nothing more: it is readable by anything on that host that can read the runtime's objects, and this skill applies no access control it did not already have. It is not encrypted, not redacted, and not sampled — it is the base stack's bytes. A developer whose base stack holds data they may not duplicate should not be pointing this at it, and the shipped files say so rather than implying a protection that is not there.
+
 ## What is not covered
 
 Named the way this project names its other limits: plainly, and not described as closed.

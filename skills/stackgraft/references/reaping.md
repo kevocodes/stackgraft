@@ -205,6 +205,20 @@ Both conditions are re-tested inside `scripts/reap.sh` immediately before it act
 
 So exactly one shape falls outside the exclusion: a container hand-labelled with this repository's complete label set, whose `stackgraft.worktree` is absent from the worktree list, and whose published port is not among the ones the run passed. **One thing keeps that shape rare, and it is not the port test.** It is the positive allowlist at the top of this section: only an overlay launch writes `stackgraft.repo`, so everything this skill never started is outside the candidate set for free, under every flag, whatever ports are passed. That half is structural. The port half is a caller's assertion the runtime cannot check, so it is stated as an accepted coverage loss — here, in `README.md`, and in the requirement itself — rather than described as closed. It is not a gap awaiting a mechanism.
 
+## 9a. Store copies are reap targets, and the more expensive kind
+
+A seeded copy — `references/isolation-providers.md` — is a runtime object this skill created, so it outlives its worktree exactly the way an overlay does, and it costs disk while it does. It is reclaimed here under the same rules, with **one deliberate difference**.
+
+**Candidacy is the same positive closed allowlist.** A copy is a candidate only if it carries the complete label set for a copy with `stackgraft.repo` equal to this repository's `hash8`: `stackgraft.labels`, `stackgraft.repo`, `stackgraft.worktree`, `stackgraft.store`. Four rather than the overlay's five — `stackgraft.service` holds a manifest service key, and a copy belongs to a store rather than to a service. An object carrying three of the four is reachable by no query this skill makes, which is the point: the set is complete or the object is not ours.
+
+**Liveness is decided the same way**, against the worktree list of section 10: a copy whose recorded worktree is still listed belongs to work in progress and is never a target, whatever its age.
+
+**Removal takes the removal flag *in addition to* the mutation flag.** That is the difference, and it runs the opposite way to intuition: a copy is the more expensive thing to have destroyed by accident, not the less. An overlay container that should not have been stopped is restarted from its image in seconds; a copy that should not have been removed is a state nothing on this host can reproduce — the base stack has moved on since it was taken. So the cheap verb is not available for it. The instance running on a copy is an ordinary container target and follows the ordinary rules; the **copy itself** is what the second flag protects.
+
+**An unlabelled object, or one whose `stackgraft.labels` value this run does not recognise, is reported and never acted on** — the same fail-safe direction section 14 takes for everything else it cannot read. A future label-set version means this run does not know what those labels mean, and acting on an object you cannot read is the failure this whole file is written against.
+
+**A runtime that cannot be queried reports *unknown*, never zero copies.** This is section 14's distinction with the highest cost attached: a report that says *no copies* over a daemon that never answered tells a developer their disk is clear when it may hold gigabytes, and they will believe it because it is a number.
+
 ## 10. Liveness, decided against the worktree list
 
 The recorded worktree path is compared against `git -c core.quotePath=false worktree list --porcelain`, parsed as `awk '/^worktree /{print substr($0, 10)}'`. `-z` is not used: it postdates the declared git 2.5+ floor.

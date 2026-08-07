@@ -631,16 +631,205 @@ def booleans(doc, unit, store):
     return w, (rec["competes"]["value"] if fresh else None)
 
 
+SHARED_MD = SKILL / "references/shared-state.md"
+VERDICT_HEADING = "## The verdict"
+VERDICT_TOKEN = re.compile(r"\*\*(REFUSE|REUSE|ISOLATE)\b")
+STEP_POINTER = re.compile(r"\bstep (\d+)\b")
+
+
+def step_table(text=None):
+    """The shipped step table, parsed OUT OF references/shared-state.md.
+
+    This reader used to restate the table in Python - `if x: return "REFUSE"` -
+    and that is how a defect survived seven slices. At 1.1.0 step 5 read
+    "**REFUSE**, or run a dedicated store", so step 2 sending an X-refused pair
+    there was safe; slice 4a redefined step 5 as "**ISOLATE by a seeded copy**"
+    and the pointer in step 2 was never revisited. The suite could not see it
+    because nothing here or in verify.sh read the table's ACTION cells: a
+    correct reader modelling a procedure the shipped file no longer stated.
+
+    So the actions come from the file. `verdicts` is the ordered list of verdict
+    tokens the action cell states - step 5 states two, the copy and the refusal
+    where no provider is recorded - and `points_at` is every step that cell
+    hands a pair on to, which is the pointer whose destination moved.
+    """
+    rows, inside = {}, False
+    for line in (text if text is not None else SHARED_MD.read_text()).splitlines():
+        if line.startswith("## "):
+            inside = line.strip() == VERDICT_HEADING
+            continue
+        if not inside or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 3 or not cells[0].isdigit():
+            continue
+        rows[int(cells[0])] = {
+            "condition": cells[1].replace("*", ""),
+            "verdicts": VERDICT_TOKEN.findall(cells[2]),
+            "points_at": sorted({int(n) for n in STEP_POINTER.findall(cells[2])}),
+        }
+    return rows
+
+
+STEPS = step_table()
+
+
+def step_for(steps, pattern):
+    """The step whose CONDITION matches, never a number carried here.
+
+    A reader holding `2` would be the same live pointer this whole repair is
+    about, one file along: renumber the table and it reads the wrong cell while
+    every row below stays green.
+    """
+    for number, row in sorted(steps.items()):
+        if re.search(pattern, row["condition"]):
+            return number
+    return None
+
+
+UNDETERMINED = step_for(STEPS, r"of W, X, N undetermined")
+COMPETES = step_for(STEPS, r"X = yes")
+NEITHER = step_for(STEPS, r"X = no, W = no")
+IN_INSTANCE = step_for(STEPS, r"N = yes")
+BY_COPY = step_for(STEPS, r"N = no")
+
+
+def step_outcome(step, where_not=False):
+    """What that step hands the pair, out of its own action cell.
+
+    `where_not` takes the SECOND verdict the cell states, which is how step 5
+    says "a copy where the store records a usable provider, a refusal where it
+    does not". A cell stating one verdict has no second reading, and a step that
+    read as nothing at all answers UNREAD so every row below goes red rather
+    than passing over a table this reader never opened.
+    """
+    tokens = STEPS.get(step, {}).get("verdicts", [])
+    if not tokens:
+        return "UNREAD"
+    if where_not:
+        return tokens[1] if len(tokens) > 1 else "UNREAD"
+    return tokens[0]
+
+
+def has_provider(doc, store):
+    """Step 5's own condition: does this store record a USABLE provider.
+
+    Present and `declared`, which is the bar the isolation record beside it is
+    held to. What this deliberately does NOT model is a provider whose runtime
+    is unbuilt: `references/isolation-providers.md` refuses those by name inside
+    the provider, downstream of this table, and no fixture here carries one - a
+    clause no input ever reaches is a clause that certifies itself.
+    """
+    provider = (doc["backingStores"][store].get("isolation") or {}).get("provider") or {}
+    return provider.get("confidence") == "declared"
+
+
 def verdict(doc, unit, store):
-    """The shipped step table, in order, stopping at the first match."""
+    """The shipped step table, in order, stopping at the first match.
+
+    The CONDITIONS are modelled here - they are what is under test. The ACTIONS
+    are read out of the shipped table, so a step whose verdict is rewritten
+    moves this reader with it instead of leaving it certifying the old one.
+    """
     w, x = booleans(doc, unit, store)
     if w is None or x is None:
-        return "REFUSE"                                   # step 1
+        return step_outcome(UNDETERMINED)
     if x:
-        return "REFUSE"                                   # step 2
+        return step_outcome(COMPETES)
     if not w:
-        return "REUSE"                                    # step 3
-    return "ISOLATE" if isolates(doc, store) else "REFUSE"  # steps 4, 5
+        return step_outcome(NEITHER)
+    if isolates(doc, store):
+        return step_outcome(IN_INSTANCE)
+    return step_outcome(BY_COPY, where_not=not has_provider(doc, store))
+
+
+def copies_offered_for_x(steps):
+    """Steps the X refusal hands a pair on to whose OWN action isolates.
+
+    SSS-A2 and CI-1 read over the shipped table: a pair carrying X and not W
+    must not cause a store copy to be provisioned, and no reference may offer a
+    copy as a remedy for X alone. So the step that refuses X may point at no
+    step whose action is a copy. This is the row the injected sentence below
+    turns red, and the row that would have caught the shipped defect.
+    """
+    competes = step_for(steps, r"X = yes")
+    if competes is None:
+        return ["the table states no X = yes step at all"]
+    offered = []
+    for number in steps[competes]["points_at"]:
+        if number == competes:
+            continue
+        action = steps.get(number, {}).get("verdicts") or ["UNREAD"]
+        if action[0] != "REFUSE":
+            offered.append(f"step {number} ({action[0]})")
+    return offered
+
+
+if sorted(STEPS) == [1, 2, 3, 4, 5] and all(row["verdicts"] for row in STEPS.values()):
+    ok(
+        "the step table parses out of shared-state.md: "
+        + ", ".join(f"{n}->{'/'.join(STEPS[n]['verdicts'])}" for n in sorted(STEPS))
+    )
+else:
+    fail(f"the step table did not read as five steps each stating a verdict: {STEPS}")
+
+if [UNDETERMINED, COMPETES, NEITHER, IN_INSTANCE, BY_COPY] == [1, 2, 3, 4, 5]:
+    ok("each step is found by its own condition cell, so a renumbered table moves the reader with it")
+else:
+    fail(
+        "a condition cell no longer selects its step: "
+        f"undetermined={UNDETERMINED}, X={COMPETES}, neither={NEITHER}, "
+        f"in-instance={IN_INSTANCE}, copy={BY_COPY}"
+    )
+
+_offered = copies_offered_for_x(STEPS)
+if not _offered:
+    ok("the X refusal hands a pair to no step that isolates: a copy is never offered as a remedy for X")
+else:
+    fail(f"step {COMPETES} routes an X-refused pair to {_offered}, which provisions a copy for a hazard no copy ends")
+
+# The regression case, and it is the EXACT sentence an adversarial verification
+# proved invisible: with it in place the suite ran 747 ok / 0 FAIL / exit 0,
+# byte-identical to clean, because nothing read the table's action cells.
+SHIPPED_X_TAIL = (
+    "A copy answers X for no substrate, so a pair that file refuses "
+    "— a shared queue, a lock, a replication slot, a scheduler singleton — "
+    "**is refused here and reaches no step that isolates.**"
+)
+INJECTED_X_TAIL = (
+    "A copy answers X on every substrate, and pairs that file refuses "
+    "— a shared queue, a lock, a replication slot, a scheduler singleton — "
+    "are answered by a seeded copy of the store at step 5."
+)
+_clean_text = SHARED_MD.read_text()
+_injected_text = _clean_text.replace(SHIPPED_X_TAIL, INJECTED_X_TAIL)
+if _injected_text == _clean_text:
+    fail("the injection landed nowhere, so the row below tests the shipped file rather than the defect")
+elif copies_offered_for_x(step_table(_injected_text)):
+    ok("rejected: step 2 routing an X-refused pair to step 5, whose action is a seeded copy")
+else:
+    fail("the injected sentence changed nothing: the pointer row cannot see an X pair handed to a copy")
+
+# ...and each outcome is proved to come OUT OF THE CELL by rewriting the cell and
+# showing the reader follow it. Without these two, `verdict` restating the table
+# again would pass every row above.
+_x_flipped = step_table(_clean_text.replace(
+    "| 2 | **X = yes**, whatever W and N say | **REFUSE** a plain attach.",
+    "| 2 | **X = yes**, whatever W and N say | **ISOLATE** a plain attach.",
+))
+if _x_flipped.get(2, {}).get("verdicts", [None])[0] == "ISOLATE":
+    ok("rejected: a step-2 action cell rewritten to ISOLATE - the reader takes X's outcome from the cell, not from Python")
+else:
+    fail("rewriting step 2's action changed nothing the reader reads, so its outcome is still restated here")
+
+_copy_dropped = step_table(_clean_text.replace(
+    "| 5 | X = no, **W = yes**, N = no | **ISOLATE by a seeded copy** where the store records a usable provider",
+    "| 5 | X = no, **W = yes**, N = no | **REFUSE** where the store records a usable provider",
+))
+if _copy_dropped.get(5, {}).get("verdicts", [None])[0] == "REFUSE":
+    ok("rejected: a step-5 action cell put back to 1.1.0's refusal - the reader takes the copy's outcome from the cell too")
+else:
+    fail("rewriting step 5's action changed nothing the reader reads, so its outcome is still restated here")
 
 
 def gate(doc, changed, relief=relieves):
@@ -802,15 +991,24 @@ else:
     fail(f"an unscoped migrates was narrowed by a small diff: {_unscoped['gated']}")
 
 
-def stays(label, mutate, unit, store):
-    """A pair the narrowing must NOT remove, and which must then refuse."""
+def stays(label, mutate, unit, store, want="REFUSE"):
+    """A pair the narrowing must NOT remove, and whose verdict it must not soften.
+
+    `want` is per case because 2.0 moved one of them. A pair carrying W with no
+    in-instance mechanism is answered by a seeded copy now rather than refused -
+    shared-state.md's own "half a lifecycle now selects the copy rather than a
+    refusal" - so demanding REFUSE of all five would be 1.1.0's step 5 restated
+    at a second call site, which is the defect this file just took out of
+    `verdict`.
+    """
     doc = copy.deepcopy(example)
     mutate(doc)
     report = gate(doc, FRONTEND)
-    if (unit, store) in report["gated"] and verdict(doc, unit, store) == "REFUSE":
-        ok(f"rejected: {label} - {unit}::{store} stays in the subject and refuses")
+    got = verdict(doc, unit, store)
+    if (unit, store) in report["gated"] and got == want:
+        ok(f"rejected: {label} - {unit}::{store} stays in the subject and answers {got}")
     else:
-        fail(f"{label}: {unit}::{store} left the subject on evidence that does not count")
+        fail(f"{label}: {unit}::{store} left the subject, or answered {got} rather than {want}")
 
 
 # The first case is two readings of one mutation and both must hold: with
@@ -826,7 +1024,7 @@ stays("a relieving record degraded to inferred",
           confidence="inferred"), "storefront", "kafka")
 stays("a record that says the changed code DOES reach the store",
       lambda d: d["services"]["storefront"]["determinacy"]["events"]["mutates"].update(
-          value=True), "storefront", "events")
+          value=True), "storefront", "events", want="ISOLATE")
 stays("a record recording a competitive attachment",
       lambda d: d["services"]["storefront"]["determinacy"]["kafka"]["competes"].update(
           value=True), "storefront", "kafka")

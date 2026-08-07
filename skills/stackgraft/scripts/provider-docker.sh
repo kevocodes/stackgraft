@@ -28,7 +28,10 @@
 #           refusal that reported a removal nobody verified is the leak with a
 #           success message over it. destroy refuses PER OBJECT, reap.sh's rule: every
 #           object that proved out is still removed and every one that did not is
-#           reported by name, so exit 3 there means at least one was left alone
+#           reported by name, so exit 3 there means at least one was left alone.
+#           destroy also refuses the WHOLE STORE, before removing anything, where
+#           a scoped listing did not answer: a query that failed is an unknown,
+#           and an unknown is not a count of zero
 #         4 environment failure, including a copy the runtime would not remove
 #
 # THIS SCRIPT NAMES NO STORE ENGINE, and that is the requirement rather than a
@@ -476,7 +479,15 @@ SG_CMD
     emit instance "$name"
     emit bytes "$copied"
     emit seconds "$elapsed"
-    emit copy "$name" "docker rm -f $name && docker volume rm $name"
+    # The removal command a PERSON is handed, and the container's removal flag is
+    # in it for reap.sh's reason rather than for symmetry with the removals above:
+    # without it the anonymous volumes the image declared and this run therefore
+    # created are orphaned - unnamed, unlabelled, findable by no query anyone can
+    # write - which is the one class reaping.md exists to reclaim and cannot,
+    # and it is exactly the leak this repository has just taken out of the reaper.
+    # Measured on 29.5.3: the flag takes the ANONYMOUS volumes and leaves every
+    # NAMED one, so the copy is still there for the removal by name beside it.
+    emit copy "$name" "docker rm -f -v $name && docker volume rm $name"
 }
 
 # ---------------------------------------------------------------------- age --
@@ -597,7 +608,27 @@ address() {
 destroy() {
     left=
     refused_any=0
-    for inst in $(scoped_instances); do
+
+    # A LISTING THAT DID NOT ANSWER IS UNKNOWN, NEVER EMPTY, and that is the
+    # distinction `space copies` already draws above rather than a second one:
+    # a runtime that will not answer reports unknown, because zero is a claim and
+    # an unanswered query is not one. `for inst in $(scoped_instances)` cannot
+    # draw it - a listing that FAILED runs the body zero times exactly as one
+    # that found nothing does - so the verb exited 0 reporting that it destroyed
+    # nothing while having looked at nothing, which is the same success message
+    # over an unknown that the refusal above was repaired for.
+    #
+    # BOTH listings are taken before EITHER removal, so a query that will not
+    # answer leaves the object inventory exactly as it was found rather than half
+    # cleared. Taking the volume listing first changes nothing it would have
+    # found: the removals below take anonymous volumes, which carry no label and
+    # were never in a scoped query, and leave every named one.
+    insts=$(scoped_instances) \
+        || refuse "the instance listing did not answer, so what this store has here is unknown rather than none, and nothing was removed"
+    vols=$(scoped_volumes) \
+        || refuse "the copy listing did not answer, so what this store has here is unknown rather than none, and nothing was removed"
+
+    for inst in $insts; do
         if ! mine "$(label_of "$inst" stackgraft.worktree)"; then
             emit refused "$store" "an instance labelled for another worktree was left alone"
             refused_any=1
@@ -620,7 +651,7 @@ destroy() {
     # Instance first, volume second. A volume still attached to a container is a
     # volume the runtime refuses to remove, and reporting that as success is the
     # half of the leak that matters.
-    for vol in $(scoped_volumes); do
+    for vol in $vols; do
         if ! mine "$(vlabel_of "$vol" stackgraft.worktree)"; then
             emit refused "$store" "a volume labelled for another worktree was left alone"
             refused_any=1

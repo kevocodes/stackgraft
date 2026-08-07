@@ -46,9 +46,9 @@ The same rule applies one level up: a repository claiming to have **no** statefu
 
 ## Isolating onto a copy
 
-**Status, before anything else: the copy is built and NOT YET VERIFIED, so this step must not be released on its own.** Nothing yet proves the copy carries the data it was seeded with, and a copy that merely started is not isolation. Read the rest of this section as a mechanism that exists rather than one you can rely on.
+**A copy counts as isolation only once it has been verified, and a copy that merely started has not been.** One command is issued against your base store, against the copy, and against an empty instance of the same image, and the copy counts only where its answer matches the base store's byte for byte *and* the empty instance answers something else. Where that query fails or cannot be derived, the copy is destroyed and the pair refuses — it is never wired to the base store instead.
 
-An isolate verdict at step 5 means a **seeded copy**: a second instance of the same image, started on a copy of the state your base stack holds. It carries the data your base stack has and asks your repository for nothing — no task target, no discovered command, no approval. **An empty namespace is a different thing from a copy**, and the difference is what your feature is tested against.
+An isolate verdict at step 5 means a **seeded copy**: a second instance of the same image, started on a copy of the state your base stack holds. **Making it asks your repository for nothing** — no task target, no discovered command, no approval. **Verifying it does ask**: the query above is your store's own exec-form healthcheck, or a read command living in your repository, and where nothing defines one the run offers to write it. Against a repository that supplies neither, this version provisions a copy and then refuses every writing pair. **An empty namespace is a different thing from a copy**, and the difference is what your feature is tested against.
 
 Three things about it, stated rather than implied:
 

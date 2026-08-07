@@ -636,6 +636,32 @@ VERDICT_HEADING = "## The verdict"
 VERDICT_TOKEN = re.compile(r"\*\*(REFUSE|REUSE|ISOLATE)\b")
 STEP_POINTER = re.compile(r"\bstep (\d+)\b")
 
+# The three spellings an action cell can offer isolation in. A NUMBERED pointer
+# is only one of them, and a guard that reads the number alone is narrower than
+# the defect class: an adversarial verification measured a step-2 cell offering a
+# seeded copy in plain prose with no step number, and a second one stating
+# `**ISOLATE by a seeded copy**` as a further bold token, and BOTH left the
+# pointer row silent and `verdict()` unmoved. Only the byte-literal anchor below
+# saw them - and a byte-literal anchor updated in the same commit as the text it
+# anchors sees nothing at all, which is how both trees ran 126 ok / 0 FAIL.
+ISOLATING_ACTION = re.compile(r"isolat|\bcop(?:y|ies|ied)\b|\bseeded\b", re.I)
+# A closed list, because the mentions in the shipped cell are all counterfactual:
+# "A copy answers X for NO substrate", "reaches NO step that isolates", "a hazard
+# NO copy ends". An isolation mechanism named in a clause that negates nothing is
+# an OFFER, and this is the polarity that separates the two.
+NEGATED = re.compile(
+    r"\bno\b|\bnot\b|\bnever\b|\bnothing\b|\bnone\b|\brefus\w*|\bforbid\w*"
+    r"|\bcannot\b|\bwithout\b",
+    re.I,
+)
+# The unit is the CLAUSE, not the sentence: "answered by a seeded copy, and
+# nothing else" negates nothing about the copy, and a sentence-sized unit would
+# read the trailing "nothing" as covering the offer in front of it. The bold-run
+# lookbehind is there because this file's own prose ends clauses `...isolates.**`.
+CLAUSE_BREAK = re.compile(
+    r"(?:(?<=[.!?;:])|(?<=[.!?;:]\*\*))\s+|\s+—\s+|,\s+(?:so|and|which|then|but|or)\s+"
+)
+
 
 def step_table(text=None):
     """The shipped step table, parsed OUT OF references/shared-state.md.
@@ -652,6 +678,10 @@ def step_table(text=None):
     tokens the action cell states - step 5 states two, the copy and the refusal
     where no provider is recorded - and `points_at` is every step that cell
     hands a pair on to, which is the pointer whose destination moved.
+
+    `action` is the cell VERBATIM, because two of the three ways a cell can offer
+    isolation are not a number and not a token: they are prose. A row that reads
+    only the structured halves is the narrower-than-the-defect guard again.
     """
     rows, inside = {}, False
     for line in (text if text is not None else SHARED_MD.read_text()).splitlines():
@@ -665,10 +695,43 @@ def step_table(text=None):
             continue
         rows[int(cells[0])] = {
             "condition": cells[1].replace("*", ""),
+            "action": cells[2],
             "verdicts": VERDICT_TOKEN.findall(cells[2]),
             "points_at": sorted({int(n) for n in STEP_POINTER.findall(cells[2])}),
         }
     return rows
+
+
+def with_action(text, condition, action):
+    """The table with one step's ACTION cell replaced, the step found by its own
+    CONDITION.
+
+    Every negative below is built with this rather than by replacing a sentence
+    byte for byte. A byte-literal negative stops testing anything the day that
+    sentence is reworded, and a reword in the same commit as the literal's own
+    update is precisely how the numbered-pointer guard came to be narrower than
+    the defect it was written for.
+    """
+    out, inside = [], False
+    for line in text.splitlines(True):
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            inside = stripped == VERDICT_HEADING
+        elif inside and stripped.startswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if (
+                len(cells) == 3
+                and cells[0].isdigit()
+                and re.search(condition, cells[1].replace("*", ""))
+            ):
+                line = "| %s | %s | %s |\n" % (cells[0], cells[1], action)
+        out.append(line)
+    return "".join(out)
+
+
+def clauses(text):
+    """The action cell split into the units polarity is decided over."""
+    return [c.strip() for c in CLAUSE_BREAK.split(text) if c and c.strip()]
 
 
 STEPS = step_table()
@@ -743,25 +806,44 @@ def verdict(doc, unit, store):
     return step_outcome(BY_COPY, where_not=not has_provider(doc, store))
 
 
-def copies_offered_for_x(steps):
-    """Steps the X refusal hands a pair on to whose OWN action isolates.
+def isolation_offered_for_x(steps):
+    """Every way the X refusal's own cell can offer isolation, not just one.
 
     SSS-A2 and CI-1 read over the shipped table: a pair carrying X and not W
     must not cause a store copy to be provisioned, and no reference may offer a
-    copy as a remedy for X alone. So the step that refuses X may point at no
-    step whose action is a copy. This is the row the injected sentence below
-    turns red, and the row that would have caught the shipped defect.
+    copy as a remedy for X alone. So the step that refuses X must not offer
+    isolation BY ANY SPELLING. Three of them, and each has its own negative:
+
+      pointer: a numbered hand-off to a step whose own action isolates. This is
+               the shipped pass-1 defect and the only one the first guard saw.
+      token:   a verdict token in this cell that is not a refusal, whether it is
+               the first or a second one stated beside `**REFUSE**`.
+      prose:   an isolation mechanism named in a clause that negates nothing -
+               no step number, no bold token, and invisible to both rows above.
+
+    The prose reading is polarity and not a keyword sweep, because the shipped
+    cell names a copy three times and refuses every time. Its limit is stated
+    rather than covered, the way this project states its others: a clause that
+    offers a copy AND carries an unrelated negation reads as negated here. The
+    two structural readings above are what stop that being the whole guard.
     """
     competes = step_for(steps, r"X = yes")
     if competes is None:
-        return ["the table states no X = yes step at all"]
+        return ["table: the table states no X = yes step at all"]
+    cell = steps[competes]
     offered = []
-    for number in steps[competes]["points_at"]:
+    for number in cell["points_at"]:
         if number == competes:
             continue
         action = steps.get(number, {}).get("verdicts") or ["UNREAD"]
         if action[0] != "REFUSE":
-            offered.append(f"step {number} ({action[0]})")
+            offered.append(f"pointer: step {number}, whose own action is {action[0]}")
+    for token in cell["verdicts"]:
+        if token != "REFUSE":
+            offered.append(f"token: **{token}** stated in the step's own cell")
+    for clause in clauses(cell["action"]):
+        if ISOLATING_ACTION.search(clause) and not NEGATED.search(clause):
+            offered.append(f"prose: {clause}")
     return offered
 
 
@@ -782,33 +864,106 @@ else:
         f"in-instance={IN_INSTANCE}, copy={BY_COPY}"
     )
 
-_offered = copies_offered_for_x(STEPS)
+_offered = isolation_offered_for_x(STEPS)
 if not _offered:
-    ok("the X refusal hands a pair to no step that isolates: a copy is never offered as a remedy for X")
+    ok("the X refusal offers isolation by no spelling - not a pointer, not a token, not prose")
 else:
-    fail(f"step {COMPETES} routes an X-refused pair to {_offered}, which provisions a copy for a hazard no copy ends")
+    fail(f"step {COMPETES} offers isolation for a hazard no copy ends: {_offered}")
 
-# The regression case, and it is the EXACT sentence an adversarial verification
-# proved invisible: with it in place the suite ran 747 ok / 0 FAIL / exit 0,
-# byte-identical to clean, because nothing read the table's action cells.
-SHIPPED_X_TAIL = (
-    "A copy answers X for no substrate, so a pair that file refuses "
-    "— a shared queue, a lock, a replication slot, a scheduler singleton — "
-    "**is refused here and reaches no step that isolates.**"
-)
-INJECTED_X_TAIL = (
-    "A copy answers X on every substrate, and pairs that file refuses "
-    "— a shared queue, a lock, a replication slot, a scheduler singleton — "
+_clean_text = SHARED_MD.read_text()
+X_CONDITION = r"X = yes"
+
+# The three negatives, one per spelling, each asserted on the REASON it fires
+# with. A row satisfied by any non-empty list would let one branch cover for
+# another, and two of these three were measured green against the guard that
+# read only the first.
+#
+# 1. The numbered pointer: the shipped pass-1 defect, whose exact sentence an
+#    adversarial verification proved invisible - with it in place the suite ran
+#    747 ok / 0 FAIL / exit 0, byte-identical to clean.
+_pointer_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, then re-enter at step 1 "
+    "with X evaluated again. A copy answers X on every substrate, and pairs that file "
+    "refuses — a shared queue, a lock, a replication slot, a scheduler singleton — "
     "are answered by a seeded copy of the store at step 5."
 )
-_clean_text = SHARED_MD.read_text()
-_injected_text = _clean_text.replace(SHIPPED_X_TAIL, INJECTED_X_TAIL)
-if _injected_text == _clean_text:
-    fail("the injection landed nowhere, so the row below tests the shipped file rather than the defect")
-elif copies_offered_for_x(step_table(_injected_text)):
-    ok("rejected: step 2 routing an X-refused pair to step 5, whose action is a seeded copy")
+_pointer = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _pointer_action)))
+if any(r.startswith("pointer:") for r in _pointer):
+    ok("rejected: step 2 handing an X-refused pair on to step 5, whose own action is a seeded copy")
 else:
-    fail("the injected sentence changed nothing: the pointer row cannot see an X pair handed to a copy")
+    fail(f"the numbered pointer is invisible: an X pair handed to a copy read as {_pointer}")
+
+# 2. The same offer with NO step number in it. Measured against the pointer-only
+#    guard: `points_at` stays [1], `verdict()` is unmoved, and the tree ran
+#    126 ok / 0 FAIL / exit 0 while shipping the defect in prose.
+_prose_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, "
+    "**record the value as `competesOn[].overlayIdentity`**, then re-enter at step 1 "
+    "with X evaluated again. A pair that file refuses — a shared queue, a lock, a "
+    "replication slot, a scheduler singleton — is answered by a seeded copy of the store."
+)
+_prose = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _prose_action)))
+if any(r.startswith("prose:") for r in _prose):
+    ok("rejected: step 2 offering a seeded copy for X in prose, with no step number to read")
+else:
+    fail(f"an unnumbered offer of a copy for X is invisible: the cell read as {_prose}")
+
+# 3. ...and the same offer as a SECOND bold verdict token beside the refusal.
+#    Measured the same way: 126 ok / 0 FAIL / exit 0, and the parse row printed
+#    `2->REFUSE/ISOLATE` and called it ok. `verdict()` reads token one and never
+#    looks at token two, so nothing downstream moved either.
+_token_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, then re-enter at step 1 "
+    "with X evaluated again. Where no distinct identity can be recorded, "
+    "**ISOLATE by a seeded copy** instead."
+)
+_token = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _token_action)))
+if any(r.startswith("token:") for r in _token):
+    ok("rejected: step 2 stating **ISOLATE** as a second verdict token beside its refusal")
+else:
+    fail(f"a second verdict token in the X cell is invisible: the cell read as {_token}")
+
+# ...and the negatives above are worthless if the rewriter silently landed
+# nowhere, which is the failure mode a byte-literal injection has. Each one must
+# have CHANGED the cell it claims to have rewritten.
+_landed = sum(
+    1
+    for a in (_pointer_action, _prose_action, _token_action)
+    if step_table(with_action(_clean_text, X_CONDITION, a))[COMPETES]["action"] != STEPS[COMPETES]["action"]
+)
+if _landed == 3:
+    ok("all three step-2 rewrites landed on the cell the condition selects, so each negative tested a changed table")
+else:
+    fail(f"only {_landed} of the three step-2 rewrites changed the action cell, so the rest asserted nothing")
+
+# Not offering isolation is not the same as SAYING a pair terminates here, and
+# every row above is satisfied by a cell that mentions no copy at all. So the
+# cell must still carry the invariant positively: at least one clause that names
+# an isolation mechanism and negates it. Stated as a class rather than as a
+# sentence, so a reword keeps it and a deletion loses it.
+def terminating_clauses(cell):
+    return [c for c in clauses(cell) if ISOLATING_ACTION.search(c) and NEGATED.search(c)]
+
+
+_terminates = terminating_clauses(STEPS[COMPETES]["action"])
+if _terminates:
+    ok(f"step {COMPETES} states the termination rather than merely not contradicting it: {len(_terminates)} clause(s) name isolation and refuse it")
+else:
+    fail(f"step {COMPETES} no longer says a pair the identity procedure refuses reaches no step that isolates")
+
+# ...and the row can tell that apart from a cell that simply stopped mentioning
+# it. This is the shape the shipped file had at 1.1.0, when step 5 refused and
+# saying so was unnecessary - the state the pass-1 defect was authored out of.
+_silent_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, "
+    "**record the value as `competesOn[].overlayIdentity`**, then re-enter at step 1 "
+    "with X evaluated again - the substitution alone never approves."
+)
+_silent = step_table(with_action(_clean_text, X_CONDITION, _silent_action))[COMPETES]["action"]
+if not terminating_clauses(_silent) and not isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _silent_action))):
+    ok("rejected: a step-2 cell that offers nothing and says nothing - silence is not the invariant")
+else:
+    fail("the termination row cannot tell a stated invariant from a cell that stopped mentioning one")
 
 # ...and each outcome is proved to come OUT OF THE CELL by rewriting the cell and
 # showing the reader follow it. Without these two, `verdict` restating the table
@@ -1174,7 +1329,11 @@ def resolve(doc, unit, store, applied=True):
         mechanisms.append("copy")
         provisions = [f"volume:{store}", f"instance:{store}"]
     return {
-        "verdict": "ISOLATE" if w else ("REUSE" if not by_identity else "REUSE"),
+        # REUSE either way once W is no: an identity answers X and buys the pair
+        # nothing about data, so it never upgrades a non-writing pair's verdict.
+        # This used to be spelled as a ternary whose two branches were both
+        # "REUSE", which reads as a distinction the code does not make.
+        "verdict": "ISOLATE" if w else "REUSE",
         "mechanisms": mechanisms,
         "provisions": provisions,
         "unproven": None,

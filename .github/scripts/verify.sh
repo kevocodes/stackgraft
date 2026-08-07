@@ -74,10 +74,16 @@ SHIPPED_SURFACE="$SKILL README.md SECURITY.md CONTRIBUTING.md docs/"
 # ...and the list is held to the files it names, so a path renamed out from under
 # it fails here rather than quietly shrinking every sweep that uses it - the shape
 # the five shipped scripts are inventoried with just below.
+#
+# It takes a ROOT so a negative can build a scratch surface and be held to the
+# same completeness before anything is concluded from a sweep over it. A negative
+# run against a surface missing the very file it injects into reports the green
+# the shipped tree reported for two slices.
 surface_missing() {
+    _root=${1:-.}
     _n=0
     for _p in $SHIPPED_SURFACE; do
-        [ -e "$_p" ] || _n=$((_n + 1))
+        [ -e "$_root/$_p" ] || _n=$((_n + 1))
     done
     printf '%s\n' "$_n"
 }
@@ -767,6 +773,93 @@ else
 fi
 rm -rf "$bf"
 
+# --- ...and the PARAGRAPH that publishes the figure is held to it too --------
+# CONTRIBUTING.md's body-budget paragraph states what the body measures and how
+# much headroom is left, and it claims the row above "stops this paragraph and
+# the check drifting apart in silence". Nothing read the paragraph, so it drifted
+# exactly the way it promised it could not: it said 484 with sixteen words of
+# headroom from slice 1a onwards, while the counter answered 487 and the row
+# above recorded 487. A sentence that names the guarantee is the one place a
+# reader trusts, so the guarantee is made true here rather than restated.
+CONTRIB=CONTRIBUTING.md
+contrib_figure() {
+    awk '/The shipped body measures/ {
+             if (match($0, /\*\*[0-9]+\*\*/)) { print substr($0, RSTART + 2, RLENGTH - 4); exit }
+         }' "$1"
+}
+contrib_headroom() {
+    awk '/The shipped body measures/ {
+             if (match($0, /so there are [a-z]+ words of headroom/)) {
+                 s = substr($0, RSTART, RLENGTH)
+                 sub(/^so there are /, "", s)
+                 sub(/ words of headroom$/, "", s)
+                 print s
+                 exit
+             }
+         }' "$1"
+}
+# Spelled out, because the paragraph spells it out. A row reading only the
+# numeral leaves half the sentence unread, and the unread half is the one that
+# said sixteen.
+num_word() {
+    case ${1:-} in
+        0)  printf 'no\n' ;;        1)  printf 'one\n' ;;       2)  printf 'two\n' ;;
+        3)  printf 'three\n' ;;     4)  printf 'four\n' ;;      5)  printf 'five\n' ;;
+        6)  printf 'six\n' ;;       7)  printf 'seven\n' ;;     8)  printf 'eight\n' ;;
+        9)  printf 'nine\n' ;;      10) printf 'ten\n' ;;       11) printf 'eleven\n' ;;
+        12) printf 'twelve\n' ;;    13) printf 'thirteen\n' ;;  14) printf 'fourteen\n' ;;
+        15) printf 'fifteen\n' ;;   16) printf 'sixteen\n' ;;   17) printf 'seventeen\n' ;;
+        18) printf 'eighteen\n' ;;  19) printf 'nineteen\n' ;;  20) printf 'twenty\n' ;;
+        *)  printf 'unmapped\n' ;;
+    esac
+}
+
+cf=$(contrib_figure "$CONTRIB")
+if [ -n "$cf" ] && [ "$cf" -eq "$words" ] 2>/dev/null; then
+    ok "CONTRIBUTING.md publishes the figure the counter measures: $cf words"
+else
+    fail "CONTRIBUTING.md publishes '$cf' as the body figure; the counter measures $words"
+fi
+
+ch=$(contrib_headroom "$CONTRIB")
+want_headroom=$(num_word $((500 - words)))
+if [ "$ch" = "$want_headroom" ]; then
+    ok "...and the headroom it states is the $want_headroom words the 500-word ceiling actually leaves"
+else
+    fail "CONTRIBUTING.md states '$ch' words of headroom; at $words words the ceiling leaves $want_headroom"
+fi
+
+# Three fixtures, and the two drifted ones are DERIVED from the measurement
+# rather than hard-coded, for the reason the over-budget fixtures above are:
+# a literal 484 in a negative is a negative that stops being one the day the
+# body measures 484.
+cb=$(mktemp -d)
+awk -v n="$((words + 3))" '{ if (/The shipped body measures/) sub(/\*\*[0-9]+\*\*/, "**" n "**"); print }' \
+    "$CONTRIB" > "$cb/drifted-figure.md"
+cbf=$(contrib_figure "$cb/drifted-figure.md")
+if [ -n "$cbf" ] && [ "$cbf" -ne "$words" ] 2>/dev/null; then
+    ok "rejected: a CONTRIBUTING.md publishing $cbf words against a body that measures $words"
+else
+    fail "the published-figure row cannot tell a drifted number from the measured one"
+fi
+
+awk -v w="$(num_word $((501 - words)))" '{ if (/The shipped body measures/) sub(/so there are [a-z]+ words of headroom/, "so there are " w " words of headroom"); print }' \
+    "$CONTRIB" > "$cb/drifted-headroom.md"
+cbh=$(contrib_headroom "$cb/drifted-headroom.md")
+if [ -n "$cbh" ] && [ "$cbh" != "$want_headroom" ]; then
+    ok "rejected: a CONTRIBUTING.md stating $cbh words of headroom where the ceiling leaves $want_headroom"
+else
+    fail "the headroom row cannot tell a drifted word from the one the ceiling derives"
+fi
+
+grep -v 'The shipped body measures' "$CONTRIB" > "$cb/silent.md"
+if [ -z "$(contrib_figure "$cb/silent.md")" ] && [ -z "$(contrib_headroom "$cb/silent.md")" ]; then
+    ok "rejected: a CONTRIBUTING.md with the body-budget paragraph deleted - an absent claim is not a matching one"
+else
+    fail "the CONTRIBUTING rows read a figure out of a file whose paragraph is gone"
+fi
+rm -rf "$cb"
+
 # The guard this replaces could not fail. awk printed nothing when the field was
 # absent, ${compat:-0} then read 0, and 0 -lt 500 reported green - so DELETING
 # the field passed the check outright. It also enforced "fewer than 500" where
@@ -1178,6 +1271,114 @@ grep -qiE "$UNIVERSAL" "$sf/universal.md" \
     && ok "rejected: a file claiming the skill applies to any stack" \
     || fail "the universal-applicability grep cannot fail"
 rm -rf "$sf"
+
+# --- a shipped file may not carry its own release prohibition ----------------
+# `docs/SHARED-STATE.md` shipped, inside the release, the sentence *the copy is
+# built and NOT YET VERIFIED, so this step must not be released on its own*.
+# Slice 4a wrote it truthfully; slice 4b shipped the verification, updated
+# README.md, and never came back. So for two slices the only explanatory page for
+# the default ISOLATE road told every reader to discount it, and contradicted
+# README.md head on - two texts and two outcomes, which is this repository's own
+# named hazard. Nothing caught it because NO ROW READ THAT FILE: `docs/` sat in
+# $SHIPPED_SURFACE for three intent-blind sweeps and not one of them asked about
+# a status claim.
+#
+# So the check is the CLASS and not the sentence: a file a reader is handed may
+# not tell that reader the thing it describes is unverified or unreleasable. The
+# shipped surface IS the release, so a prohibition inside it is either false or
+# fatal, and both are worth a red run.
+#
+# Deliberately NOT a sweep for "unbuilt": `references/isolation-providers.md`
+# calls the Kubernetes and host-native providers declared and unbuilt on purpose.
+# That is an honest limit about a second runtime, not a status claim about what
+# the file in front of the reader describes.
+UNRELEASED='not yet verified|not yet trusted|must not be released|a mechanism that exists rather than one you can rely on|until that lands'
+
+# Written as a sweep over a ROOT rather than as a grep of one fixture, because
+# the expression firing is not the half that failed - the half that failed is
+# whether the sweep reaches the file. A one-line fixture proves the first and
+# says nothing about the second.
+unreleased_lines() {
+    _root=${1:-.}
+    for _p in $SHIPPED_SURFACE; do
+        [ -e "$_root/$_p" ] && grep -rniE "$UNRELEASED" "$_root/$_p" 2>/dev/null
+    done
+    return 0
+}
+
+if [ -z "$(unreleased_lines .)" ]; then
+    ok "no file on the shipped surface tells its reader that what it describes is unverified or must not be released"
+else
+    fail "a shipped file carries a release prohibition: $(unreleased_lines . | head -1)"
+fi
+
+# The negative is the DEFECT, put back where it shipped, on a scratch copy of the
+# whole surface - and the match has to name that file, which is what proves the
+# sweep reaches `docs/` rather than merely that the expression can fire.
+us=$(mktemp -d)
+mkdir -p "$us/docs" "$us/skills"
+cp -R "$SKILL" "$us/skills/"
+cp README.md SECURITY.md CONTRIBUTING.md "$us/"
+cp docs/*.md "$us/docs/"
+[ "$(surface_missing "$us")" -eq 0 ] \
+    && ok "the scratch surface carries every path the sweep names, so the negative below runs the sweep at full width" \
+    || fail "$(surface_missing "$us") of the shipped-surface paths are missing from the scratch copy, so the negative is smaller than it reads"
+
+{
+    printf '\n**Status, before anything else: the copy is built and NOT YET VERIFIED, so this step'
+    printf ' must not be released on its own.** Read the rest of this section as a mechanism that'
+    printf ' exists rather than one you can rely on.\n'
+} >> "$us/docs/SHARED-STATE.md"
+unreleased_lines "$us" | grep -q 'docs/SHARED-STATE\.md' \
+    && ok "rejected: the shipped release prohibition put back into docs/SHARED-STATE.md, and the sweep names that file" \
+    || fail "the sweep does not reach docs/SHARED-STATE.md, which is how the prohibition shipped inside the release"
+rm -rf "$us"
+
+# ...and not carrying a prohibition is not the same as STATING the behaviour.
+# Deleting the whole section satisfies the sweep above, and leaves the reader of
+# the explanatory page with nothing at all about what makes a copy count.
+DOCS_SHARED=docs/SHARED-STATE.md
+# `counts as isolat` and not `counts as isolation`: the two files say "counts as
+# isolation" and "counts as isolated", and a row keyed on one spelling reads the
+# other file as silent - which is the shape of the defect it is here to stop.
+counts_missing()   { awk '/counts as isolat/ && /verified/             { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+destroyed_missing(){ awk '/cannot be derived/   && /the pair refuses/  { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+asks_missing()     { awk '/Verifying it does ask/ && /healthcheck/     { f = 1 } END { print f ? 0 : 1 }' "$1"; }
+
+[ "$(counts_missing "$DOCS_SHARED")" -eq 0 ] \
+    && ok "docs/SHARED-STATE.md says a copy counts as isolation only once it has been verified" \
+    || fail "docs/SHARED-STATE.md no longer says a copy has to be verified before it counts"
+[ "$(destroyed_missing "$DOCS_SHARED")" -eq 0 ] \
+    && ok "...and that a query which cannot be derived destroys the copy and refuses the pair" \
+    || fail "docs/SHARED-STATE.md does not state the refusal direction for an underivable query"
+[ "$(asks_missing "$DOCS_SHARED")" -eq 0 ] \
+    && ok "...and that verifying the copy asks the repository for the query making it asks for nothing" \
+    || fail "docs/SHARED-STATE.md still reads as though the copy road asks the repository for nothing at all"
+
+# The same claim in README.md, because a page correcting itself while the other
+# one keeps the old reading is the two-texts hazard with the files swapped.
+[ "$(counts_missing README.md)" -eq 0 ] \
+    && ok "README.md carries the same claim, so the two texts cannot drift into two outcomes again" \
+    || fail "README.md no longer says a copy is verified before it counts as isolated"
+
+ds=$(mktemp -d)
+grep -v 'counts as isolation only once it has been verified' "$DOCS_SHARED" > "$ds/no-counts.md"
+grep -v 'cannot be derived' "$DOCS_SHARED"                                  > "$ds/no-refusal.md"
+grep -v 'Verifying it does ask' "$DOCS_SHARED"                              > "$ds/no-asks.md"
+grep -v 'verified before it counts as isolated' README.md                   > "$ds/no-readme.md"
+[ "$(counts_missing "$ds/no-counts.md")" -eq 1 ] \
+    && ok "rejected: docs/SHARED-STATE.md with the verification sentence deleted" \
+    || fail "the verification row cannot notice its sentence going missing"
+[ "$(destroyed_missing "$ds/no-refusal.md")" -eq 1 ] \
+    && ok "rejected: docs/SHARED-STATE.md with the refusal direction deleted" \
+    || fail "the refusal-direction row cannot notice its sentence going missing"
+[ "$(asks_missing "$ds/no-asks.md")" -eq 1 ] \
+    && ok "rejected: docs/SHARED-STATE.md with the what-verifying-asks-for sentence deleted" \
+    || fail "the asks row cannot notice its sentence going missing"
+[ "$(counts_missing "$ds/no-readme.md")" -eq 1 ] \
+    && ok "rejected: README.md with its half of the same claim deleted" \
+    || fail "the README row cannot notice its sentence going missing"
+rm -rf "$ds"
 
 # One decision and one term list, shared by the shipped rows and by the negative
 # below, so the fixture exercises the test that actually runs rather than a

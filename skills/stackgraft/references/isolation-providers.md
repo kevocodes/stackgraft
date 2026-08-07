@@ -43,6 +43,11 @@ One provider ships: `scripts/provider-docker.sh`, because a local base stack alr
 
 The same discipline runs the other way at `provision`: the label set the caller supplies is **re-verified against the arguments** before a byte is written, so a caller that names one worktree and labels another creates nothing rather than creating a copy nothing can later find.
 
+Two stated assumptions rather than checks, each with the direction it fails in, because an assumption whose failure mode is unstated is a claim:
+
+- **A store image is assumed to be able to host the copy container.** The copy runs the store's *own* image, so an image carrying no shell — a distroless build — may not run the copy step at all. Where it cannot, the provider refuses and names the store: the failure direction is a refusal, never a copy that was taken and cannot be verified.
+- **`podman` and `nerdctl` are assumed to accept the same volume and label vocabulary as Docker.** Only the Docker provider ships and only Docker is measured. A wrong guess produces a refusal — the operation errors and the pair is refused — rather than an unlabelled copy, because every label is supplied at creation and a creation that did not take them is a creation that failed.
+
 ## The second runtime, on paper
 
 A contract that cannot describe a second runtime has failed the premise it exists for. Both below are **declared and unbuilt** — stated as a runtime nothing implements yet, never as an impossibility.
@@ -72,7 +77,7 @@ It also reports how many copies of **this repository** already sit on the measur
 
 A copy the arithmetic refuses is refused before any bytes are written. A copy that runs out of room while writing **removes its own partial**, refuses the pair, and leaves the runtime's object inventory exactly as it found it — a partial must not survive a failed provision any more than it survives a refusal.
 
-One stated assumption rather than a check: the cache directory's filesystem is taken to be the one backing the runtime's disk image. That is usually true on a single-user machine and is stated rather than proven.
+One stated assumption rather than a check, with the direction it fails in: the cache directory's filesystem is taken to be the one backing the runtime's disk image. That is usually true on a single-user machine and is stated rather than proven. Where it is wrong the host figure describes a different filesystem from the one the copy lands on, and the error runs one way — the two are measured separately and the smaller binds, so a wrong host figure makes the check **more** conservative, never more permissive. The run names the filesystem it measured, so a reader can see which one answered.
 
 ## The copy is taken live, and what that costs
 

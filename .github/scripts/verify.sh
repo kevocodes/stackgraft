@@ -3034,6 +3034,18 @@ doc_states "a runtime that cannot be queried reports unknown, never zero copies"
 doc_states "destroy matches the worktree label by equality, not liveness and not a prefix" \
     'equals the worktree argument|worktree.*equal'
 
+# The three non-blocking open questions design.md carries, stated in the shipped
+# file as assumptions rather than resolved silently. Each pattern is the
+# DIRECTION clause rather than the topic, so an assumption stated without the way
+# it fails does not satisfy its row - which is the whole of what a stated
+# assumption is worth. An assumption whose failure mode is unstated is a claim.
+doc_states "the cache-directory assumption fails conservatively, never permissively" \
+    'never more permissive'
+doc_states "a store image that cannot host the copy refuses, rather than yielding an unverifiable copy" \
+    'never a copy that was taken'
+doc_states "a runtime that does not share Docker's volume and label vocabulary produces a refusal" \
+    'rather than an unlabelled copy'
+
 # The two set rows stay counted rather than folded in, because what they assert
 # is a COMPLETE set and a missing member has to be countable to be named.
 refusal_missing=0

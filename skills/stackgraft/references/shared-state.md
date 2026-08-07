@@ -14,6 +14,30 @@ So `backingStores` is **required** at the root, and when it has no members the m
 
 **A run with no manifest owes exactly the same verdicts.** `SKILL.md` step 2 proceeds manifest-less when the cache is unwritable, and `references/discovery.md` section 2 does the same for a topology no file can hold. In that mode no schema validates anything — not `backingStores` being required, not the root conditional above, not `covers` needing a member, not a `command` obliging its `teardownCommand` — so every rule in this file is enforced by the run itself or not at all. **None of them is relaxed, and manifest-less is not a bypass.** Every pair still needs its verdict. An empty pair set still needs the root record's evidence in full — `at`, a `method` other than `user-asserted`, `confidence: "declared"`, and the source whose drift would have re-derived it, named and fingerprinted in this run. An isolation record still needs its teardown, and a create with none is `mechanism: "none"` here exactly as the schema would have made it. What changes is only *where* the verdicts are written: **the run's own output, named per pair, instead of a file.** Nothing is inherited, either — with no file there is no stored classification, no approval and no `acceptedRisks` entry, so a bypass must be granted again in this run or the refusal stands. A run that can neither write the manifest nor state its verdicts in its output has recorded none, which is step 1, which refuses.
 
+## The subject: the pairs the change can reach
+
+The gate's subject is not every pair in the repository — it is the pairs **this change** can reach. The worktree diff that already selects which units to overlay also selects which pairs enter the gate. Five passes, in this order, and exactly one of them may take a pair out:
+
+| Pass | Operation | May it narrow? |
+|:----:|-----------|----------------|
+| 1 | Changed paths → units through `paths`, plus the `consumers` fan-out of a changed non-runnable tree | no |
+| 2 | **Derive**: every selected runnable unit × **every** `backingStores` entry, plus any `dependsOn` name that resolves to a store | no — `dependsOn` may only add |
+| 3 | **Remove** one pair at a time, each on its own `(unit, store)` determinacy record | **only here** |
+| 4 | **Re-insert** on an escalation trigger, which reads the launched process rather than the diff | widens only |
+| 5 | **Classify** the survivors — W, X, N, one verdict each | no |
+
+**Nothing in the diff, by itself, ever answers whether a unit reaches a store.** A pair leaves the subject in pass 3 only on a record for **exactly that pair** whose `mutates` and `competes` values are both `false`, whose `serviceFingerprint` still matches the unit's source, and whose `confidence` is `declared`. **Absence of a record is undetermined, which refuses; absence is never relief.** A drifted fingerprint, an `inferred` or `user` confidence, and a record about another store of the same unit or the same store under another unit all leave the pair in. A unit that "reaches no store" is not a special case: it is this same rule applied to each of its stores, each still needing its own record of its own.
+
+**This does not repeal the rule that `dependsOn` cannot narrow a pair set, and the difference is worth stating twice.** `dependsOn` is a declaration: saying *less* would gate *less*, and the laziest manifest would be the least refused. A determinacy record is evidence: it names the one pair it speaks about, records how that pair was looked at, and expires on a fingerprint. What changed is only **where the claim is written**, never whether a claim is needed. Read as the repeal, this section deletes the gate.
+
+**Why it can only ever subtract.** A record may only subtract from a set derived independently of it, so the laziest manifest still yields the largest subject and the most refusals — the property `dependsOn`'s prohibition exists to preserve. The two errors are asymmetric: a pair wrongly removed is a silent write into the base stack's state, a pair wrongly kept is a copy nobody needed. So the narrowing never adds confidence to a pair that survives it, and **a surviving pair's W and X are exactly what they would have been with no narrowing at all** — a small diff is not evidence, and an `inferred` record beside one still does not count.
+
+**State the limit rather than promise the relief: a change confined to a unit's frontend does not make that unit stateless.** Pass 4 runs after pass 3 and outranks it. A unit whose entrypoint migrates keeps W = yes for the stores `migrates` names, whatever the diff touched — overlaying a service that creates its schema at startup still runs that create, and the diff that reached none of it relieves none of it.
+
+**An unscoped migration is not narrowed by a small diff either.** Where `migrates` records `{"pointing": "unknown"}`, **every** store of that unit is undetermined and refuses, so an unrecorded pointing cannot be laundered into relief by touching one file. Every escalation below behaves the same way, because each reads the launched process rather than the diff. A pair may be removed in pass 3 and returned in pass 4 within one run, and the run names **both** events.
+
+**Report the narrowing rather than leave it to be inferred.** Every run prints the derived count that `references/discovery.md` section 3 states, each pair pass 3 removed **with the record that removed it**, each pair pass 4 returned with the trigger that returned it, and the gated count **beside** the derived one, never in place of it — a report that overwrites the derived count reads as a smaller repository rather than as a narrowed subject.
+
 ## Two hazards, not one
 
 - **Contamination** — the overlay *writes* state the base stack reads. Migrations, inserts, deletes, cache writes. Damage lands on the base stack's **data**.

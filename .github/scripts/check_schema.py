@@ -424,6 +424,400 @@ if [
 else:
     fail("the unknown-store row cannot fire")
 
+# --- DS40: the diff selects units, and only a record answers stores ---------
+# The gate's subject is the pairs the CHANGE can reach, built in five passes of
+# which exactly ONE may narrow. The rule is written in references/shared-state.md
+# and the thing that runs it is an agent reading that file; what runs here is the
+# same five passes over the shipped example, so the rule's one-directionality can
+# be FALSIFIED rather than asserted. A narrowing nothing executes is a narrowing
+# whose safety property is a sentence.
+#
+# This reader is deliberately a SUBSET of the shipped escalations, and the subset
+# is stated rather than left to be discovered: `migrates` and a migration in the
+# diff are readable from (manifest, diff); a scheduler entrypoint and an
+# externally visible side effect are read by the agent out of the commands and
+# the source. Under-widening is the dangerous direction, so a reader that knows
+# fewer triggers than the file must never be mistaken for the file.
+MIGRATION_DIR = re.compile(r"(^|/)(migrations?|alembic|db/migrate)(/|$)")
+
+
+def selects(pattern, path):
+    """`dir/**` is the only form the manifest uses; any other is UNINTERPRETABLE
+    and selects the unit rather than skipping it. Pass 1 may not narrow, so the
+    fail-closed direction for a path matcher is to match."""
+    if pattern.endswith("/**"):
+        return path.startswith(pattern[:-2])
+    return True
+
+
+def pass1_units(doc, changed):
+    """Changed paths -> units, plus the consumers of a non-runnable tree."""
+    picked = set()
+    for name, entry in doc["services"].items():
+        if not any(selects(pat, p) for pat in entry.get("paths", []) for p in changed):
+            continue
+        if entry.get("runnable") is False:
+            picked.update(entry.get("consumers", []))
+        else:
+            picked.add(name)
+    return sorted(picked)
+
+
+def pass2_subject(doc, units):
+    """Selected runnable units x EVERY backingStores entry, unioned with the
+    dependsOn names that resolve to a store - a union, so `may only ADD` is
+    structural. Here they add nothing, which is the point."""
+    stores = set(doc["backingStores"])
+    subject = set()
+    for unit in units:
+        entry = doc["services"].get(unit, {})
+        if entry.get("runnable") is False:
+            continue
+        declared = {d for d in entry.get("dependsOn", []) if d in stores}
+        subject.update((unit, s) for s in stores | declared)
+    return sorted(subject)
+
+
+def current_fingerprint(entry):
+    """Stand-in for recomputing the unit's source fingerprint: a manifest fixture
+    has no tree, so the unit-level stateReview value written by the same pass
+    stands in. No stateReview is nothing to compare against, which is no match."""
+    return entry.get("stateReview", {}).get("serviceFingerprint")
+
+
+def relieves(doc, unit, store):
+    """The record that may remove EXACTLY this pair, or None. Every clause below
+    is a reason to KEEP the pair, and absence is never relief."""
+    entry = doc["services"].get(unit, {})
+    rec = entry.get("determinacy", {}).get(store)
+    if rec is None or rec.get("confidence") != "declared":
+        return None
+    fingerprint = current_fingerprint(entry)
+    if fingerprint is None or rec.get("serviceFingerprint") != fingerprint:
+        return None
+    if rec["mutates"]["value"] or rec["competes"]["value"]:
+        return None
+    return f"{rec['method']} at {rec['at']}"
+
+
+def relief_missing(clause):
+    """`relieves` with exactly one clause dropped, so each clause is shown
+    load-bearing on its own. Four readers rather than one lax one, because "some
+    worse reader exists" proves no particular clause is carrying anything."""
+
+    def variant(doc, unit, store):
+        entry = doc["services"].get(unit, {})
+        records = entry.get("determinacy", {})
+        rec = records.get(store)
+        if rec is None and clause == "this pair":
+            rec = next(iter(records.values()), None)     # any record on the unit
+        if rec is None:
+            return None
+        if clause != "declared" and rec.get("confidence") != "declared":
+            return None
+        if clause != "fingerprint" and rec.get("serviceFingerprint") != current_fingerprint(entry):
+            return None
+        if clause != "reaches" and (rec["mutates"]["value"] or rec["competes"]["value"]):
+            return None
+        return "a record exists"
+
+    return variant
+
+
+def pass4_triggers(doc, unit, changed):
+    """Escalations, which read the launched process rather than the diff."""
+    entry = doc["services"].get(unit, {})
+    stores = sorted(doc["backingStores"])
+    out = []
+    migrates = entry.get("migrates") or {}
+    if migrates.get("pointing") == "recorded":
+        out.append((sorted(migrates.get("stores", [])), "migrates names this store"))
+    elif migrates.get("pointing") == "unknown":
+        out.append((stores, "migrates is pointed somewhere unrecorded"))
+    mine = [p for p in changed if any(selects(pat, p) for pat in entry.get("paths", []))]
+    if any(MIGRATION_DIR.search(p) for p in mine):
+        out.append((stores, "the diff touches a migrations directory"))
+    return out
+
+
+def isolates(doc, store):
+    """N: a mechanism with no way to apply it IS none."""
+    iso = doc["backingStores"][store].get("isolation", {})
+    if iso.get("mechanism") in (None, "none"):
+        return False
+    return bool(iso.get("command") or iso.get("env"))
+
+
+def booleans(doc, unit, store):
+    """W and X for one pair; None is undetermined, which is not False."""
+    entry = doc["services"].get(unit, {})
+    migrates = entry.get("migrates") or {}
+    if migrates.get("pointing") == "unknown":
+        return None, None
+    rec = entry.get("determinacy", {}).get(store)
+    fresh = (
+        rec is not None
+        and rec.get("confidence") == "declared"
+        and rec.get("serviceFingerprint") == current_fingerprint(entry)
+    )
+    # `migrates` is read BEFORE the record and a checked-and-none `mutates`
+    # never cancels it.
+    if store in (migrates.get("stores") or []):
+        w = True
+    else:
+        w = rec["mutates"]["value"] if fresh else None
+    return w, (rec["competes"]["value"] if fresh else None)
+
+
+def verdict(doc, unit, store):
+    """The shipped step table, in order, stopping at the first match."""
+    w, x = booleans(doc, unit, store)
+    if w is None or x is None:
+        return "REFUSE"                                   # step 1
+    if x:
+        return "REFUSE"                                   # step 2
+    if not w:
+        return "REUSE"                                    # step 3
+    return "ISOLATE" if isolates(doc, store) else "REFUSE"  # steps 4, 5
+
+
+def gate(doc, changed, relief=relieves):
+    """The five passes, in order, reporting what each one did."""
+    units = pass1_units(doc, changed)
+    subject = pass2_subject(doc, units)
+    removed = [(pair, relief(doc, *pair)) for pair in subject]
+    removed = [(pair, why) for pair, why in removed if why]
+    gated = set(subject) - {pair for pair, _ in removed}
+    reinserted = []
+    for unit in units:
+        for stores, trigger in pass4_triggers(doc, unit, changed):
+            for store in stores:
+                if (unit, store) in subject and (unit, store) not in gated:
+                    gated.add((unit, store))
+                    reinserted.append(((unit, store), trigger))
+    return {
+        "derived": derive(doc),
+        "selected": units,
+        "subject": subject,
+        "removed": removed,
+        "reinserted": sorted(reinserted),
+        "gated": sorted(gated),
+    }
+
+
+def render(report, overwrite=False):
+    """What the run prints.
+
+    `overwrite=True` is the report this rule forbids - the narrowed count written
+    into the derived count's place, which reads as a smaller repository rather
+    than as a narrowed subject. It is a second RENDERER and not a string edited
+    afterwards: a negative built by replacing the number in the good report's
+    output tests str.replace and nothing else.
+    """
+    units, stores, pairs = report["derived"]
+    shown = len(report["gated"]) if overwrite else pairs
+    lines = [f"derived: {units} runnable units x {stores} stores = {shown} pairs"]
+    lines.append("selected by the diff: " + (", ".join(report["selected"]) or "none"))
+    lines += [f"removed: {u}::{s} on its own record, {why}" for (u, s), why in report["removed"]]
+    lines += [f"re-inserted: {u}::{s} by {why}" for (u, s), why in report["reinserted"]]
+    lines.append(f"gated: {len(report['gated'])} pairs, beside the derived {shown}")
+    return "\n".join(lines)
+
+
+def reports_both_counts(text, report):
+    """Both counts, labelled, with the derived one still saying what was derived."""
+    derived = report["derived"][2]
+    return f"= {derived} pairs" in text and f"beside the derived {derived}" in text
+
+
+FRONTEND = ["apps/storefront/src/App.tsx"]
+BACKEND = ["services/catalog/src/books.py"]
+
+
+def with_migrates(pointing, stores=None, unit="storefront"):
+    doc = copy.deepcopy(example)
+    doc["services"][unit]["migrates"] = (
+        {"pointing": pointing, "stores": stores} if stores else {"pointing": pointing}
+    )
+    return doc
+
+
+# A frontend-only diff against a multi-store repository gates nothing, and names
+# every pair it removed with the record that removed it.
+_front = gate(example, FRONTEND)
+if _front["selected"] == ["storefront"] and not _front["gated"]:
+    ok(f"a frontend-only diff gates 0 of {_front['derived'][2]} derived pairs")
+else:
+    fail(f"a frontend-only diff gated {len(_front['gated'])} pair(s): {_front['gated']}")
+
+if len(_front["removed"]) == len(_front["subject"]) and all(why for _, why in _front["removed"]):
+    ok("every removed pair is named with the record that removed it")
+else:
+    fail("a pair left the subject without the record that removed it being named")
+
+# ONE-DIRECTIONAL, as an invariant over every fixture rather than as a sentence:
+# a pair may only be removed if it would have classified REUSE anyway, and no
+# surviving pair's verdict may differ from the verdict it has with no narrowing
+# at all. Removing anything else is confidence the diff did not earn.
+def one_directional(doc, changed, relief=relieves):
+    report = gate(doc, changed, relief)
+    for pair, _ in report["removed"]:
+        if pair in report["gated"]:
+            continue                       # returned by pass 4; it narrowed nothing
+        if verdict(doc, *pair) != "REUSE":
+            return f"{pair[0]}::{pair[1]} was removed while classifying {verdict(doc, *pair)}"
+    return None
+
+
+_degraded = copy.deepcopy(example)
+_degraded["services"]["storefront"]["determinacy"]["kafka"].update(confidence="inferred")
+_drifted = copy.deepcopy(example)
+_drifted["services"]["storefront"]["determinacy"]["postgres"].update(serviceFingerprint="0" * 40)
+_orphaned = copy.deepcopy(example)
+_orphaned["services"]["storefront"]["determinacy"].pop("events")
+
+# The last three manifests are here because of a measurement: with only the
+# first five, deleting the fingerprint clause from `relieves` outright left this
+# row GREEN - every record in the shipped example is fresh, so the clause was
+# never reached and the invariant was reporting on a reader it never exercised.
+# A case list that cannot present a clause with the input that clause is for is
+# a case list that certifies the clause by never using it.
+CASES = [
+    ("a frontend-only diff", example, FRONTEND),
+    ("a backend diff against the migrating unit", example, BACKEND),
+    ("a frontend diff against a unit recorded as migrating", with_migrates("recorded", ["postgres"]), FRONTEND),
+    ("a frontend diff against an unscoped migration", with_migrates("unknown"), FRONTEND),
+    ("a migrations directory in the diff", example, ["apps/storefront/migrations/003.sql"]),
+    ("a degraded record on a selected unit", _degraded, FRONTEND),
+    ("a drifted record on a selected unit", _drifted, FRONTEND),
+    ("a pair whose record was never written", _orphaned, FRONTEND),
+]
+_broken = [label for label, doc, changed in CASES if one_directional(doc, changed)]
+if _broken:
+    fail(f"the narrowing removed a pair that does not classify REUSE: {_broken}")
+else:
+    ok(f"the narrowing only ever removes pairs that classify REUSE ({len(CASES)} cases)")
+
+# ...and that invariant must be able to fail once per clause, or it is five
+# spellings of a reader that removes nothing. Each row drops ONE clause of
+# `relieves` and names the manifest on which that clause is what was holding the
+# pair - so a clause quietly deleted later has a row that goes red rather than a
+# comment that goes stale.
+for _clause, _doc, _changed, _why in [
+    ("declared", _degraded, FRONTEND, "an inferred record relieves a pair that refuses"),
+    ("fingerprint", _drifted, FRONTEND, "a drifted record relieves a pair that refuses"),
+    ("reaches", example, BACKEND, "a record recording a write relieves the pair it describes"),
+    ("this pair", _orphaned, FRONTEND, "a sibling's record answers a pair nobody examined"),
+]:
+    _broke = one_directional(_doc, _changed, relief_missing(_clause))
+    if _broke:
+        ok(f"rejected: dropping the {_clause} clause - {_why} ({_broke})")
+    else:
+        fail(f"the {_clause} clause is not load-bearing: dropping it narrowed nothing extra")
+
+# The limit, not the relief: a change confined to a unit's frontend does not
+# make that unit stateless. Pass 4 runs after pass 3 and outranks it.
+_mig = gate(with_migrates("recorded", ["postgres"]), FRONTEND)
+_mig_pairs = [pair for pair, _ in _mig["reinserted"]]
+if _mig_pairs == [("storefront", "postgres")] and booleans(
+    with_migrates("recorded", ["postgres"]), "storefront", "postgres"
+)[0] is True:
+    ok("re-inserted by migrates with W=yes: storefront::postgres, and the trigger is named")
+else:
+    fail(f"a frontend diff relieved a unit whose entrypoint migrates: {_mig_pairs}")
+
+if all(pair in [p for p, _ in _mig["removed"]] for pair in _mig_pairs):
+    ok("the run names both events: removed in pass 3, returned in pass 4")
+else:
+    fail("a pair returned in pass 4 without pass 3 having named it removed")
+
+# An unscoped migration cannot be laundered into relief by a small diff.
+_unscoped = gate(with_migrates("unknown"), FRONTEND)
+_unscoped_verdicts = {verdict(with_migrates("unknown"), *p) for p in _unscoped["gated"]}
+if len(_unscoped["gated"]) == 3 and _unscoped_verdicts == {"REFUSE"}:
+    ok("rejected: an unscoped migrates keeps every store of that unit, all refusing")
+else:
+    fail(f"an unscoped migrates was narrowed by a small diff: {_unscoped['gated']}")
+
+
+def stays(label, mutate, unit, store):
+    """A pair the narrowing must NOT remove, and which must then refuse."""
+    doc = copy.deepcopy(example)
+    mutate(doc)
+    report = gate(doc, FRONTEND)
+    if (unit, store) in report["gated"] and verdict(doc, unit, store) == "REFUSE":
+        ok(f"rejected: {label} - {unit}::{store} stays in the subject and refuses")
+    else:
+        fail(f"{label}: {unit}::{store} left the subject on evidence that does not count")
+
+
+# The first case is two readings of one mutation and both must hold: with
+# storefront's own events record gone, neither its SIBLING records nor
+# search-indexer's declared record for the same store may answer that pair.
+stays("a narrowing with no record for that pair, and none on a sibling or another unit",
+      lambda d: d["services"]["storefront"]["determinacy"].pop("events"), "storefront", "events")
+stays("a relieving record whose serviceFingerprint has drifted",
+      lambda d: d["services"]["storefront"]["determinacy"]["postgres"].update(
+          serviceFingerprint="0" * 40), "storefront", "postgres")
+stays("a relieving record degraded to inferred",
+      lambda d: d["services"]["storefront"]["determinacy"]["kafka"].update(
+          confidence="inferred"), "storefront", "kafka")
+stays("a record that says the changed code DOES reach the store",
+      lambda d: d["services"]["storefront"]["determinacy"]["events"]["mutates"].update(
+          value=True), "storefront", "events")
+stays("a record recording a competitive attachment",
+      lambda d: d["services"]["storefront"]["determinacy"]["kafka"]["competes"].update(
+          value=True), "storefront", "kafka")
+
+# ...and the narrowing must still be able to relieve, or every row above is
+# satisfied by a reader that removes nothing at all.
+if len(gate(example, FRONTEND)["removed"]) == 3:
+    ok("the narrowing does relieve: all three of the frontend unit's pairs leave on their own records")
+else:
+    fail("nothing was ever relieved, so the rows above pass over a gate that narrows nothing")
+
+# A survivor is not strengthened by a small diff: the degraded record still does
+# not count, and its verdict is the one it has with no narrowing at all.
+if verdict(_degraded, "storefront", "kafka") == "REFUSE" and booleans(
+    _degraded, "storefront", "kafka"
+) == (None, None):
+    ok("a survivor of the narrowing is undetermined exactly as it would be with no narrowing")
+else:
+    fail("a surviving pair was read as better evidenced because the diff was small")
+
+# `dependsOn` still narrows nothing: the subject is identical whether the unit
+# declares one store, all of them, or none.
+_empty = copy.deepcopy(example)
+_empty["services"]["storefront"]["dependsOn"] = []
+if pass2_subject(_empty, ["storefront"]) == pass2_subject(example, ["storefront"]):
+    ok("rejected: dependsOn: [] removes no pair - every backingStores entry still yields one")
+else:
+    fail("dependsOn narrowed the subject, which is the rule this change does not repeal")
+
+_declaring = copy.deepcopy(example)
+_declaring["services"]["storefront"]["dependsOn"] = ["postgres", "events", "kafka"]
+if len(pass2_subject(_declaring, ["storefront"])) == len(pass2_subject(_empty, ["storefront"])):
+    ok("the laziest manifest yields the same subject as the fullest one")
+else:
+    fail("declaring more stores changed the subject, so dependsOn is being read as evidence")
+
+# V67's second half: the gated count appears BESIDE the derived one. Nothing
+# narrowed until this slice, so the rule had no executable check until now. The
+# fixture must ACTUALLY narrow, or `beside` is satisfied by one number printed
+# twice and the row would pass on a run that reported a single count.
+_derived_n, _gated_n = _front["derived"][2], len(_front["gated"])
+if _derived_n == _gated_n:
+    fail(f"the counts fixture narrows nothing ({_derived_n} = {_gated_n}), so `beside` proves nothing")
+elif reports_both_counts(render(_front), _front):
+    ok(f"the run reports the gated {_gated_n} beside the derived {_derived_n}, not in place of it")
+else:
+    fail(f"the report does not carry both counts: {render(_front)!r}")
+
+if not reports_both_counts(render(_front, overwrite=True), _front):
+    ok("rejected: a report that writes the narrowed count into the derived count's place")
+else:
+    fail("the both-counts row cannot see the derived count being overwritten")
+
 # --- every field the documents name must exist ------------------------------
 names = set()
 

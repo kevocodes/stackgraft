@@ -37,7 +37,14 @@
         "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationIdent}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationIdent}}" },
         "discoveredFrom": "Makefile",
-        "confidence": "declared"
+        "confidence": "declared",
+        "provider": {
+          "runtime": "docker",
+          "sourceVolume": "bookshop_pgdata",
+          "image": "postgres:16-alpine",
+          "baseInstance": "bookshop-postgres-1",
+          "confidence": "declared"
+        }
       },
       "notes": [
         "Rung 1, which is what earns declared: db-create and db-drop are targets the Makefile already defines, and discoveredFrom names that file rather than the compose file the store itself was read from.",
@@ -49,8 +56,13 @@
     "events": {
       "substrate": "redis",
       "locality": { "value": "local", "reason": "compose declares it here; its data lives in a local volume on this host" },
-      "isolation": { "mechanism": "none", "confidence": "declared" },
+      "isolation": {
+        "mechanism": "none",
+        "confidence": "declared",
+        "provider": { "runtime": "docker", "sourceVolume": "bookshop_redisdata", "image": "redis:7-alpine", "baseInstance": "bookshop-events-1", "confidence": "declared" }
+      },
       "notes": [
+        "mechanism none beside a provider record is the shape this schema version exists for, and it is the common one: this substrate offers no in-instance namespace, so a writing pair against it used to have nowhere to go and refused. It now resolves to a seeded copy. The two records are independent and one entry may carry both, either, or neither — kafka carries the in-instance record and no provider, and a store carrying neither is equally expressible and refuses like any store with no answer.",
         "Deliberately mechanism none, and deliberately carrying no nameForm: nothing here needs a generated name, and recording a form nobody established would be a guess this file exists to show is unnecessary. A store recording neither form is undetermined, which refuses — see references/coordination-identity.md.",
         "Choosing a numeric position inside the instance would isolate the keyspace and NOT pub/sub: a message published on one database reaches a subscriber on another, so channel names collide across every one of them. It is never done here for a second reason too — a position inside a running instance is drawn from a fixed set nothing owns, so two worktrees can take the same one and never find out.",
         "Channel prefixing would be an application change, not an overlay knob. Any service that publishes here is refused unless the risk is accepted explicitly.",

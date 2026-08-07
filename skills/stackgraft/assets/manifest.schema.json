@@ -171,9 +171,18 @@
                 "$comment": "A create with no drop leaves one namespace per branch behind forever — isolated databases, vhosts and buckets accumulate until somebody goes looking. The approval rule in references/shared-state.md already shows BOTH substituted commands before the first run, which assumes both exist. So a command obliges a teardownCommand; where no teardown is discoverable the honest record is mechanism none, because half a lifecycle is not an isolation mechanism. env-only isolation is deliberately exempt: it has no create command and nothing a drop command could remove, so its namespace is named in the run's output instead.",
                 "if": { "required": ["command"] },
                 "then": { "required": ["teardownCommand"] }
+              },
+              {
+                "$comment": "A provider reference is only usable where the store's state is local. locality is recorded per store beside this record and an undetermined locality is read as remote, so a provider record on a store this host does not hold would be a copy nobody can take — refused at the gate rather than attempted. Stated structurally here so the two records cannot disagree in a manifest that still validates.",
+                "if": { "required": ["provider"] },
+                "then": {
+                  "properties": {
+                    "provider": { "properties": { "runtime": { "not": { "const": "none" } } } }
+                  }
+                }
               }
             ],
-            "description": "How an overlay gets its own namespace INSIDE this already-running instance. Isolating in place is the cheap correct default: a second server process costs seconds and memory, while sharing a namespace costs correctness.",
+            "description": "How an overlay gets its own namespace, either INSIDE this already-running instance or on a seeded copy of it. The two are recorded independently and one entry may carry both, neither, or one: in-instance isolation is the zero-disk optimisation and a copy is the default answer for a writing pair, so a mechanism of \"none\" is no longer the end of the road.",
             "properties": {
               "mechanism": {
                 "type": "string",
@@ -184,6 +193,39 @@
                 "type": "string",
                 "examples": ["compose-exec", "host-client", "manual"],
                 "description": "How the command reaches the store. compose-exec borrows the client from inside the running container, which is why no client binary has to exist on the host."
+              },
+              "provider": {
+                "type": "object",
+                "required": ["runtime", "sourceVolume", "image", "baseInstance", "confidence"],
+                "additionalProperties": false,
+                "description": "The reference an ISOLATE-by-copy resolves through: which RUNTIME can copy this store's state and the two runtime facts a copy needs. It is deliberately independent of mechanism — one entry may carry both records, either, or neither — because in-instance isolation and a seeded copy answer the same hazard at different prices, and a store offering no in-instance namespace is not a store that cannot be isolated. NOTHING HERE NAMES A STORE ENGINE, and that is the requirement rather than a style note: cloning state is the same operation for every engine and differs between runtimes, so a field admitting PostgreSQL or Redis would be the per-engine table this schema deleted, re-entered by another door. A store engine released after 2.0 is provisionable with no edit to this record.",
+                "properties": {
+                  "runtime": {
+                    "type": "string",
+                    "enum": ["docker", "kubernetes", "host-native"],
+                    "description": "Which runtime holds this store's state. Exactly one provider ships: docker. kubernetes and host-native are DECLARED AND UNBUILT — recording one is legal and refuses by name at the gate, stated as a runtime nothing implements yet rather than as an impossibility, so a manifest can say what is true about a repository this version cannot serve. There is no \"managed\" or \"remote\" member: a store whose state is not on this host has no local volume to name, so it records no provider at all and refuses through locality instead."
+                  },
+                  "sourceVolume": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The runtime object holding the base stack's state for this store, read from the runtime by references/discovery.md section 1 and never guessed from the store's name. It is the only thing a copy is taken from; where it cannot be read, no provider record is written and the pair stays undetermined, which refuses."
+                  },
+                  "image": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The image reference the base stack runs this store under, read from the runtime beside sourceVolume. The copy is started from the same image, which is what keeps the provider engine-blind: it never has to know what the bytes mean, only what wrote them."
+                  },
+                  "baseInstance": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The runtime object the base stack currently runs this store as, read from the SAME inspection that produced sourceVolume and image — so recording it asks discovery for nothing it did not already have. It is recorded rather than found later because finding it would take a listing carrying no ownership filter, and no shipped script makes one. What is NOT recorded here is where the engine keeps its data: that is read from this instance at provision time, because a manifest field naming a data directory would be the per-engine table under another name."
+                  },
+                  "confidence": {
+                    "type": "string",
+                    "enum": ["declared", "inferred", "user"],
+                    "description": "Only \"declared\" may satisfy the shared-state gate, exactly as it governs the in-instance record beside it. A static parse standing in for an unavailable runtime writes \"inferred\" rather than omitting the record, so the manifest stays valid while the read side declines to count it."
+                  }
+                }
               },
               "command": {
                 "type": "string",

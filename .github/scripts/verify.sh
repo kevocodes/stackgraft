@@ -2,7 +2,12 @@
 # verify.sh - every check this project makes, run for real.
 #
 # usage:  sh .github/scripts/verify.sh
-# exit:   0 all checks passed  ·  1 at least one failed
+#         STACKGRAFT_REQUIRE_RUNTIME=1 sh .github/scripts/verify.sh   (CI)
+# exit:   0 every check that RAN passed  ·  1 at least one failed
+#
+# A run that skipped rows says so in the summary and never reports them as
+# passed. With STACKGRAFT_REQUIRE_RUNTIME set, a missing runtime prerequisite -
+# a daemon, an image, an interpreter - is a failure rather than a note.
 #
 # Two rules this file enforces on itself:
 #   - a check that cannot fail is not a check. Every assertion has a matching
@@ -15,9 +20,44 @@ set -u
 SKILL=skills/stackgraft
 ROOT=$(pwd)
 fails=0
+oks=0
+skips=0
+skipped_runtime=''
 
-ok()   { printf '  ok    %s\n' "$1"; }
+ok()   { printf '  ok    %s\n' "$1"; oks=$((oks + 1)); }
 fail() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
+
+# A skipped row is not a passed row, and until this counter existed nothing in
+# the summary could tell them apart. Measured on this tree: a run with no docker
+# daemon and no jsonschema executes 565 of 805 rows - 240 never run, and they
+# are the provider, the verification, the generated read, the anonymous-volume
+# ledger and the whole schema half, which is the entire runtime half of what
+# this release added - and it printed `all checks passed`, exit 0. The mechanism
+# the release exists for had no executed coverage and CI had no way to say so.
+#
+# Two classes, because "make every skip fatal" is the wrong repair:
+#
+#   runtime      a prerequisite the CI job is supposed to supply - a daemon, an
+#                image, an interpreter. A skip here means the suite ran without
+#                the thing it exists to exercise, and under
+#                STACKGRAFT_REQUIRE_RUNTIME that is a failure.
+#   conditional  a property of the host or of the input that is legitimately
+#                absent: no `ps -o lstart=`, running as root, a release that is
+#                not a major one. Making these fatal would turn a correct run
+#                red for a reason that is not a defect - which is how a gate
+#                nobody trusts gets switched off.
+#
+# The default class is `conditional`, and that is deliberate the other way from
+# usual: an unclassified skip should not fail a run, but it also should not be
+# silent, and the counter above sees every one of them.
+skip() {
+    printf '  skip  %s\n' "$1"
+    skips=$((skips + 1))
+    case ${2:-conditional} in
+        runtime) skipped_runtime="$skipped_runtime
+      - $1" ;;
+    esac
+}
 
 section() { printf '\n%s\n' "$1"; }
 
@@ -89,6 +129,50 @@ surface_missing() {
 }
 
 # ---------------------------------------------------------------- shell -----
+section "the suite's own counters"
+
+# One decision, called by the result section at the bottom and by the probes
+# here. A second copy of the expression is how one of the two stops asserting
+# anything and nobody notices - the shape this suite has found four times.
+runtime_gate() { [ -n "$1" ] && [ "$2" != "0" ]; }
+
+runtime_gate '      - a prerequisite' 1 \
+    && ok "a runtime prerequisite absent with STACKGRAFT_REQUIRE_RUNTIME set is a failure" \
+    || fail "the runtime gate cannot fail even with the flag set and a prerequisite missing"
+runtime_gate '      - a prerequisite' 0 \
+    && fail "the runtime gate fires with the flag off, so a laptop with no daemon hits a wall" \
+    || ok "...and with the flag off it is a note rather than a failure"
+runtime_gate '' 1 \
+    && fail "the runtime gate fires with nothing skipped, so it says nothing about what was skipped" \
+    || ok "...and with the flag set but nothing skipped it stays silent"
+
+# The counter itself, probed in a subshell so a probe of the machinery never
+# moves the totals it is probing.
+sk_runtime=$( skips=0; skipped_runtime=''; skip "a probe row" runtime >/dev/null; printf '%s|%s' "$skips" "$skipped_runtime" )
+sk_cond=$(    skips=0; skipped_runtime=''; skip "a probe row" >/dev/null;         printf '%s|%s' "$skips" "$skipped_runtime" )
+case $sk_runtime in
+    '1|'*'a probe row'*) ok "a runtime skip counts and is named in the runtime list" ;;
+    *)                   fail "a runtime skip did not count or was not recorded: '$sk_runtime'" ;;
+esac
+case $sk_cond in
+    '1|') ok "...and a skip with no class counts without entering the runtime list, which is the safe default" ;;
+    *)    fail "an unclassified skip took the runtime path or did not count: '$sk_cond'" ;;
+esac
+
+# ...and none of the above matters if a row can print a skip line without going
+# through the function. Every site must call it; the one printf that remains is
+# the function's own.
+# The pattern is assembled from two halves on purpose: written whole, this line
+# would match itself and the row would report one more raw printf than exists -
+# a check whose own source is part of what it counts. The same self-reference
+# scoped the claim sweep above out of this file.
+_sk_pat="printf '  sk"
+_sk_pat="${_sk_pat}ip"
+sk_raw=$(grep -c "$_sk_pat" .github/scripts/verify.sh 2>/dev/null || echo 0)
+[ "$sk_raw" -eq 1 ] \
+    && ok "every skip in this file goes through the counted helper, so none can pass unnoticed again" \
+    || fail "$sk_raw raw skip printfs exist, so $((sk_raw - 1)) row(s) skip without counting"
+
 section "scripts"
 
 # One expression for both shebang rows - the shipped scripts here and
@@ -392,7 +476,7 @@ if [ "$lstart_here" -eq 1 ]; then
         fail "live-holder lock: exit $rc, bytes $before -> $after, said '$msg'"
     fi
 else
-    printf '  skip  live-holder refusal (this host has no ps -o lstart=)\n'
+    skip "live-holder refusal (this host has no ps -o lstart=)" conditional
 fi
 
 # --- V9  the time bound only decides what liveness could not -----------------
@@ -647,10 +731,10 @@ if [ "$(id -u)" -ne 0 ]; then
         fi
         rm -rf "$w1c"
     else
-        printf '  skip  the live-holder control for the unremovable-aside row (no ps -o lstart=)\n'
+        skip "the live-holder control for the unremovable-aside row (no ps -o lstart=)" conditional
     fi
 else
-    printf '  skip  the unremovable-aside row (running as root, which ignores the mode)\n'
+    skip "the unremovable-aside row (running as root, which ignores the mode)" conditional
 fi
 
 # ---------------------------------------------------------------- body ------
@@ -1002,7 +1086,7 @@ if [ "$(compat_verdict "$SKILL/SKILL.md")" = pass ]; then
         fail "ACCEPTED but must be rejected: the note appended without paying for it"
     fi
 else
-    printf '  skip  the donor-cut fixture (it is derived from the shipped value, which failed above)\n'
+    skip "the donor-cut fixture (it is derived from the shipped value, which failed above)" conditional
 fi
 
 # --- V37  the cap row must be able to see the clause this slice paid for -----
@@ -1379,6 +1463,76 @@ grep -v 'verified before it counts as isolated' README.md                   > "$
     && ok "rejected: README.md with its half of the same claim deleted" \
     || fail "the README row cannot notice its sentence going missing"
 rm -rf "$ds"
+
+# ...and every row above reads the EXPLANATORY pages. Not one of them reads
+# references/shared-state.md, which is the file the agent actually follows, and a
+# third adversarial pass measured the consequence: reverting that file's two
+# sentences to the text they carried before this repair ran 774 ok / 0 FAIL /
+# exit 0, the exact clean figure. A repair guarded only in the pages that
+# describe it is a repair the normative file can lose on its own.
+#
+# So both are read here by SHAPE rather than by sentence, because the claim was
+# false in four places at once and a row per sentence would have caught one.
+#
+# SCOPE, stated rather than covered: the sweep reads the shipped files below and
+# not this suite's own row labels, because the patterns it searches for are
+# written in this file and it would match its own definition. One such label did
+# carry the overclaim and was corrected by reading; nothing here would have
+# caught it.
+#
+# Shape one: the copy road asks the repository for nothing. True of MAKING a
+# copy and false of verifying one since slice 4b, so the claim is only ever
+# correct where the same line says what verifying asks for.
+NORM_SHARED=$SKILL/references/shared-state.md
+CLAIM_FILES="README.md CHANGELOG.md SECURITY.md docs/SHARED-STATE.md $NORM_SHARED"
+copy_asks_unqualified() {
+    grep -Hn 'asks the repository for nothing\|asks your repository for nothing' "$@" 2>/dev/null \
+        | grep -iv 'verifying it'
+}
+# Shape two: declining the generated target issues no refusal. True of the
+# missing target and false of the pair, which still refuses for want of a query
+# where no rung-1 candidate exists either.
+no_refusal_unqualified() {
+    grep -Hn 'no refusal is issued' "$@" 2>/dev/null | grep -v 'want of a query'
+}
+
+# shellcheck disable=SC2086
+[ -z "$(copy_asks_unqualified $CLAIM_FILES)" ] \
+    && ok "no shipped file claims the copy road asks the repository for nothing without saying what verifying asks for" \
+    || fail "an unqualified 'asks the repository for nothing' ships: $(copy_asks_unqualified $CLAIM_FILES)"
+# shellcheck disable=SC2086
+[ -z "$(no_refusal_unqualified $CLAIM_FILES)" ] \
+    && ok "...and none says a decline issues no refusal without stating the refusal a decline can still cost" \
+    || fail "an unqualified 'no refusal is issued' ships: $(no_refusal_unqualified $CLAIM_FILES)"
+
+# The negatives put back the exact bytes each claim carried before the repair,
+# taken from the commits that shipped them, so what is rejected is the measured
+# regression rather than a sentence invented to be rejected.
+nr=$(mktemp -d)
+mkdir -p "$nr/refs"
+grep -v 'verifying it does ask' "$NORM_SHARED" > "$nr/refs/pre-4b.md"
+printf '%s\n' '**A seeded copy is what ISOLATE means by default.** It is a second instance of the same image, started on a copy of the state the base stack holds — so it carries the data the base stack has and **asks the repository for nothing**: no task target, no discovered command, no template, no approval.' \
+    >> "$nr/refs/pre-4b.md"
+grep -v 'What a decline costs' "$NORM_SHARED" > "$nr/refs/pre-cost.md"
+printf '%s\n' '**The offer is never a precondition of anything.** A decline, an offer nobody approved, and a repository that cannot be written to all leave the **default seeded copy**, and **no refusal is issued for the missing lifecycle target** while that road is open.' \
+    >> "$nr/refs/pre-cost.md"
+
+# Each negative is asserted on the file it INTRODUCED, not merely on the sweep
+# being non-empty: a row satisfied by any output would let one shape cover for
+# the other, which is the failure both of these exist to stop.
+copy_asks_unqualified "$nr/refs/pre-4b.md" | grep -q 'pre-4b.md' \
+    && ok "rejected: references/shared-state.md's pre-4b claim that a seeded copy asks the repository for nothing, and the sweep names that file" \
+    || fail "the sweep does not reach references/shared-state.md, which is the file the agent follows"
+no_refusal_unqualified "$nr/refs/pre-cost.md" | grep -q 'pre-cost.md' \
+    && ok "rejected: the decline paragraph with the cost clause removed, so 'no refusal is issued' stands unqualified" \
+    || fail "the decline sweep cannot notice its qualification going missing"
+
+# ...and a sweep that fires on everything is not a sweep. The shipped file must
+# pass the same two functions the fixtures above fail.
+copy_asks_unqualified "$NORM_SHARED" | grep -q . \
+    && fail "the sweep flags the shipped references/shared-state.md, so its rejections mean nothing" \
+    || ok "...while the shipped references/shared-state.md passes both sweeps unchanged"
+rm -rf "$nr"
 
 # One decision and one term list, shared by the shipped rows and by the negative
 # below, so the fixture exercises the test that actually runs rather than a
@@ -2772,7 +2926,7 @@ if [ "$docker_ready" -eq 1 ]; then
         ok "rejected: docker compose up, which takes no label flag - the up refusal's ground"
     fi
 else
-    printf '  skip  compose label-flag rows (no docker daemon)\n'
+    skip "compose label-flag rows (no docker daemon)" runtime
 fi
 
 # How many containers carry stackgraft.repo=$1. Used by the V17 rows below for
@@ -2906,7 +3060,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     git -C "$ck/main" worktree remove --force "$ck/linked" >/dev/null 2>&1
     rm -rf "$ck"
 else
-    printf '  skip  labelled-launch and minimal-image rows (no docker daemon or alpine/git image)\n'
+    skip "labelled-launch and minimal-image rows (no docker daemon or alpine/git image)" runtime
 fi
 
 # -------------------------------------------------- provider and copies -----
@@ -3685,18 +3839,57 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         fi
 
         # --- V46  two filesystems measured, and the binding one named --------
+        #
+        # The two are NOT required to be two DISTINCT filesystems, and requiring
+        # that was an assumption about the host rather than a fact about the
+        # provider. Where the runtime is virtualised - a desktop daemon in a VM -
+        # the data root and the host disk are genuinely different devices. Where
+        # the daemon runs natively they are routinely the SAME device, and the
+        # honest report names it twice. Measured on a Linux daemon: this row
+        # failed a correct run, on the only figure gating whether a copy is safe.
+        #
+        # So it checks what was MEASURED rather than whether the names differ.
+        # Each figure must name the filesystem an INDEPENDENT df names for the
+        # same place - one inside a container, one on the host - which catches
+        # the defect the old wording aimed at, one of the two being the working
+        # directory's, wherever the two are distinguishable at all.
         sp_measured=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { n++ } END { print n + 0 }')
-        sp_names=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { print $3 }' | sort -u | awk 'END { print NR + 0 }')
-        sp_bound=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "bound" { print $3; exit }')
+        sp_rt_fs=$(  printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { print $3; exit }')
+        sp_host_fs=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { n++; if (n == 2) { print $3; exit } }')
+        sp_bound=$(  printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "bound" { print $3; exit }')
+
+        ind_rt_fs=$(docker run --rm --entrypoint sh "$pimg" -c 'df -Pk /' 2>/dev/null | awk 'NR == 2 { print $1 }')
+        ind_cache=${XDG_CACHE_HOME:-${HOME:-}/.cache}
+        while [ -n "$ind_cache" ] && [ "$ind_cache" != / ] && [ ! -d "$ind_cache" ]; do
+            ind_cache=${ind_cache%/*}
+        done
+        ind_host_fs=$(df -Pk "${ind_cache:-/}" 2>/dev/null | awk 'NR == 2 { print $1 }')
+
         if [ "$sp_measured" -ne 2 ]; then
             fail "the run measured $sp_measured filesystem(s), not the runtime's data root and the host behind it"
-        elif [ "$sp_names" -ne 2 ]; then
-            fail "the run's two measurements name one filesystem twice, so one of them is the working directory's"
         elif [ -z "$sp_bound" ]; then
             fail "the run measured two filesystems and never said which one bound the decision"
+        elif [ "$sp_rt_fs" != "$ind_rt_fs" ]; then
+            fail "the runtime figure names '$sp_rt_fs' where an independent in-container df names '$ind_rt_fs', so it is not the data root"
+        elif [ "$sp_host_fs" != "$ind_host_fs" ]; then
+            fail "the host figure names '$sp_host_fs' where an independent df of $ind_cache names '$ind_host_fs', so it is not the host behind it"
+        elif [ "$sp_bound" != "$sp_rt_fs" ] && [ "$sp_bound" != "$sp_host_fs" ]; then
+            fail "the bound filesystem '$sp_bound' is neither of the two measured, so the decision names a disk nothing read"
+        elif [ "$sp_rt_fs" = "$sp_host_fs" ]; then
+            ok "the run measured the data root and the host behind it; on this daemon they are one disk ($sp_rt_fs), and it is named as the bound one rather than counted twice"
         else
             ok "the run measured two distinct filesystems and named $sp_bound as the one that bound the decision"
         fi
+
+        # ...and the limit, stated rather than covered: where the two figures
+        # land on the same device there is no observable difference between
+        # measuring the data root and measuring the host, so this row cannot
+        # tell a provider that measured one of them twice from one that measured
+        # both correctly. It says which case it is in above; on a daemon in a VM
+        # the discrimination is real, and that is where it is exercised.
+        [ "$sp_rt_fs" = "$sp_host_fs" ] \
+            && ok "...and the row reports that discrimination is unavailable on a shared-disk daemon rather than claiming it" \
+            || ok "...and the two figures are distinguishable here, so the row's discrimination is real on this host"
 
         # The negative is a second reader over a one-measurement report, not the
         # same report with a line deleted afterwards: the row is about what the
@@ -4084,7 +4277,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         && ok "this section left no volume, no container, and no unnamed volume behind" \
         || fail "this section leaked $plefto labelled volume(s), $pleftc container(s) and $plefta unnamed volume(s)"
 else
-    printf '  skip  provider runtime rows (no docker daemon, no alpine/git image, or no provider script)\n'
+    skip "provider runtime rows (no docker daemon, no alpine/git image, or no provider script)" runtime
 fi
 
 # ------------------------------------------- verification and lifetime -------
@@ -4723,7 +4916,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         && ok "this section left no labelled object, no fixture, no probe and no unnamed volume behind" \
         || fail "this section leaked '$vleft' and $vanon unnamed volume(s)"
 else
-    printf '  skip  verification runtime rows (no docker daemon, no alpine/git image, no provider script, or no route in the shipped table)\n'
+    skip "verification runtime rows (no docker daemon, no alpine/git image, no provider script, or no route in the shipped table)" runtime
 fi
 
 # --------------------------------------------- generated lifecycle target ----
@@ -4761,7 +4954,7 @@ vfx=$gfx
 sec_row "$GSEC" 'the generation rule' 'never a precondition' \
     'the offer is never a precondition of anything'
 sec_row "$GSEC" 'the generation rule' 'default seeded copy' \
-    'a decline leaves the default seeded copy, which asks the repository for nothing'
+    'a decline leaves the default seeded copy, which asks the repository for nothing to make'
 sec_row "$GSEC" 'the generation rule' 'no refusal is issued' \
     'no refusal is issued for the missing target while the default path is available'
 
@@ -5361,7 +5554,7 @@ if [ "$gen_wrote" -eq 1 ]; then
         fail "the write left $gen_staged path(s) staged and HEAD at '$gen_head_after' against '$grepo_head'"
     fi
 else
-    printf '  skip  the restraint rows (nothing was written, so nothing they assert was exercised)\n'
+    skip "the restraint rows (nothing was written, so nothing they assert was exercised)" conditional
 fi
 
 # --- the four negatives, each against its OWN copy of the repository ---------
@@ -5587,7 +5780,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
             # drop is equally satisfied by a namespace that was never there -
             # which is exactly what this row reported in the red run.
             if [ "$obs_made" -eq 0 ]; then
-                printf '  skip  the observed drop (the create made no namespace, so a removal cannot be told from an absence)\n'
+                skip "the observed drop (the create made no namespace, so a removal cannot be told from an absence)" conditional
             elif docker exec "$gbase" test -e "/data/$NS" >/dev/null 2>&1; then
                 fail "the observed drop exited $obs_drop and the namespace it was meant to remove is still there"
             else
@@ -5641,7 +5834,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
         && ok "this section left no labelled object, no fixture, no probe and no unnamed volume behind" \
         || fail "this section leaked '$gleft' and $ganon unnamed volume(s)"
 else
-    printf '  skip  generated-read runtime rows (no docker daemon, no alpine/git image, or no provider script)\n'
+    skip "generated-read runtime rows (no docker daemon, no alpine/git image, or no provider script)" runtime
 fi
 
 # --- the fixture repository is removed, and the removal is asserted ----------
@@ -5651,6 +5844,105 @@ rm -rf "$gfx"
 [ ! -d "$grepo" ] && [ ! -d "$gfx" ] \
     && ok "the fixture repository this section wrote into is gone, along with everything it wrote there" \
     || fail "the fixture repository survived this section: $grepo"
+
+# --- copy reclamation: specified, unimplemented, and SAID so -----------------
+# reaping.md section 9a specifies candidacy, liveness and a two-flag interlock
+# for store copies. scripts/reap.sh accepts `c:` containers and `p:` processes
+# and NOTHING else - no volume query, no stackgraft.store read, no copy line in
+# the report - so an orphaned copy is neither detected nor reclaimed, and
+# `destroy` removes one with no flags at all.
+#
+# Five shipped files described that as working. This block ties the claim to the
+# code in BOTH directions: while reap.sh has no copy target the texts must say
+# so, and the day one is added these rows fail and send whoever added it back to
+# the same five files. That coupling is the point - an unimplemented MUST that
+# nobody can see is how this one survived a whole release chain.
+reap_has_copy_target() {
+    grep -q 'stackgraft\.store' "$SKILL/scripts/reap.sh" 2>/dev/null \
+        || grep -qE '^\s+v:\*\)' "$SKILL/scripts/reap.sh" 2>/dev/null
+}
+DISCLOSE_FILES="README.md CHANGELOG.md SECURITY.md $SKILL/references/reaping.md $SKILL/references/isolation-providers.md"
+# shellcheck disable=SC2086
+undisclosed=$(for f in $DISCLOSE_FILES; do
+    grep -qi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' "$f" || printf '%s ' "$f"
+done)
+
+if reap_has_copy_target; then
+    fail "reap.sh now has a copy target, so the five files that say it has none are stale - update them and this row"
+elif [ -z "$undisclosed" ]; then
+    ok "reap.sh has no copy target, and all five files that describe copy reclamation say so rather than describing it as working"
+else
+    fail "reap.sh has no copy target and these files do not disclose it: $undisclosed"
+fi
+
+# ...and the negative: a file with the disclosure stripped must be named. Without
+# it the row above passes over a list nobody reads.
+cd_fx=$(mktemp -d)
+grep -vi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' SECURITY.md > "$cd_fx/undisclosed.md"
+if grep -qi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' "$cd_fx/undisclosed.md"; then
+    fail "the disclosure fixture still carries the sentence after the strip, so the row below asserts nothing"
+else
+    ok "rejected: SECURITY.md with its copy-reclamation disclosure deleted, which is how the claim shipped as working"
+fi
+rm -rf "$cd_fx"
+
+# --- SECURITY.md discloses the writing half ----------------------------------
+# The commit that gave this skill repository writes touched README.md, the
+# schema, isolation-providers.md and shared-state.md - and not SECURITY.md. So
+# the threat model went on describing a read-only boundary while the tool it
+# describes began authoring executable files, and the approval bullet went on
+# saying a change elsewhere in the repository invalidates nothing while the
+# generated family's fingerprint covers three files at once.
+#
+# The same shape as the two claims swept above, one document along, and the same
+# diagnosis: the sweep unit is the commit that redefined the destination, not the
+# file the symptom appeared in.
+secfx=$(mktemp -d)
+vfx=$secfx
+SEC_WRITE=$(doc_section SECURITY.md 'files the run may write')
+[ -n "$SEC_WRITE" ] \
+    && ok "SECURITY.md carries a section on the files the run may write, so the writing half is stated where the model is looked for" \
+    || fail "SECURITY.md has no section on what the run writes, so its threat model still describes a read-only boundary"
+
+sec_row "$SEC_WRITE" 'the writing section' 'on approval and never otherwise|only on .*approval' \
+    'the three files are written on approval and never otherwise'
+sec_row "$SEC_WRITE" 'the writing section' 'appends to nothing|edits nothing it did not author' \
+    'it appends to no existing file and edits none it did not author'
+sec_row "$SEC_WRITE" 'the writing section' 'staged, committed or pushed' \
+    'nothing is staged, committed or pushed'
+sec_row "$SEC_WRITE" 'the writing section' 'no exemption for being ours' \
+    'the generated files are held to the template contract with no exemption'
+sec_row "$SEC_WRITE" 'the writing section' 'inferred' \
+    'a file this skill wrote is inferred until a run has observed all three succeed'
+sec_row "$SEC_WRITE" 'the writing section' 'does not review what you approve' \
+    'the residual: it does not review what you approve'
+
+# ...and the trust-boundary section must say the boundary runs both ways, or a
+# reader who stops at the top of the page has the pre-2.0 model.
+grep -q 'boundary runs both ways' SECURITY.md \
+    && ok "SECURITY.md's opening states the boundary runs both ways, so the writing half is not only in a later section" \
+    || fail "SECURITY.md still opens as though repository text only ever flows inward"
+
+# The approval bullet, which was false rather than merely incomplete: the
+# fingerprint covers the create, the drop and the read hashed together, and
+# `discoveredFrom` names only the create.
+APPROVAL_LINE=$(grep -n 'Approval is per repository and store' SECURITY.md | head -1)
+[ -n "$APPROVAL_LINE" ] || fail "SECURITY.md no longer carries the approval-scope bullet at all"
+printf '%s' "$APPROVAL_LINE" | grep -q 'all three files' \
+    && ok "...and its approval bullet says the generated family's source is all three files, not the one discoveredFrom names" \
+    || fail "SECURITY.md still says only the discovered-from file invalidates an approval, which is false for a generated family: $APPROVAL_LINE"
+
+# The negative for that one is the shipped bytes it replaced, so what is
+# rejected is the measured regression rather than a sentence invented for it.
+grep -v 'Approval is per repository and store' SECURITY.md > "$secfx/pre-slice5.md"
+printf '%s\n' '- **Approval is per repository and store, not per run.** Once given, and for as long as the recorded `sourceFingerprint` still matches the file the template was discovered from, the create and its teardown run again without asking. A change to that file invalidates the approval; a change elsewhere in the repository does not.' \
+    >> "$secfx/pre-slice5.md"
+if grep 'Approval is per repository and store' "$secfx/pre-slice5.md" | grep -q 'all three files'; then
+    fail "the pre-slice-5 approval bullet reads as though it names all three files, so the row above asserts nothing"
+else
+    ok "rejected: the approval bullet as it stood before the generator shipped, naming one file where the fingerprint covers three"
+fi
+rm -rf "$secfx"
 
 # ----------------------------------------------------------------- reap -----
 section "reap surface"
@@ -6280,7 +6572,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     ( cd "$repo" && git worktree remove --force "$rf/wt" ) >/dev/null 2>&1
     rm -rf "$rf"
 else
-    printf '  skip  the container refusal fixtures (no docker daemon or alpine/git image)\n'
+    skip "the container refusal fixtures (no docker daemon or alpine/git image)" runtime
 fi
 
 # --- V14  the process half: a recycled pid is refused, a proven one is not ---
@@ -6354,10 +6646,10 @@ if [ "$lstart_here" -eq 1 ]; then
         fi
         kill -KILL "$vic2" 2>/dev/null
     else
-        printf '  skip  the unsignallable-target row (running as root, which can signal pid 1)\n'
+        skip "the unsignallable-target row (running as root, which can signal pid 1)" conditional
     fi
 else
-    printf '  skip  the (pid, lstart) target rows (this host has no ps -o lstart=)\n'
+    skip "the (pid, lstart) target rows (this host has no ps -o lstart=)" conditional
 fi
 
 # --- scoping is in the query, not in a filter over its output ----------------
@@ -6810,7 +7102,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         && ok "rejected: a container whose git resolves nothing - the row's older assertions stay green there, the two worktree ones turn red" \
         || fail "a container with no working git did not turn the reap row red, so the row still does not prove git ran"
 else
-    printf '  skip  the two-repo and minimal-image reap rows (no docker daemon or alpine/git image)\n'
+    skip "the two-repo and minimal-image reap rows (no docker daemon or alpine/git image)" runtime
 fi
 
 # ----------------------------------------------------------- leak envelope ---
@@ -6961,7 +7253,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         fail "this run leaked $lk_left anonymous volume(s) of the $lk_seen it created: $(anon_survivors | tr '\n' ' ')"
     fi
 else
-    printf '  skip  the run-wide anonymous-volume ledger (no docker daemon or alpine/git image)\n'
+    skip "the run-wide anonymous-volume ledger (no docker daemon or alpine/git image)" runtime
 fi
 rm -f "$ANON_LEDGER"
 
@@ -7185,7 +7477,7 @@ if [ "$vv" = pass ]; then
         && ok "rejected: four agreeing versions that are not semver" \
         || fail "ACCEPTED but must be rejected: an agreeing version that no installer can read"
 else
-    printf '  skip  the version fixtures (they are derived from the shipped files, which failed above)\n'
+    skip "the version fixtures (they are derived from the shipped files, which failed above)" conditional
 fi
 rm -rf "$vf"
 
@@ -7294,7 +7586,7 @@ if [ "$rel_readable" -eq 1 ]; then
             && ok "rejected: the same file with the released version's heading removed" \
             || fail "ACCEPTED but must be rejected: a CHANGELOG carrying no entry for the released version"
     else
-        printf '  skip  the removed-entry fixture (it removes an entry the file does not carry)\n'
+        skip "the removed-entry fixture (it removes an entry the file does not carry)" conditional
     fi
 
     link_state=$(changelog_link "$CHLOG" "$rel_version")
@@ -7309,7 +7601,7 @@ if [ "$rel_readable" -eq 1 ]; then
             && ok "rejected: the same file with that definition removed - the state 1.1.0 shipped in" \
             || fail "ACCEPTED but must be rejected: a released version with no link-reference definition"
     else
-        printf '  skip  the removed-definition fixture (it removes a definition the file does not carry)\n'
+        skip "the removed-definition fixture (it removes a definition the file does not carry)" conditional
     fi
 
     # --- V69  a MAJOR release owes a breaking entry, and it owes the two -----
@@ -7354,14 +7646,14 @@ if [ "$rel_readable" -eq 1 ]; then
             ok "rejected: a major release entry with the sentence about what does not revert itself removed"
         fi
     elif [ "$rel_minorpatch" = "0.0" ] && [ "$rel_major" != 0 ]; then
-        printf '  skip  the breaking-entry rows (the released version has no CHANGELOG entry, which the row above already names)\n'
+        skip "the breaking-entry rows (the released version has no CHANGELOG entry, which the row above already names)" conditional
     else
-        printf '  skip  the breaking-entry rows (%s is not a major release)\n' "$rel_version"
+        skip "the breaking-entry rows ($rel_version is not a major release)" conditional
     fi
 
     rm -rf "$nf"
 else
-    printf '  skip  the entry and link-definition rows (plugin.json declares no readable version: %s)\n' "$rel_version"
+    skip "the entry and link-definition rows (plugin.json declares no readable version: $rel_version)" conditional
 fi
 
 # The shape a release body must have: non-empty, and carrying neither the
@@ -7497,9 +7789,32 @@ sh "$SECTION" >/dev/null 2>&1
 section "schema"
 
 if ! python3 -c 'import jsonschema' 2>/dev/null; then
-    printf '  skip  schema checks (python3 + jsonschema not installed)\n'
+    skip "schema checks (python3 + jsonschema not installed)" runtime
 else
-    python3 .github/scripts/check_schema.py || fails=$((fails + 1))
+    # Run it through the shell's own counters rather than past them. Left as a
+    # bare invocation, its rows printed straight to the terminal and the summary
+    # at the bottom reported the shell's total as though it were the run's -
+    # `all 670 checks passed` over a run in which 804 passed. A summary that
+    # undercounts by 134 is the same defect as one that counts skips as passes,
+    # and both were invisible for the same reason: nothing added them up.
+    cs_out=$(python3 .github/scripts/check_schema.py 2>&1); cs_rc=$?
+    printf '%s\n' "$cs_out"
+    cs_ok=$(  printf '%s\n' "$cs_out" | grep -c '^  ok'   || true)
+    cs_fail=$(printf '%s\n' "$cs_out" | grep -c '^  FAIL' || true)
+    oks=$((oks + cs_ok))
+    if [ "$cs_rc" -ne 0 ]; then
+        if [ "$cs_fail" -gt 0 ]; then
+            fails=$((fails + cs_fail))
+        else
+            fails=$((fails + 1))
+        fi
+    fi
+    # ...and a schema run that printed nothing at all would otherwise pass
+    # silently, adding zero to both totals and leaving the summary honest about
+    # a number that covers nothing.
+    [ "$cs_ok" -gt 0 ] \
+        && ok "the schema checks contributed $cs_ok row(s) to this run's total, so the summary counts them" \
+        || fail "check_schema.py produced no rows, so the schema half of this suite is absent from the count"
 
     # The cross-check now reads references/reaping.md too, and that is exactly
     # why its sidecar keys are all lowercase: a backticked camelCase token that
@@ -7530,8 +7845,39 @@ fi
 # ---------------------------------------------------------------- result ----
 section "result"
 
+# A skipped row proves nothing about what it covers, so the summary says how
+# many there were before it says anything else. `all checks passed` over a run
+# that skipped ninety-nine of them is the reading this counter exists to remove.
+if [ "$skips" -gt 0 ]; then
+    # The unit is the BLOCK, and saying so matters: nine skipped blocks are two
+    # hundred and forty rows on the run this was measured against, and a summary
+    # reading "9 skipped" beside "565 ran" invites the arithmetic 565 + 9. A
+    # skipped block's rows are never counted, because nothing enumerates a row
+    # that did not run - so the honest statement is that they are missing, not
+    # how many are missing.
+    printf '  %s check(s) ran and passed; %s BLOCK(s) of checks were skipped\n' "$oks" "$skips"
+    printf '        the rows inside a skipped block never ran and are in no total above\n'
+fi
+
+# The enforcement half, opt-in and set by the CI job that is supposed to supply
+# these. Off by default because a developer on a laptop with no daemon should
+# get a report rather than a wall, and a gate that fails for someone it was not
+# written for is a gate that gets switched off.
+if runtime_gate "$skipped_runtime" "${STACKGRAFT_REQUIRE_RUNTIME:-0}"; then
+    printf '  FAIL  STACKGRAFT_REQUIRE_RUNTIME is set and these runtime prerequisites were absent:%s\n' \
+        "$skipped_runtime"
+    fails=$((fails + 1))
+elif [ -n "$skipped_runtime" ]; then
+    printf '  note  runtime prerequisites were absent, so these did not run:%s\n' "$skipped_runtime"
+    printf '        set STACKGRAFT_REQUIRE_RUNTIME=1 to make that a failure rather than a note\n'
+fi
+
 if [ "$fails" -eq 0 ]; then
-    printf '  all checks passed\n\n'
+    if [ "$skips" -eq 0 ]; then
+        printf '  all %s checks passed\n\n' "$oks"
+    else
+        printf '  the %s checks that ran passed; %s block(s) skipped and unaccounted for\n\n' "$oks" "$skips"
+    fi
     exit 0
 fi
 printf '  %s check(s) failed\n\n' "$fails"

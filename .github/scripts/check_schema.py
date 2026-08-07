@@ -634,7 +634,27 @@ def booleans(doc, unit, store):
 SHARED_MD = SKILL / "references/shared-state.md"
 VERDICT_HEADING = "## The verdict"
 VERDICT_TOKEN = re.compile(r"\*\*(REFUSE|REUSE|ISOLATE)\b")
-STEP_POINTER = re.compile(r"\bstep (\d+)\b")
+# A pointer is a pointer whether the number is written as a digit or as a word.
+# `\bstep (\d+)\b` alone read "answered at step five" as no pointer at all, which
+# a third adversarial pass measured green: `points_at` stayed [1] and the whole
+# suite ran 774 ok / 0 FAIL while the cell handed X-refused pairs to the copy.
+STEP_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+STEP_POINTER = re.compile(
+    r"\bstep (\d+|%s)\b" % "|".join(STEP_WORDS), re.I
+)
+
+
+def step_numbers(cell):
+    """Every step this cell hands a pair on to, digits and words alike."""
+    out = set()
+    for token in STEP_POINTER.findall(cell):
+        token = token.lower()
+        out.add(int(token) if token.isdigit() else STEP_WORDS[token])
+    return sorted(out)
+
 
 # The three spellings an action cell can offer isolation in. A NUMBERED pointer
 # is only one of them, and a guard that reads the number alone is narrower than
@@ -644,7 +664,21 @@ STEP_POINTER = re.compile(r"\bstep (\d+)\b")
 # pointer row silent and `verdict()` unmoved. Only the byte-literal anchor below
 # saw them - and a byte-literal anchor updated in the same commit as the text it
 # anchors sees nothing at all, which is how both trees ran 126 ok / 0 FAIL.
-ISOLATING_ACTION = re.compile(r"isolat|\bcop(?:y|ies|ied)\b|\bseeded\b", re.I)
+#
+# The prose reading is a CLOSED VOCABULARY, and its width is the whole guard: a
+# third pass wrote the offer as "run a dedicated store" - this project's own
+# 1.1.0 phrase for the fallback, still in step 5's shipped cell - and as "a
+# private clone", and neither word was in the list, so both ran 774 ok / 0 FAIL.
+# The list below names every mechanism word the shipped files use for a second
+# store. A word not in it is a word this row cannot see, which is why the
+# vocabulary is stated here rather than spread across the rows that use it.
+ISOLATING_ACTION = re.compile(
+    r"isolat|\bcop(?:y|ies|ied)\b|\bseeded\b|\bclon(?:e|es|ed|ing)\b"
+    r"|\bdedicated\b|\breplicas?\b|\bduplicat\w*|\bsnapshot\w*"
+    r"|\b(?:own|private|separate|second|another|its own|dedicated)\s+"
+    r"(?:store|instance|database|namespace|volume)\b",
+    re.I,
+)
 # A closed list, because the mentions in the shipped cell are all counterfactual:
 # "A copy answers X for NO substrate", "reaches NO step that isolates", "a hazard
 # NO copy ends". An isolation mechanism named in a clause that negates nothing is
@@ -697,7 +731,7 @@ def step_table(text=None):
             "condition": cells[1].replace("*", ""),
             "action": cells[2],
             "verdicts": VERDICT_TOKEN.findall(cells[2]),
-            "points_at": sorted({int(n) for n in STEP_POINTER.findall(cells[2])}),
+            "points_at": step_numbers(cells[2]),
         }
     return rows
 
@@ -807,25 +841,29 @@ def verdict(doc, unit, store):
 
 
 def isolation_offered_for_x(steps):
-    """Every way the X refusal's own cell can offer isolation, not just one.
+    """The three spellings of the X refusal's own cell offering isolation.
 
     SSS-A2 and CI-1 read over the shipped table: a pair carrying X and not W
     must not cause a store copy to be provisioned, and no reference may offer a
     copy as a remedy for X alone. So the step that refuses X must not offer
-    isolation BY ANY SPELLING. Three of them, and each has its own negative:
+    isolation. Three readings, and each has its own negative:
 
-      pointer: a numbered hand-off to a step whose own action isolates. This is
-               the shipped pass-1 defect and the only one the first guard saw.
+      pointer: a hand-off to a step whose own action isolates, the number
+               written as a digit or as a word. This is the shipped pass-1
+               defect and the only one the first guard saw.
       token:   a verdict token in this cell that is not a refusal, whether it is
                the first or a second one stated beside `**REFUSE**`.
-      prose:   an isolation mechanism named in a clause that negates nothing -
-               no step number, no bold token, and invisible to both rows above.
+      prose:   a mechanism from ISOLATING_ACTION's vocabulary, named in a clause
+               that negates nothing - no step number, no bold token, and
+               invisible to both rows above.
 
-    The prose reading is polarity and not a keyword sweep, because the shipped
-    cell names a copy three times and refuses every time. Its limit is stated
-    rather than covered, the way this project states its others: a clause that
-    offers a copy AND carries an unrelated negation reads as negated here. The
-    two structural readings above are what stop that being the whole guard.
+    TWO LIMITS, stated rather than covered, the way this project states its
+    others. The prose reading is polarity: a clause that offers a copy AND
+    carries an unrelated negation reads as negated here. And it is a CLOSED
+    VOCABULARY: a mechanism named in a word ISOLATING_ACTION does not list is a
+    mechanism this function cannot see, which is not a hypothetical - two such
+    words were measured shipping green before that list was widened. The two
+    structural readings above are what stop either being the whole guard.
     """
     competes = step_for(steps, r"X = yes")
     if competes is None:
@@ -923,18 +961,64 @@ if any(r.startswith("token:") for r in _token):
 else:
     fail(f"a second verdict token in the X cell is invisible: the cell read as {_token}")
 
+# 4. The offer written in this project's OWN 1.1.0 vocabulary. "run a dedicated
+#    store" is the phrase step 5's shipped cell still uses for the fallback, so
+#    it is the spelling a future edit is likeliest to reach for - and a third
+#    adversarial pass measured it running 774 ok / 0 FAIL / exit 0, because
+#    "dedicated" was in no list this file held.
+_own_words_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, then re-enter at step 1 "
+    "with X evaluated again. Where the identity knob is absent, run a dedicated store "
+    "for the pair instead."
+)
+_own_words = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _own_words_action)))
+if any(r.startswith("prose:") for r in _own_words):
+    ok("rejected: step 2 offering a dedicated store for X, in the same words step 5 uses for it")
+else:
+    fail(f"an offer in this project's own fallback vocabulary is invisible: the cell read as {_own_words}")
+
+# 5. ...and in a synonym neither shipped file uses, because the vocabulary has
+#    to cover the mechanism rather than the phrasing that happens to be in use.
+_synonym_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, then re-enter at step 1 "
+    "with X evaluated again. Where the identity knob is absent, the pair is answered "
+    "by a private clone of the base store."
+)
+_synonym = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _synonym_action)))
+if any(r.startswith("prose:") for r in _synonym):
+    ok("rejected: step 2 offering a private clone for X, in a word no shipped file uses")
+else:
+    fail(f"an offer written as a clone is invisible: the cell read as {_synonym}")
+
+# 6. The pointer with its number spelled as a WORD. Same defect as negative 1,
+#    one character class away, and `\bstep (\d+)\b` read it as no pointer at all.
+_word_pointer_action = (
+    "**REFUSE** a plain attach. Supply a distinct identity, then re-enter at step 1 "
+    "with X evaluated again. A pair that file refuses — a shared queue, a lock, a "
+    "replication slot, a scheduler singleton — is answered at step five."
+)
+_word_pointer = isolation_offered_for_x(step_table(with_action(_clean_text, X_CONDITION, _word_pointer_action)))
+if any(r.startswith("pointer:") for r in _word_pointer):
+    ok("rejected: step 2 handing an X-refused pair to 'step five', the number spelled as a word")
+else:
+    fail(f"a word-spelled step pointer is invisible: the cell read as {_word_pointer}")
+
 # ...and the negatives above are worthless if the rewriter silently landed
 # nowhere, which is the failure mode a byte-literal injection has. Each one must
 # have CHANGED the cell it claims to have rewritten.
+_injections = (
+    _pointer_action, _prose_action, _token_action,
+    _own_words_action, _synonym_action, _word_pointer_action,
+)
 _landed = sum(
     1
-    for a in (_pointer_action, _prose_action, _token_action)
+    for a in _injections
     if step_table(with_action(_clean_text, X_CONDITION, a))[COMPETES]["action"] != STEPS[COMPETES]["action"]
 )
-if _landed == 3:
-    ok("all three step-2 rewrites landed on the cell the condition selects, so each negative tested a changed table")
+if _landed == len(_injections):
+    ok(f"all {_landed} step-2 rewrites landed on the cell the condition selects, so each negative tested a changed table")
 else:
-    fail(f"only {_landed} of the three step-2 rewrites changed the action cell, so the rest asserted nothing")
+    fail(f"only {_landed} of the {len(_injections)} step-2 rewrites changed the action cell, so the rest asserted nothing")
 
 # Not offering isolation is not the same as SAYING a pair terminates here, and
 # every row above is satisfied by a cell that mentions no copy at all. So the

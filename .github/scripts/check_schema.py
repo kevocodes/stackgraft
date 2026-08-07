@@ -1182,5 +1182,72 @@ if len(referenced_in(_new_prose)) >= 4:
 else:
     fail(f"coordination-identity.md names only {len(referenced_in(_new_prose))} manifest field(s), so the cross-check covers nothing there")
 
+# The same three rows for this slice's new file, and they are not redundant with
+# the block above: a references directory that stopped being globbed, or a file
+# that was never added to it, leaves every row up there green. Each new file
+# earns its own proof that the cross-check can fail ON IT.
+PROVIDERS_MD = SKILL / "references/isolation-providers.md"
+if not PROVIDERS_MD.exists():
+    fail("references/isolation-providers.md is absent, so its field names are unchecked")
+else:
+    _prov_prose = PROVIDERS_MD.read_text()
+    _prov_missing = sorted(referenced_in(_prov_prose) - names)
+    if _prov_missing:
+        fail(f"isolation-providers.md names fields absent from the schema: {_prov_missing}")
+    elif referenced_in(_prov_prose + " `notAManifestField` ") - names == {"notAManifestField"}:
+        ok("rejected: isolation-providers.md backticking a camelCase token the schema does not define")
+    else:
+        fail("the cross-check cannot fail on isolation-providers.md, so its field names are unchecked")
+
+    if len(referenced_in(_prov_prose)) >= 2:
+        ok(f"isolation-providers.md names {len(referenced_in(_prov_prose))} manifest field(s), all of which exist")
+    else:
+        fail(f"isolation-providers.md names only {len(referenced_in(_prov_prose))} manifest field(s), so the cross-check covers nothing there")
+
+# The provider record itself: the schema must admit a copy reference beside the
+# in-instance one, both in one entry, and an entry carrying neither. Three
+# acceptances and three rejections, because a property that is merely OPTIONAL is
+# satisfied by a schema that never validates it at all.
+_iso_base = {"substrate": "x", "locality": {"value": "local", "reason": "r"},
+             "isolation": {"mechanism": "none", "confidence": "declared"}}
+
+
+def _store_case(iso):
+    m = json.loads(json.dumps(example))
+    m["backingStores"] = {"probe": {**_iso_base, "isolation": iso}}
+    m["services"] = {}
+    return m
+
+
+def _validates(instance):
+    return not list(validator.iter_errors(instance))
+
+
+_good_provider = {"runtime": "docker", "sourceVolume": "v", "image": "i",
+                  "baseInstance": "b", "confidence": "declared"}
+for _label, _iso, _want in [
+    ("a store carrying an in-instance record and a provider reference in one entry",
+     {"mechanism": "database", "command": "c {{isolationIdent}}", "teardownCommand": "d {{isolationIdent}}",
+      "confidence": "declared", "provider": _good_provider}, True),
+    ("a store carrying a provider reference and no in-instance mechanism",
+     {"mechanism": "none", "confidence": "declared", "provider": _good_provider}, True),
+    ("a store carrying neither, which is the pair that refuses",
+     {"mechanism": "none", "confidence": "declared"}, True),
+    ("a provider reference with no sourceVolume, which is a copy with nothing to copy",
+     {"mechanism": "none", "confidence": "declared",
+      "provider": {"runtime": "docker", "image": "i", "baseInstance": "b", "confidence": "declared"}}, False),
+    ("a provider reference naming a runtime this contract does not define",
+     {"mechanism": "none", "confidence": "declared",
+      "provider": {**_good_provider, "runtime": "managed"}}, False),
+    ("a provider reference carrying an engine-shaped extra field",
+     {"mechanism": "none", "confidence": "declared",
+      "provider": {**_good_provider, "engine": "postgres"}}, False),
+]:
+    _valid = _validates(_store_case(_iso))
+    if _valid is _want:
+        ok(("accepted: " if _want else "rejected: ") + _label)
+    else:
+        fail(("REJECTED but must be accepted: " if _want else "ACCEPTED but must be rejected: ") + _label)
+
 print()
 sys.exit(1 if fails else 0)

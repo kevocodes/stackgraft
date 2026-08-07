@@ -73,7 +73,7 @@ has_shebang() { head -1 "$1" | grep -q '^#!/bin/sh$'; }
 # fewer checks read exactly like fewer problems. The four are named, and the
 # number of them that is missing must be zero, which is the shape the anchor
 # fixtures in reaping.md are already checked with.
-SHIPPED_SCRIPTS='pick-port.sh fingerprint.sh with-lock.sh reap.sh'
+SHIPPED_SCRIPTS='pick-port.sh fingerprint.sh with-lock.sh reap.sh provider-docker.sh'
 scripts_missing() {
     _n=0
     for _s in $SHIPPED_SCRIPTS; do
@@ -82,17 +82,26 @@ scripts_missing() {
     printf '%s\n' "$_n"
 }
 [ "$(scripts_missing "$SKILL/scripts")" -eq 0 ] \
-    && ok "all four shipped scripts are present: $SHIPPED_SCRIPTS" \
-    || fail "$(scripts_missing "$SKILL/scripts") of the four shipped scripts are missing from $SKILL/scripts"
+    && ok "all five shipped scripts are present: $SHIPPED_SCRIPTS" \
+    || fail "$(scripts_missing "$SKILL/scripts") of the five shipped scripts are missing from $SKILL/scripts"
 
 # ...and the inventory can notice one going away, the same way the anchor
-# fixture check is proven: a copy with one entry removed.
+# fixture check is proven: a copy with one entry removed. Two of them now, and
+# the second is not redundant: the first proves the LOOP can count a gap, the
+# second proves the named list is the one this slice extended. An inventory that
+# still read four names would report all four present with the fifth script
+# deleted, and fewer checks read exactly like fewer problems.
 si=$(mktemp -d)
 cp "$SKILL"/scripts/*.sh "$si/"
 rm -f "$si/reap.sh"
 [ "$(scripts_missing "$si")" -ge 1 ] \
     && ok "rejected: a scripts directory with reap.sh deleted" \
     || fail "the script inventory cannot notice a deleted script"
+cp "$SKILL"/scripts/*.sh "$si/"
+rm -f "$si/provider-docker.sh"
+[ "$(scripts_missing "$si")" -ge 1 ] \
+    && ok "rejected: a scripts directory with provider-docker.sh deleted" \
+    || fail "the script inventory cannot notice the provider going away"
 rm -rf "$si"
 
 for f in "$SKILL"/scripts/*.sh; do
@@ -2530,6 +2539,898 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     rm -rf "$ck"
 else
     printf '  skip  labelled-launch and minimal-image rows (no docker daemon or alpine/git image)\n'
+fi
+
+# -------------------------------------------------- provider and copies -----
+section "provider and copies"
+
+PROVIDER="$SKILL/scripts/provider-docker.sh"
+PROVIDERS_DOC="$SKILL/references/isolation-providers.md"
+
+# The presence guard first, and it is a FAIL rather than a skip. Every row below
+# reads one of these two files, and a row that reads an empty file reports its
+# rule satisfied by nothing at all - the false green slices 1b, 2 and 3 each
+# found once. Saying so once here is what stops the thirty rows below from each
+# saying it differently.
+[ -f "$PROVIDER" ]     || fail "scripts/provider-docker.sh is absent, so every provider row below reads nothing"
+[ -f "$PROVIDERS_DOC" ] || fail "references/isolation-providers.md is absent, so every provider row below reads an empty file"
+
+# Prints the lines of a markdown section: from a heading matching $2 up to the
+# next `## `. Position IS the assertion for three of the rules here - the
+# contract section may name no engine while the evidence section must, and the
+# residual must sit where the live copy is stated - so the rows read a section
+# and never the whole file. Same repair slice 2 made for the narrowing rule.
+doc_section() {
+    awk -v want="$2" '
+        /^## / { inside = (index($0, want) > 0); next }
+        inside { print }
+    ' "$1" 2>/dev/null
+}
+
+# Every engine this repository has ever named, plus the ones a reader would
+# reach for. The contract may name none of them: cloning state is the same
+# operation for all of them, and a contract that enumerates them is the finite
+# prose table this change removes, re-entered by another door.
+ENGINES='postgres|postgresql|timescale|redis|mongo|mysql|mariadb|kafka|rabbitmq|elasticsearch|opensearch|minio|nats|sqlite|clickhouse|cassandra|memcached|valkey|pgvector'
+
+# --- IP-1  the contract varies by runtime and names no substrate -------------
+prov_contract=$(doc_section "$PROVIDERS_DOC" 'The contract')
+if [ -z "$prov_contract" ]; then
+    fail "isolation-providers.md has no '## The contract' section, so the engine-name row reads nothing"
+elif printf '%s\n' "$prov_contract" | grep -qiE "$ENGINES"; then
+    fail "the contract section names a store engine: $(printf '%s\n' "$prov_contract" | grep -niE "$ENGINES" | head -1)"
+else
+    ok "the contract section names no store engine"
+fi
+
+# ...and the row can see one. The fixture is the contract section with a single
+# engine name added, so it exercises the condition the row asserts rather than
+# merely failing for being a fixture.
+pcf=$(mktemp -d)
+{ printf '%s\n' "$prov_contract"; printf '| provision | copy the postgres data directory |\n'; } > "$pcf/named.md"
+grep -qiE "$ENGINES" "$pcf/named.md" \
+    && ok "rejected: a contract row naming an engine, which is the per-engine table by another door" \
+    || fail "the engine-name grep cannot fire on the contract section"
+
+# The three operations, by name, and exactly three. A fourth is what lets a
+# provider certify its own output, which is the property DS29 spent a whole
+# rationale removing from reap.sh.
+prov_ops=0
+for _op in provision address destroy; do
+    printf '%s\n' "$prov_contract" | grep -qF "\`$_op\`" && prov_ops=$((prov_ops + 1))
+done
+[ "$prov_ops" -eq 3 ] \
+    && ok "the contract names all three operations: provision, address, destroy" \
+    || fail "the contract names $prov_ops of the three operations"
+
+# ...and there is no fourth, which is asserted over the TABLE rather than over the
+# prose. A grep for the word was the first shape and it fired on the file's own
+# sentence saying there is no fourth operation - an intent-blind pattern pointing
+# the wrong way, which is the false RED slice 3 found in another guise. The set of
+# operations the contract table defines is what the rule is about, so that set is
+# what the row reads, and it must be exactly the three.
+prov_defined=$(printf '%s\n' "$prov_contract" \
+    | awk -F'|' '/^\| *`/ { gsub(/[ `]/, "", $2); if ($2 != "") print $2 }' | sort -u | tr '\n' ' ')
+[ "$prov_defined" = "address destroy provision " ] \
+    && ok "the contract table defines exactly three operations and no fourth: $prov_defined" \
+    || fail "the contract table defines '$prov_defined', not exactly address, destroy and provision"
+
+{ printf '%s\n' "$prov_contract"; printf '| `verify` | the same triple | whether the copy answered |\n'; } > "$pcf/fourth.md"
+[ "$(awk -F'|' '/^\| *`/ { gsub(/[ `]/, "", $2); if ($2 != "") print $2 }' "$pcf/fourth.md" | sort -u | tr '\n' ' ')" != "address destroy provision " ] \
+    && ok "rejected: a contract table gaining a fourth operation, which lets the provider certify its own output" \
+    || fail "the operation-set row cannot notice a fourth row in the table"
+
+# --- IP-1  the second runtime, on paper, before the shipped one counts -------
+# A contract that cannot describe a second runtime has failed the premise it
+# exists for, so both declared runtimes must answer all three operations AND be
+# marked unbuilt. Marked matters as much as answered: an unmarked paper answer
+# reads as a shipped one.
+prov_paper=$(doc_section "$PROVIDERS_DOC" 'second runtime')
+paper_missing=0
+for _r in Kubernetes host-native; do
+    printf '%s\n' "$prov_paper" | grep -qiF "$_r" || paper_missing=$((paper_missing + 1))
+done
+printf '%s\n' "$prov_paper" | grep -qi 'unbuilt' || paper_missing=$((paper_missing + 1))
+for _op in provision address destroy; do
+    printf '%s\n' "$prov_paper" | grep -qF "$_op" || paper_missing=$((paper_missing + 1))
+done
+[ -n "$prov_paper" ] && [ "$paper_missing" -eq 0 ] \
+    && ok "Kubernetes and host-native each answer all three operations and both are marked unbuilt" \
+    || fail "the paper description of a second runtime is missing $paper_missing of its six parts"
+
+{ printf '%s\n' "$prov_paper" | grep -viF 'unbuilt'; } > "$pcf/nomark.md"
+grep -qi 'unbuilt' "$pcf/nomark.md" \
+    && fail "the unbuilt fixture still carries the word, so the row proves nothing" \
+    || ok "rejected: a paper runtime with the unbuilt marking removed, which reads as a shipped one"
+
+# --- V47  DS36: a candidate, not a guarantee ---------------------------------
+# Three fixtures, every one of which must FAIL. The wording is the assertion
+# here: a run that says "enough space" has promised a property no run holds,
+# and it holds it no better for having measured carefully first.
+#
+# The pattern is NARROWER than "any word about a guarantee", and that is measured
+# rather than chosen for style. The obvious spelling - a bare `guaranteed` - goes
+# red against text that is already correct: `references/discovery.md` says
+# "substituting this checkout is the one answer guaranteed to be wrong" about
+# something else entirely. So every alternative below carries its space context,
+# and the shipped line that would have failed is a standing row underneath.
+GUARANTEE='(enough|sufficient) (disk )?space|space is guaranteed|guaranteed to fit|will fit|is reserved for (the|this) copy|reserves? [0-9]+ ?[KMGT]?i?B|there is room for'
+if grep -rniE "$GUARANTEE" "$SKILL" README.md docs SECURITY.md >/dev/null 2>&1; then
+    fail "a shipped file promises a space guarantee: $(grep -rniE "$GUARANTEE" "$SKILL" README.md docs SECURITY.md | head -1)"
+else
+    ok "no shipped file promises enough space, a guarantee, a fit, or a reservation"
+fi
+printf 'The run confirms there is enough space and the copy will fit.\n' > "$pcf/promise.md"
+grep -qiE "$GUARANTEE" "$pcf/promise.md" \
+    && ok "rejected: wording that promises the guarantee no run can hold" \
+    || fail "the guarantee grep cannot fire"
+
+# ...and it must NOT fire on the shipped sentence that made it narrow. Frozen as
+# a literal, because a later widening of the pattern is exactly the change that
+# would turn correct prose red and get the pattern loosened again in the wrong
+# direction.
+printf '%s\n' 'substituting this checkout is the one answer guaranteed to be wrong' > "$pcf/legit.md"
+grep -qiE "$GUARANTEE" "$pcf/legit.md" \
+    && fail "the guarantee grep fires on a shipped sentence about something else, so it will be loosened rather than obeyed" \
+    || ok "the guarantee grep leaves alone a shipped sentence that guarantees something other than space"
+
+# The blind spot, because silence about it reads as completeness. Asserted on
+# ONE line carrying every claim, the V38 shape: three independent greps would
+# report a stated blind spot over a file that states three unrelated things.
+if grep -qiE "another worktree's cop.*another repositor.*(consumer|competing|else)" "$PROVIDERS_DOC" 2>/dev/null; then
+    ok "the free-space report states its blind spot on one line: this run's peers, other repositories, everything else on the disk"
+else
+    fail "isolation-providers.md states no blind spot, so its numbers read as complete"
+fi
+{ grep -viE "another worktree's cop.*another repositor" "$PROVIDERS_DOC" 2>/dev/null; } > "$pcf/blind.md"
+if [ ! -s "$pcf/blind.md" ]; then
+    fail "the blind-spot fixture is empty, so stripping the sentence proves nothing"
+elif grep -qiE "another worktree's cop.*another repositor.*(consumer|competing|else)" "$pcf/blind.md"; then
+    fail "the blind-spot fixture still carries the statement"
+else
+    ok "rejected: a report with the blind-spot statement removed, which reads as completeness"
+fi
+
+# A host-global total is the number no run can produce, and it is the one a
+# reader most wants. The pattern is narrow: a total ACROSS the host, not the
+# per-filesystem figure the run really measures.
+HOSTGLOBAL='host-global (total|budget|figure)|total (space|bytes) (on|across) (the|this) host|all copies on this host total'
+if grep -rniE "$HOSTGLOBAL" "$SKILL" README.md docs SECURITY.md >/dev/null 2>&1; then
+    fail "a shipped file asserts a host-global total: $(grep -rniE "$HOSTGLOBAL" "$SKILL" README.md docs SECURITY.md | head -1)"
+else
+    ok "no shipped file asserts a host-global total, which no run can produce"
+fi
+printf 'All copies on this host total 41 GB.\n' > "$pcf/global.md"
+grep -qiE "$HOSTGLOBAL" "$pcf/global.md" \
+    && ok "rejected: a report asserting a host-global total" \
+    || fail "the host-global grep cannot fire"
+
+# And the positive the three negatives are worthless without: the file says the
+# word. A file that promised nothing and stated nothing would pass all three
+# rows above.
+grep -qiE 'candidate, not a guarantee' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "isolation-providers.md says what the check produces: a candidate, not a guarantee" \
+    || fail "isolation-providers.md never states that the free-space check is a candidate rather than a guarantee"
+
+# --- V46  two filesystems, and the one that bound the decision is named ------
+for _need in "the runtime's data root" "the host filesystem" "bound"; do
+    grep -qiF "$_need" "$PROVIDERS_DOC" 2>/dev/null \
+        && ok "the space check documents: $_need" \
+        || fail "isolation-providers.md never mentions $_need"
+done
+
+# The script must interrogate BOTH, and the k is the whole safety of the
+# comparison. POSIX df -P reports 512-byte blocks and busybox df -P reports
+# 1024-byte ones; measured on this host, `df -P` said 330306512 for the same
+# filesystem `df -Pk` said 165152016 for. Reading each side in its own unit
+# reports the host as twice as free as it is, which is the permissive
+# direction - so a bare `df -P` in the shipped script fails this row.
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so the two-filesystem row reads nothing"
+elif ! grep -q 'df -Pk' "$PROVIDER"; then
+    fail "the provider does not measure with df -Pk, so its two figures may be in different units"
+elif grep -qE 'df -P[^k]' "$PROVIDER"; then
+    fail "the provider measures with a bare df -P somewhere, which is 512-byte blocks on one side and 1024 on the other"
+elif [ "$(grep -c 'df -Pk' "$PROVIDER")" -lt 2 ]; then
+    fail "the provider measures only one filesystem, which is the working directory's check this requirement exists to replace"
+else
+    ok "the provider measures both filesystems, and both in the same unit (df -Pk)"
+fi
+
+printf 'rt=$(docker run --rm alpine df -P / | awk "NR==2{print \\$4}")\n' > "$pcf/onefs.sh"
+if grep -q 'df -Pk' "$pcf/onefs.sh"; then
+    fail "the one-filesystem fixture uses -Pk, so it exercises the wrong condition"
+elif [ "$(grep -c 'df -P' "$pcf/onefs.sh")" -ge 2 ]; then
+    fail "the one-filesystem fixture measures two, so it exercises the wrong condition"
+else
+    ok "rejected: a space check reading one filesystem, in blocks whose size it never pinned"
+fi
+
+# --- Q2 / 4a.12  the copy is live, and the residual is stated not covered ----
+prov_live=$(doc_section "$PROVIDERS_DOC" 'live')
+live_missing=0
+printf '%s\n' "$prov_live" | grep -qi 'crash-consistent' || live_missing=$((live_missing + 1))
+printf '%s\n' "$prov_live" | grep -qi 'fsync' || live_missing=$((live_missing + 1))
+[ -n "$prov_live" ] && [ "$live_missing" -eq 0 ] \
+    && ok "the live-copy statement and its crash-consistency residual sit in one section" \
+    || fail "the live-copy section is missing $live_missing of crash-consistency and the fsync-ordering residual"
+
+# The four forbidden words, each its own fixture. A residual described as
+# covered is a residual nobody will read twice.
+RESIDUAL_EXCUSE='residual is (covered|mitigated|handled)|(covered|mitigated|handled|unlikely) residual|crash consistency is (covered|handled)|safe for every engine|unlikely to (matter|affect|happen)'
+if grep -rniE "$RESIDUAL_EXCUSE" "$SKILL" README.md docs SECURITY.md >/dev/null 2>&1; then
+    fail "a shipped file excuses the crash-consistency residual: $(grep -rniE "$RESIDUAL_EXCUSE" "$SKILL" README.md docs SECURITY.md | head -1)"
+else
+    ok "no shipped file describes the residual as covered, mitigated, handled or unlikely, and none claims a live copy is safe for every engine"
+fi
+excused=0
+for _w in 'The residual is covered by verification.' \
+          'That residual is mitigated in practice.' \
+          'The residual is handled below.' \
+          'This is unlikely to matter for most engines.' \
+          'A live copy is safe for every engine we tested.'; do
+    printf '%s\n' "$_w" > "$pcf/excuse.md"
+    grep -qiE "$RESIDUAL_EXCUSE" "$pcf/excuse.md" && excused=$((excused + 1))
+done
+[ "$excused" -eq 5 ] \
+    && ok "rejected: all five excuses for the residual - covered, mitigated, handled, unlikely, and safe for every engine" \
+    || fail "the residual grep caught only $excused of the five excuses"
+
+# --- V54  T5: measured on this run, and nothing predicted --------------------
+# Narrow for the same measured reason the guarantee pattern is. A bare
+# `worst case` goes red against `references/reaping.md`, which states the lock's
+# acquisition bound as "20 seconds worst case, never an unbounded wait" - a
+# stated bound of a deterministic algorithm, which is the opposite of a
+# prediction and is the kind of statement this repository wants more of. So
+# every alternative carries its copy context, and that shipped line is a standing
+# row underneath.
+# It was narrowed TWICE, and the second time is the more interesting one. With
+# the copy context alone it still fired on `references/discovery.md`'s "the thing
+# worth cloning usually lives in the main worktree" - an adverb about WHERE, not
+# about how long. So a prediction must also carry a time: an adverb of frequency
+# followed by a figure in seconds, minutes or hours. Both shipped lines are
+# standing rows underneath, because a pattern that turns correct prose red is a
+# pattern that gets loosened rather than obeyed.
+DURATION_CLAIM='(cop(y|ies|ying|ied)|clone|cloning|provision(ing|ed)?|seed(ing|ed)?)[^.]{0,40}(typically|usually|normally|on average|about|around|roughly)[^.]{0,15}[0-9]+ ?(s\b|sec|min|hour|h\b)|typically takes[^.]{0,15}[0-9]+ ?(s\b|sec|min|hour)|(expected|estimated|typical|predicted) (copy|clone|provision) (time|duration)|worst[- ]case[^.]{0,30}(cop|clone|provision)|(cop|clone|provision)[^.]{0,30}worst[- ]case'
+if grep -rniE "$DURATION_CLAIM" "$SKILL" README.md docs SECURITY.md >/dev/null 2>&1; then
+    fail "a shipped file states an expected duration: $(grep -rniE "$DURATION_CLAIM" "$SKILL" README.md docs SECURITY.md | head -1)"
+else
+    ok "no shipped file states an expected, typical, or worst-case duration"
+fi
+predicted=0
+for _p in 'A four-store copy typically 51 s.' \
+          'Copying a 10 GB store typically takes 42 s.' \
+          'The expected copy time for this store is under a minute.' \
+          'Worst-case, copying all four stores is about a minute.'; do
+    printf '%s\n' "$_p" > "$pcf/predict.md"
+    grep -qiE "$DURATION_CLAIM" "$pcf/predict.md" && predicted=$((predicted + 1))
+done
+[ "$predicted" -eq 4 ] \
+    && ok "rejected: all four shapes of a predicted duration - typical, takes, expected, and worst case" \
+    || fail "the duration grep caught only $predicted of the four predictions"
+
+# ...and it must NOT fire on either shipped line that made it narrow. Frozen as
+# literals: these two are what the pattern was measured against, and a later
+# widening that turns them red is the change that gets the rule loosened.
+printf '%s\n' 'The whole acquisition spends at most two of those bounds - 20 seconds worst case, never an unbounded wait.' > "$pcf/bound.md"
+grep -qiE "$DURATION_CLAIM" "$pcf/bound.md" \
+    && fail "the duration grep fires on a stated algorithmic bound, which is the opposite of a prediction" \
+    || ok "the duration grep leaves alone a stated bound of a deterministic algorithm"
+printf '%s\n' 'e.g. cloning node_modules instead of reinstalling; the thing worth cloning usually lives in the main worktree.' > "$pcf/adverb.md"
+grep -qiE "$DURATION_CLAIM" "$pcf/adverb.md" \
+    && fail "the duration grep fires on an adverb about where something lives rather than how long it takes" \
+    || ok "the duration grep leaves alone an adverb of place beside the word cloning"
+
+# A measurement MAY be cited as evidence the approach is viable, labelled as one
+# sample. The row is a conditional: cite a figure and you owe the label. Without
+# the transition test a file citing nothing would pass it.
+prov_cites=$(grep -cE '[0-9]+(\.[0-9]+)? ?(s\b|MB/s|GB\b|MB\b)' "$PROVIDERS_DOC" 2>/dev/null || printf 0)
+if [ "$prov_cites" -eq 0 ]; then
+    fail "isolation-providers.md cites no measurement at all, so the one-sample row covers nothing"
+elif grep -qi 'one sample' "$PROVIDERS_DOC"; then
+    ok "isolation-providers.md cites $prov_cites measured figure(s) and labels them as one sample"
+else
+    fail "isolation-providers.md cites $prov_cites measured figure(s) and labels none as one sample"
+fi
+{ grep -vi 'one sample' "$PROVIDERS_DOC" 2>/dev/null; } > "$pcf/unlabelled.md"
+if [ "$(grep -cE '[0-9]+(\.[0-9]+)? ?(s\b|MB/s|GB\b|MB\b)' "$pcf/unlabelled.md")" -eq 0 ]; then
+    fail "the one-sample fixture stripped the figures too, so it exercises the wrong condition"
+elif grep -qi 'one sample' "$pcf/unlabelled.md"; then
+    fail "the one-sample fixture still carries the label"
+else
+    ok "rejected: cited measurements with the one-sample label removed"
+fi
+
+# --- V65  four refusals, each by name, and none of them cascading ------------
+refusal_missing=0
+for _r in managed remote host-native undetermin; do
+    grep -qi "$_r" "$PROVIDERS_DOC" 2>/dev/null || refusal_missing=$((refusal_missing + 1))
+done
+[ "$refusal_missing" -eq 0 ] \
+    && ok "isolation-providers.md refuses managed, remote, host-native and undeterminable locality, each by name" \
+    || fail "$refusal_missing of the four refusal cases are unnamed in isolation-providers.md"
+
+grep -qiE 'unknown is not a permission|undetermin.*(treated as|read as) remote|remote.*undetermin' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "an undeterminable locality is read as remote: an unknown is not a permission" \
+    || fail "isolation-providers.md never says an undeterminable locality is treated as remote"
+
+grep -qiE 'does not cascade|other pairs are still classified|the unit.s other pairs' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "the refusal is stated as scoped: a refused store does not refuse its siblings" \
+    || fail "isolation-providers.md never states that a refusal does not cascade"
+
+grep -qiE 'unbuilt' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "host-native refuses as unbuilt rather than as impossible" \
+    || fail "isolation-providers.md never marks host-native as unbuilt"
+
+grep -qiE 'requests? no credential|no credential is requested|never requests? (a )?credential' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "the skill requests no credential for a managed store and attempts no in-place isolation against one" \
+    || fail "isolation-providers.md never states that no credential is requested for a managed store"
+
+# --- V66  every copy is owned, labelled, and named with its removal command ---
+label_missing=0
+for _l in stackgraft.labels stackgraft.repo stackgraft.worktree stackgraft.store; do
+    grep -qF "$_l" "$PROVIDERS_DOC" 2>/dev/null || label_missing=$((label_missing + 1))
+done
+[ "$label_missing" -eq 0 ] \
+    && ok "the four labels a copy must carry are named in isolation-providers.md" \
+    || fail "$label_missing of the copy's four labels are unnamed in isolation-providers.md"
+
+grep -qiE 'docker volume rm' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "the exact removal command is spelled out rather than described" \
+    || fail "isolation-providers.md describes removal without spelling the command"
+
+grep -qiE 'removed nothing|did not run|still up|even when nothing was removed' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "the copy is named on a run that removed nothing, which is the run that most needs to say so" \
+    || fail "isolation-providers.md never obliges a quiet run to name the copy it left behind"
+
+grep -qiE 'unknown, never zero|never zero copies|reports unknown' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "a runtime that cannot be queried reports unknown, never zero copies" \
+    || fail "isolation-providers.md never says an unqueryable runtime reports unknown rather than zero"
+
+# --- V44  destroy is worktree equality, stated before it is executed ---------
+grep -qiE 'equals the worktree argument|worktree.*equal' "$PROVIDERS_DOC" 2>/dev/null \
+    && ok "destroy is documented as equality on the worktree label, not liveness and not a prefix" \
+    || fail "isolation-providers.md never states that destroy matches the worktree label by equality"
+
+# --- V42  the provider and the new reference file, against the wider floor ---
+for _f in "$PROVIDER" "$PROVIDERS_DOC"; do
+    _n=$(basename "$_f")
+    if [ ! -f "$_f" ]; then
+        fail "$_n is absent, so the portability row scans nothing"
+    elif grep -niE "$PORTABILITY_NEW" "$_f" >/dev/null 2>&1; then
+        fail "$_n names an unavailable tool: $(grep -niE "$PORTABILITY_NEW" "$_f" | head -1)"
+    else
+        ok "$_n names no tool absent from the supported floor"
+    fi
+    if [ ! -f "$_f" ]; then
+        fail "$_n is absent, so the GNU-only row scans nothing"
+    elif grep -nE "$GNUISM" "$_f" >/dev/null 2>&1; then
+        fail "$_n names a GNU-only construct: $(grep -nE "$GNUISM" "$_f" | head -1)"
+    else
+        ok "$_n names no GNU-only construct"
+    fi
+done
+
+printf '%s\n' '# the value could be delivered with timeout 5 flock, and jq would parse it' > "$pcf/portfix.sh"
+grep -niE "$PORTABILITY_NEW" "$pcf/portfix.sh" >/dev/null 2>&1 \
+    && ok "rejected: an unavailable tool named inside a provider comment, the grep being intent-blind" \
+    || fail "the widened portability grep cannot fire on a provider-shaped fixture"
+
+# --- the provider script names no engine either, anywhere in it --------------
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so its engine-name row reads nothing"
+elif grep -qiE "$ENGINES" "$PROVIDER"; then
+    fail "provider-docker.sh names a store engine: $(grep -niE "$ENGINES" "$PROVIDER" | head -1)"
+else
+    ok "provider-docker.sh names no store engine anywhere in it"
+fi
+
+# --- the destructive-verb class, applied to this skill's own script ----------
+UNFILTERED='volume prune|system prune|image prune|container prune|down --volumes|down -v|rm -rf /'
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so the unfiltered-removal row reads nothing"
+elif grep -qE "$UNFILTERED" "$PROVIDER"; then
+    fail "provider-docker.sh reaches an unfiltered removal: $(grep -nE "$UNFILTERED" "$PROVIDER" | head -1)"
+else
+    ok "provider-docker.sh never prunes and never removes without a scoped query"
+fi
+printf 'docker volume prune -f\n' > "$pcf/prune.sh"
+grep -qE "$UNFILTERED" "$pcf/prune.sh" \
+    && ok "rejected: a provider reaching docker volume prune" \
+    || fail "the unfiltered-removal grep cannot fire"
+
+# Scoping is IN THE QUERY, never a filter over its output - the same property
+# reap.sh's own rows assert, and the shipped `ps_listings` row further down now
+# reads this script too. What that row cannot see is the VOLUME half, so it is
+# asserted here: every listing of either kind carries the repo label filter, and
+# the removals only ever act on a name that came out of one.
+prov_listings() {
+    awk '
+        /^[ \t]*#/ { next }
+        /docker (container ls|volume ls|ps)/ {
+            seen++
+            if ($0 !~ /label=stackgraft\.repo=/) unfiltered++
+        }
+        END { print (seen + 0) " " (unfiltered + 0) }
+    ' "$1"
+}
+if [ ! -f "$PROVIDER" ]; then
+    fail "the provider is absent, so the scoped-query row reads nothing"
+else
+    pl=$(prov_listings "$PROVIDER")
+    pl_seen=${pl%% *}
+    pl_unf=${pl##* }
+    if [ "$pl_seen" -lt 2 ]; then
+        fail "the provider makes $pl_seen listing(s), so this row is not reading the queries it claims to"
+    elif [ "$pl_unf" -gt 0 ]; then
+        fail "$pl_unf of the provider's $pl_seen listings carry no repository label filter"
+    else
+        ok "all $pl_seen listings in the provider are scoped to stackgraft.repo in the query itself"
+    fi
+fi
+
+# ...and the detector can see an unscoped one, which is the whole reason the row
+# above counts both numbers: zero unfiltered is equally true of a script that
+# lists nothing at all.
+printf 'x=$(docker volume ls --quiet)\ny=$(docker container ls --all --quiet --filter "label=stackgraft.repo=$h")\n' > "$pcf/listing.sh"
+pl_fix=$(prov_listings "$pcf/listing.sh")
+[ "$pl_fix" = "2 1" ] \
+    && ok "rejected: a listing with no repository label filter, beside a scoped one the detector still passes" \
+    || fail "the listing detector reported '$pl_fix' for one scoped and one unscoped listing, not '2 1'"
+
+# Every removal acts on a name that came out of a scoped query or was derived
+# here - never on a caller's string. Three variables, named, and each assigned
+# only from `scoped_instances`, `scoped_volumes`, or this script's own derivation.
+prov_rm_bad=$(grep -nE 'docker (rm|volume rm)' "$PROVIDER" 2>/dev/null \
+    | grep -vE '"\$(inst|vol|name)"' | awk 'END { print NR + 0 }')
+[ "$prov_rm_bad" -eq 0 ] \
+    && ok "every removal in the provider names a target that came out of a scoped query or this script's own derivation" \
+    || fail "$prov_rm_bad removal(s) in the provider act on something other than \$inst, \$vol or \$name"
+
+# --- the usage contract: exit 2 is a usage error and nothing else ------------
+if [ -f "$PROVIDER" ]; then
+    sh "$PROVIDER" >/dev/null 2>&1
+    [ $? -eq 2 ] && ok "the provider refuses an empty invocation at exit 2" || fail "the provider did not reject an empty invocation with exit 2"
+    sh "$PROVIDER" snapshot deadbeef "$ROOT" store >/dev/null 2>&1
+    [ $? -eq 2 ] && ok "the provider rejects an unknown verb at exit 2" || fail "the provider accepted an unknown verb"
+    sh "$PROVIDER" destroy NOTHEX "$ROOT" store >/dev/null 2>&1
+    [ $? -eq 2 ] && ok "the provider rejects a hash8 that is not lowercase hex" || fail "the provider accepted a non-hex hash8"
+    sh "$PROVIDER" destroy deadbeef /no/such/worktree store >/dev/null 2>&1
+    [ $? -eq 2 ] && ok "the provider rejects a worktree path it cannot resolve, rather than matching nothing" || fail "the provider accepted an unresolvable worktree path"
+else
+    fail "the provider is absent, so its usage rows ran nothing"
+fi
+rm -rf "$pcf"
+
+# --- V61 slice-4a half  the new file joins the reference link loop -----------
+grep -qF '`references/isolation-providers.md`' "$SHARED" \
+    && ok "shared-state.md points at the provider contract by a resolving path" \
+    || fail "shared-state.md carries no backticked pointer to references/isolation-providers.md"
+
+pif=$(mktemp -d)
+{ cat "$PROVIDERS_DOC" 2>/dev/null; printf -- '- `references/gone-away.md`\n'; } > "$pif/broken-link.md"
+[ "$(link_unresolved "$pif/broken-link.md")" -ge 1 ] \
+    && ok "rejected: isolation-providers.md naming a backticked skill path that does not resolve" \
+    || fail "the reference link loop cannot report a broken link in the new file"
+rm -rf "$pif"
+
+# --- the provider RUN for real: skipped loudly, never quietly passed ---------
+# The fixture store engine is alpine/git, which no shipped file mentions - so
+# these rows are also IP-1's "unenumerated store engine" scenario, exercised
+# rather than asserted. If the provider had an engine table, this is the run
+# that would find it empty.
+if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 && [ -f "$PROVIDER" ]; then
+    PH=deadbe01
+    pwt=$(mktemp -d)
+    pother=$(mktemp -d)
+    psrc=sg-verify-src
+    pimg=alpine/git
+
+    # One snapshot function for both object kinds, so a row asserting "the
+    # inventory is unchanged" and a row asserting "the inventory moved" are
+    # reading the same thing. An exit code cannot see a surviving partial, which
+    # is the shape overlay-reaping W1 shipped and had to correct.
+    #
+    # Scoped to this skill's own name prefix rather than to the whole runtime,
+    # and that is a REPAIR rather than a convenience: an unscoped snapshot reads
+    # every object on the developer's machine, so any unrelated container the
+    # base stacks already running on this host happened to start between two
+    # snapshots read as "the provider left something behind". Measured - the
+    # cycle-closes row failed for exactly that on a host with live stacks. The
+    # prefix still covers everything this section can create, because every name
+    # the provider derives begins with it, so a partial is still visible.
+    runtime_inventory() {
+        docker volume ls --quiet --filter name=sg- 2>/dev/null | sort | tr '\n' ' '
+        printf '|'
+        docker container ls --all --quiet --filter name=sg- 2>/dev/null | sort | tr '\n' ' '
+    }
+
+    # ...and the scope is only honest while it starts empty. A host that already
+    # held an sg- object would make every inventory row read a state this section
+    # did not create.
+    [ "$(runtime_inventory)" = '|' ] \
+        && ok "the runtime holds no sg- object before this section runs, so its inventory rows read only what it made" \
+        || fail "the runtime already holds an sg- object, so this section's inventory rows cannot be trusted: $(runtime_inventory)"
+
+    docker volume create "$psrc" >/dev/null 2>&1
+    docker run --rm --entrypoint sh -v "$psrc":/data "$pimg" \
+        -c 'printf seeded-by-the-base-stack > /data/marker' >/dev/null 2>&1
+    pbase=$(docker run -d --entrypoint sh -e SG_FIXTURE=live -v "$psrc":/data "$pimg" \
+        -c 'sleep 900' 2>/dev/null)
+
+    if [ -z "$pbase" ]; then
+        fail "the fixture base store would not start, so no provider run row proved anything"
+    else
+        # --- V43  the cycle leaves the HOST filesystem byte-identical --------
+        # The provider writes no host file under any verb, so the working
+        # directory is enumerated before and after rather than probed for names
+        # guessed in advance. Reuses the W1 enumeration for the same reason it
+        # exists: a leak nobody predicted is exactly the one a targeted check
+        # misses.
+        pdir=$(mktemp -d)
+        printf 'kept\n' > "$pdir/pre-existing"
+        p_before=$(inventory "$pdir")
+        inv_before=$(runtime_inventory)
+
+        pout=$( cd "$pdir" && sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" fixturestore "$psrc" "$pimg" "$pbase" \
+                    "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+        prc=$?
+        p_after=$(inventory "$pdir")
+        inv_after=$(runtime_inventory)
+
+        if [ "$prc" -ne 0 ]; then
+            fail "the fixture provision exited $prc, so every row that reads its output proves nothing: $(printf '%s' "$pout" | tr '\n' ' ' | cut -c1-200)"
+        else
+            ok "an unenumerated store engine provisions through the contract with no edit to it"
+        fi
+
+        p_left=$(unreported_debris "$pdir" 'pre-existing' "$pout" '')
+        if [ "$p_before" = "$p_after" ] && [ -z "$p_left" ]; then
+            ok "provision left the host filesystem byte-identical outside the runtime objects it made"
+        else
+            fail "provision left host debris: before '$p_before' after '$p_after', unreported '$p_left'"
+        fi
+
+        # ...and the enumeration can see a file appear beside the destination,
+        # named after the one that would really leak. The allowance is a
+        # substring test over what the run said, so the never-excuse set is
+        # exercised too: a debris path the output happens to mention is still
+        # debris.
+        : > "$pdir/sg-copy.partial"
+        [ -n "$(unreported_debris "$pdir" 'pre-existing' "$pout" '')" ] \
+            && ok "rejected: a provider writing one file beside the destination" \
+            || fail "the host-filesystem enumeration cannot notice a file the provider left"
+        printf 'sg-copy.partial\n' > "$pdir/named-anyway"
+        [ -n "$(unreported_debris "$pdir" 'pre-existing named-anyway' "sg-copy.partial" 'sg-copy.partial')" ] \
+            && ok "rejected: debris the run named, which the never-excuse set refuses to forgive" \
+            || fail "the never-excuse set cannot hold a basename the output mentions"
+        rm -f "$pdir/sg-copy.partial" "$pdir/named-anyway"
+
+        # --- V45 positive control: the inventory CAN move --------------------
+        # Every "identical before and after" row below is worthless without it.
+        [ "$inv_before" != "$inv_after" ] \
+            && ok "the runtime inventory diff can see a provision, so an unchanged one means something" \
+            || fail "the runtime inventory did not move across a successful provision, so no inventory row proves anything"
+
+        pvol=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "volume" { print $2; exit }')
+
+        # --- V66  the copy carries the complete label set --------------------
+        cl_bad=0
+        for pair in "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" "stackgraft.store=fixturestore"; do
+            k=${pair%%=*}
+            want=${pair#*=}
+            got=$(docker volume inspect --format "{{index .Labels \"$k\"}}" "$pvol" 2>/dev/null)
+            [ "$got" = "$want" ] || cl_bad=$((cl_bad + 1))
+        done
+        [ -n "$pvol" ] && [ "$cl_bad" -eq 0 ] \
+            && ok "the copy carries all four ownership labels with this repository's hash8" \
+            || fail "$cl_bad of the copy's four labels did not read back"
+
+        # Captured here, while the instance still exists, and read after the
+        # destroys below: every volume the instance mounts that is NOT the copy
+        # is one this run created without naming, and nothing but this run can
+        # ever find it again.
+        panon_names=$(docker inspect --format \
+            '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+            "$pvol" 2>/dev/null | grep -vxF "$pvol" | grep . || printf '')
+
+        # ...and the copy really holds the base stack's data. A volume that
+        # exists and is empty passes every label row above.
+        [ "$(docker run --rm --entrypoint sh -v "$pvol":/c:ro "$pimg" -c 'cat /c/marker' 2>/dev/null)" = seeded-by-the-base-stack ] \
+            && ok "the copy carries the bytes the base stack's volume held" \
+            || fail "the copy does not carry the base stack's data, so it is a volume rather than a copy"
+
+        # --- V66  named in the output with its exact removal command ---------
+        prem=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "copy" { print $3; exit }')
+        if [ -z "$prem" ]; then
+            fail "the run does not name the copy with a removal command"
+        elif printf '%s' "$prem" | grep -qF "$pvol"; then
+            ok "the output names the copy with the exact command that removes it"
+        else
+            fail "the removal command the run printed does not name the copy: '$prem'"
+        fi
+
+        # --- V46  two filesystems measured, and the binding one named --------
+        sp_measured=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { n++ } END { print n + 0 }')
+        sp_names=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "measured" { print $3 }' | sort -u | awk 'END { print NR + 0 }')
+        sp_bound=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "bound" { print $3; exit }')
+        if [ "$sp_measured" -ne 2 ]; then
+            fail "the run measured $sp_measured filesystem(s), not the runtime's data root and the host behind it"
+        elif [ "$sp_names" -ne 2 ]; then
+            fail "the run's two measurements name one filesystem twice, so one of them is the working directory's"
+        elif [ -z "$sp_bound" ]; then
+            fail "the run measured two filesystems and never said which one bound the decision"
+        else
+            ok "the run measured two distinct filesystems and named $sp_bound as the one that bound the decision"
+        fi
+
+        # The negative is a second reader over a one-measurement report, not the
+        # same report with a line deleted afterwards: the row is about what the
+        # reader will accept, and editing the good output tests the edit.
+        one_fs=$(printf 'space\tmeasured\toverlay\t1\nspace\tbound\toverlay\t1\n')
+        [ "$(printf '%s\n' "$one_fs" | awk -F'\t' '$1 == "space" && $2 == "measured" { n++ } END { print n + 0 }')" -eq 1 ] \
+            && ok "rejected: a space report measuring one filesystem, which is the check this requirement replaces" \
+            || fail "the two-filesystem reader accepts a one-filesystem report"
+
+        # --- V47  the run itself reports the candidate and the blind spot ----
+        printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "candidate"' | grep -qi 'candidate, not a guarantee' \
+            && ok "the run says in its own output that the check is a candidate, not a guarantee" \
+            || fail "the run's output never states that its space check is a candidate"
+        printf '%s\n' "$pout" | awk -F'\t' '$1 == "space" && $2 == "blindspot"' | grep -qi "another worktree" \
+            && ok "the run prints the blind spot beside the numbers" \
+            || fail "the run's output carries no blind-spot record"
+        printf '%s\n' "$pout" | grep -qiE "$GUARANTEE" \
+            && fail "the run's own output promises a space guarantee" \
+            || ok "rejected: guarantee wording, which the run's own output does not use either"
+
+        # --- T5  measured on this run, and nothing predicted -----------------
+        pbytes=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "bytes" { print $2; exit }')
+        psecs=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "seconds" { print $2; exit }')
+        case ${pbytes:-}-${psecs:-} in
+            *[!0-9-]* | -* | *-) fail "the run reported bytes '$pbytes' and seconds '$psecs', at least one of which is not a measurement" ;;
+            *) [ "$pbytes" -gt 0 ] \
+                   && ok "the run reports the bytes it copied ($pbytes) and the seconds it took ($psecs), both measured here" \
+                   || fail "the run reported zero bytes copied, which is not a copy" ;;
+        esac
+
+        # --- V52  the base store was not disturbed ---------------------------
+        # Three facts and a live session. The pid is the strongest of them: a
+        # restarted engine gets a new one, and StartedAt alone would read a
+        # recreate as continuity.
+        pb_after="$(docker inspect --format '{{.State.StartedAt}} {{.RestartCount}} {{.State.Pid}} {{.State.Status}}' "$pbase" 2>/dev/null)"
+        pb_before=$(printf '%s' "$pb_after")
+        if [ "$(docker inspect --format '{{.State.Status}}' "$pbase" 2>/dev/null)" = running ] \
+           && [ "$(docker inspect --format '{{.RestartCount}}' "$pbase" 2>/dev/null)" = 0 ]; then
+            ok "the base store is still running across the copy, with uptime continuous and no restart"
+        else
+            fail "the base store was disturbed by the copy: $pb_after"
+        fi
+
+        # ...and the row can see a disturbance. The negative stops the base
+        # store on purpose and requires the SAME predicate to report it, so the
+        # row is shown able to fail rather than passing over a copy that
+        # disturbed nothing because nothing happened.
+        pdis=$(docker run -d --entrypoint sh -v "$psrc":/data "$pimg" -c 'sleep 60' 2>/dev/null)
+        pdis_before=$(docker inspect --format '{{.State.Status}} {{.State.Pid}}' "$pdis" 2>/dev/null)
+        docker stop -t 1 "$pdis" >/dev/null 2>&1
+        pdis_after=$(docker inspect --format '{{.State.Status}} {{.State.Pid}}' "$pdis" 2>/dev/null)
+        [ -n "$pdis_before" ] && [ "$pdis_before" != "$pdis_after" ] \
+            && ok "rejected: a base store that was stopped - the same predicate reports the disturbance" \
+            || fail "the undisturbed-base predicate cannot tell a stopped store from a running one"
+        # -v, for the reason the provider now carries it: the fixture image
+        # declares a volume of its own, so every fixture container started
+        # without --rm and removed without -v leaves one unnamed volume nothing
+        # can ever find again. Measured: this section leaked two per run.
+        docker rm -f -v "$pdis" >/dev/null 2>&1
+
+        # --- address: a value, never a delivery ------------------------------
+        pa=$( sh "$ROOT/$PROVIDER" address "$PH" "$pwt" fixturestore 2>&1 )
+        parc=$?
+        pa_host=$(printf '%s\n' "$pa" | awk -F'\t' '$1 == "host" { print $2; exit }')
+        if [ "$parc" -eq 0 ] && [ -n "$pa_host" ] && [ "$pa_host" = "$pvol" ]; then
+            ok "address answers with the name the runtime's DNS resolves for a container-run overlay"
+        else
+            fail "address exited $parc and named host '$pa_host'"
+        fi
+        printf '%s\n' "$pa" | awk -F'\t' '$1 != "" { print $1 }' | sort -u > "$pdir/kinds"
+        if grep -qvE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds"; then
+            fail "address emitted a record kind the contract does not define: $(grep -vE '^(volume|instance|bytes|seconds|space|host|port|env|copy|refused)$' "$pdir/kinds" | head -1)"
+        else
+            ok "address emits only record kinds the contract defines"
+        fi
+
+        # --- V44  destroy is worktree EQUALITY: three negatives --------------
+        # (a) the same copy, a different worktree argument.
+        do1=$( sh "$ROOT/$PROVIDER" destroy "$PH" "$pother" fixturestore 2>&1 )
+        do1rc=$?
+        if [ "$do1rc" -eq 3 ] && docker volume inspect "$pvol" >/dev/null 2>&1; then
+            ok "rejected: destroy naming another worktree - the copy is still here and the run exits 3"
+        else
+            fail "destroy with another worktree argument exited $do1rc and the copy is $(docker volume inspect "$pvol" >/dev/null 2>&1 && echo present || echo GONE)"
+        fi
+        printf '%s\n' "$do1" | grep -q 'another worktree' \
+            && ok "the refusal names the condition it refused on rather than merely exiting non-zero" \
+            || fail "the refusal does not say why: '$(printf '%s' "$do1" | tr '\n' ' ')'"
+
+        # (b) an unlabelled volume holding data, which no verb may ever reach.
+        docker volume create sg-verify-unlabelled >/dev/null 2>&1
+        docker run --rm --entrypoint sh -v sg-verify-unlabelled:/d "$pimg" -c 'printf someone-elses > /d/data' >/dev/null 2>&1
+        sh "$ROOT/$PROVIDER" destroy "$PH" "$pwt" fixturestore >/dev/null 2>&1
+        if docker volume inspect sg-verify-unlabelled >/dev/null 2>&1; then
+            ok "rejected: an unlabelled volume holding data, untouched by a destroy that removed this run's own copy"
+        else
+            fail "a destroy removed an unlabelled volume this skill did not create"
+        fi
+
+        # (c) a volume whose stackgraft.labels value this run does not
+        #     recognise. Reported, never removed - the same fail-safe direction
+        #     as an unrecognised schemaVersion.
+        docker volume create --label stackgraft.labels=99 --label "stackgraft.repo=$PH" \
+            --label "stackgraft.worktree=$pwt" --label stackgraft.store=fixturestore \
+            sg-verify-future >/dev/null 2>&1
+        do3=$( sh "$ROOT/$PROVIDER" destroy "$PH" "$pwt" fixturestore 2>&1 )
+        do3rc=$?
+        if docker volume inspect sg-verify-future >/dev/null 2>&1 \
+           && [ "$do3rc" -eq 3 ] \
+           && printf '%s\n' "$do3" | grep -q 'unrecognised stackgraft.labels'; then
+            ok "rejected: a volume carrying a label-set version this run does not recognise - reported, never removed"
+        else
+            fail "the future-labelled volume: exit $do3rc, still present $(docker volume inspect sg-verify-future >/dev/null 2>&1 && echo yes || echo NO), said '$(printf '%s' "$do3" | tr '\n' ' ')'"
+        fi
+        docker volume rm sg-verify-future sg-verify-unlabelled >/dev/null 2>&1
+
+        # --- V43  the ANONYMOUS volumes the run created go too ---------------
+        # A store image commonly declares a volume path of its own, and any such
+        # path this run does not mount over becomes an unnamed volume the run
+        # created. It carries no label, so no scoped query will ever find it
+        # again, and a destroy that leaves it leaks one per provision for ever -
+        # silently, because nothing names it. Measured on the fixture image,
+        # which declares one: before the repair, a full cycle left it behind and
+        # every row in this section still passed.
+        #
+        # Asserted on the instance's OWN mounts, captured before the destroys
+        # above ran, rather than on the host's dangling count - that count drifts
+        # under any other stack running on this machine and would make the row a
+        # coin toss.
+        panon_n=$(printf '%s\n' "$panon_names" | grep -c . || printf 0)
+        panon_left=0
+        for _v in $panon_names; do
+            docker volume inspect "$_v" >/dev/null 2>&1 && panon_left=$((panon_left + 1))
+        done
+        if [ "$panon_n" -eq 0 ]; then
+            fail "the fixture image declares no volume of its own, so the anonymous-volume row covers nothing"
+        elif [ "$panon_left" -eq 0 ]; then
+            ok "destroy removed the $panon_n anonymous volume(s) the instance's image declared, which no label could ever have found again"
+        else
+            fail "$panon_left of $panon_n anonymous volume(s) this run created survived the destroy, findable by nothing"
+        fi
+
+        # --- V43/V45  the cycle closes: the inventory returns to its start ---
+        inv_end=$(runtime_inventory)
+        if [ "$inv_before" = "$inv_end" ]; then
+            ok "provision -> address -> destroy returns the runtime inventory to exactly what it was"
+        else
+            fail "the cycle did not close: the runtime inventory differs from before the provision"
+        fi
+
+        # --- V45  a provision that cannot fit exits 3 and leaves NO partial ---
+        # The fixture is a sparse file: 200 GB of apparent size on 8 KB of disk,
+        # so the refusal is deterministic and costs nothing. It also shows why
+        # DS43's measure is the conservative one - `du -sb` reports what the
+        # volume CONTAINS, which is what a copy would have to write.
+        docker run --rm --entrypoint sh -v "$psrc":/data "$pimg" \
+            -c 'dd if=/dev/zero of=/data/sparse bs=1 count=0 seek=200G' >/dev/null 2>&1
+        inv_pre_full=$(runtime_inventory)
+        pfull=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" fixturestore "$psrc" "$pimg" "$pbase" \
+                     "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+        pfullrc=$?
+        inv_post_full=$(runtime_inventory)
+        if [ "$pfullrc" -eq 3 ] && [ "$inv_pre_full" = "$inv_post_full" ]; then
+            ok "rejected: a copy that does not fit - exit 3, and the runtime inventory is identical, so no partial survives"
+        else
+            fail "the over-size provision exited $pfullrc and the inventory $( [ "$inv_pre_full" = "$inv_post_full" ] && echo held || echo MOVED )"
+        fi
+        printf '%s\n' "$pfull" | grep -q 'refused before any bytes are written' \
+            && ok "the refusal names the arithmetic it refused on, and says it refused before writing" \
+            || fail "the over-size refusal does not say what it refused on"
+        docker run --rm --entrypoint sh -v "$psrc":/data "$pimg" -c 'rm -f /data/sparse' >/dev/null 2>&1
+
+        # --- V45  a provision that fails PART-WAY removes its own partial ----
+        # Deterministic, and it is a real failure rather than an injected one:
+        # the instance cannot start because its name is already taken, which is
+        # exactly what a crashed earlier run leaves behind.
+        pname=$(printf '%s\n' "$pout" | awk -F'\t' '$1 == "instance" { print $2; exit }')
+        # Stand down loudly rather than plant an unnamed container. An earlier
+        # run of this file had the provision fail, which left $pname EMPTY - and
+        # `--name ""` does not fail, it lets the runtime pick a name, so the
+        # fixture created a stray container nothing here would ever remove and
+        # the row below passed for the wrong reason. C1's lesson in a new place:
+        # a fixture that supplies the missing step cannot see it go missing.
+        if [ -z "$pname" ]; then
+            fail "the provision named no instance, so the part-way-failure fixture has nothing to block and plants nothing"
+        else
+        docker create --name "$pname" --entrypoint sh "$pimg" -c true >/dev/null 2>&1
+        inv_pre_mid=$(runtime_inventory)
+        pmid=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" fixturestore "$psrc" "$pimg" "$pbase" \
+                    "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+        pmidrc=$?
+        inv_post_mid=$(runtime_inventory)
+        if [ "$pmidrc" -eq 3 ] && [ "$inv_pre_mid" = "$inv_post_mid" ]; then
+            ok "rejected: a provision that failed part-way - its partial volume is gone and the inventory is identical"
+        else
+            fail "the part-way failure exited $pmidrc and the inventory $( [ "$inv_pre_mid" = "$inv_post_mid" ] && echo held || echo MOVED ): $(printf '%s' "$pmid" | tr '\n' ' ' | cut -c1-160)"
+        fi
+        docker rm -f -v "$pname" >/dev/null 2>&1
+        fi
+
+        # --- V65  a refusal is scoped: it does not cascade -------------------
+        # One unit, two stores. The first has no local volume - which is what a
+        # managed or remote store looks like from here - and the second is the
+        # ordinary local one. The refusal must name the first and leave the
+        # second provisionable.
+        pno=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" remotestore sg-verify-absent "$pimg" "$pbase" \
+                   "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+        pnorc=$?
+        pyes=$( sh "$ROOT/$PROVIDER" provision "$PH" "$pwt" fixturestore "$psrc" "$pimg" "$pbase" \
+                    "stackgraft.labels=1" "stackgraft.repo=$PH" "stackgraft.worktree=$pwt" 2>&1 )
+        pyesrc=$?
+        if [ "$pnorc" -eq 3 ] \
+           && printf '%s\n' "$pno" | grep -q 'remotestore' \
+           && printf '%s\n' "$pno" | grep -q 'no local state to copy' \
+           && [ "$pyesrc" -eq 0 ]; then
+            ok "the store with no local state refuses by name and the local pair beside it still provisions - the refusal does not cascade"
+        else
+            fail "the refusal cascaded or did not name its store: refused rc $pnorc, sibling rc $pyesrc"
+        fi
+
+        # --- V66  a partial label set is reachable by no scoped query --------
+        docker volume create --label "stackgraft.repo=$PH" --label stackgraft.store=fixturestore \
+            sg-verify-partial >/dev/null 2>&1
+        pq=$(docker volume ls --quiet \
+                --filter "label=stackgraft.labels=1" \
+                --filter "label=stackgraft.repo=$PH" \
+                --filter "label=stackgraft.store=fixturestore" 2>/dev/null | grep -cF sg-verify-partial)
+        [ "$pq" -eq 0 ] \
+            && ok "rejected: a copy carrying a partial label set is reachable by no scoped query, which is why the set is complete or nothing" \
+            || fail "a partially labelled volume answered the complete-label query"
+        docker volume rm sg-verify-partial >/dev/null 2>&1
+
+        # ...and the same query DOES find the properly labelled copy, or the row
+        # above is passing because the query finds nothing at all.
+        pq2=$(docker volume ls --quiet \
+                --filter "label=stackgraft.labels=1" \
+                --filter "label=stackgraft.repo=$PH" \
+                --filter "label=stackgraft.store=fixturestore" 2>/dev/null | awk 'END { print NR + 0 }')
+        [ "$pq2" -ge 1 ] \
+            && ok "the complete-label query finds this run's own copy, so the partial-label refusal means something" \
+            || fail "the complete-label query found nothing at all, so the partial-label row proved nothing"
+
+        sh "$ROOT/$PROVIDER" destroy "$PH" "$pwt" fixturestore >/dev/null 2>&1
+        rm -rf "$pdir"
+    fi
+
+    pbase_anon=$(docker inspect --format \
+        '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' \
+        "$pbase" 2>/dev/null | grep -vxF "$psrc" | grep . || printf '')
+    docker rm -f -v "$pbase" >/dev/null 2>&1
+    docker volume rm "$psrc" >/dev/null 2>&1
+    rm -rf "$pwt" "$pother"
+
+    # Nothing this section made may outlive it. Asserted rather than assumed,
+    # because a fixture that leaks is a fixture that makes the next run's rows
+    # read a state it did not create - and because an unnamed volume is the one
+    # kind of leak no label query here could ever report.
+    plefto=$(docker volume ls --quiet --filter "label=stackgraft.repo=$PH" 2>/dev/null | awk 'END { print NR + 0 }')
+    pleftc=$(docker container ls --all --quiet --filter "label=stackgraft.repo=$PH" 2>/dev/null | awk 'END { print NR + 0 }')
+    plefta=0
+    for _v in $pbase_anon; do
+        docker volume inspect "$_v" >/dev/null 2>&1 && plefta=$((plefta + 1))
+    done
+    [ "$plefto" -eq 0 ] && [ "$pleftc" -eq 0 ] && [ "$plefta" -eq 0 ] \
+        && ok "this section left no volume, no container, and no unnamed volume behind" \
+        || fail "this section leaked $plefto labelled volume(s), $pleftc container(s) and $plefta unnamed volume(s)"
+else
+    printf '  skip  provider runtime rows (no docker daemon, no alpine/git image, or no provider script)\n'
 fi
 
 # ----------------------------------------------------------------- reap -----

@@ -78,7 +78,20 @@ def rejects(label, mutate, rule):
         fail(f"ACCEPTED but must be rejected: {label}")
         return
     fired = sorted({schema_rule(error) for error in errors})
-    if rule in fired:
+    # The named rule, or an error raised INSIDE it. Which of the two a library
+    # reports is a version detail, not a fact about the schema: measured on CI,
+    # one jsonschema reported `/properties/services/additionalProperties/allOf/0
+    # /then/properties` where another reported that path with `/determinacy`
+    # appended - the same rule firing, named one component deeper. Pinning the
+    # exact string made these rows hostage to whatever version the runner
+    # happened to carry, and the whole suite went red for a schema that had not
+    # changed.
+    #
+    # This does NOT weaken what the docstring above is for. Two rules spelled
+    # with the same keyword at different positions stay distinct, because
+    # neither is a prefix of the other; all that is additionally accepted is the
+    # named rule reporting itself more specifically.
+    if rule in fired or any(f.startswith(rule + "/") for f in fired):
         ok(f"rejected by {rule}: {label}")
     else:
         fail(f"rejected by the wrong rule: {label} :: wanted {rule}, got {fired}")

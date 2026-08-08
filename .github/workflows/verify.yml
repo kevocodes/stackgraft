@@ -20,7 +20,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq dash
-          python3 -m pip install --quiet jsonschema
+          # --upgrade and NOT --quiet: the runner image already carries a
+          # jsonschema, so a plain install is a silent no-op and the schema
+          # rows then run against whatever version the image happened to ship.
+          # The version is printed so a drift is visible in the log rather than
+          # inferred from a failure.
+          python3 -m pip install --upgrade jsonschema
+          python3 -c 'import importlib.metadata as m; print("jsonschema", m.version("jsonschema"))'
 
       # The runtime half of the suite - the provider, the copy verification, the
       # generated read, the anonymous-volume ledger - runs real containers off

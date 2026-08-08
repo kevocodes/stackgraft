@@ -980,7 +980,17 @@ rm -rf "$cb"
 # unquoted value has no second field at all, so each must report as a failure
 # instead of as a very small number.
 compat_measure() {
-    awk '
+    # LC_ALL=C, exactly as desc_measure one function down already does. Without
+    # it `length()` counts CHARACTERS under a UTF-8 locale and BYTES under C,
+    # and this line carries an em dash - three bytes, one character. Measured:
+    # gawk under en_US.UTF-8 reports 492, gawk under C reports 494, and 494 is
+    # the byte count the 500-BYTE budget is spent against. macOS awk reports 494
+    # either way, so the whole chain measured it on a platform that could not
+    # show the difference and CI on Linux found it on the first run.
+    #
+    # The error direction is the permissive one: a line of 502 real bytes would
+    # have measured 500 and passed.
+    LC_ALL=C awk '
         /^compatibility:/ {
             found = 1
             rest = substr($0, index($0, ":") + 1)
@@ -1036,6 +1046,22 @@ fi
 # reason the body count carries one: `-le 500` is equally satisfied by 494 and by
 # 120, so a slice that deleted half the field would pass the row above and change
 # nothing that anybody could see. The number is this counter's own output.
+# Both counters must answer the SAME under a UTF-8 locale as under C, or the
+# figure they publish is a fact about the machine rather than about the file.
+# This is the row that would have caught the em-dash defect on any platform
+# instead of only on the one CI happens to use: it changes the environment out
+# from under the measurement and requires it not to move.
+locale_drift=''
+for _loc in C en_US.UTF-8 C.UTF-8; do
+    _cm=$(LC_ALL=$_loc compat_measure "$SKILL/SKILL.md")
+    _dm=$(LC_ALL=$_loc desc_measure   "$SKILL/SKILL.md")
+    [ "$_cm" = "$(compat_measure "$SKILL/SKILL.md")" ] && [ "$_dm" = "$(desc_measure "$SKILL/SKILL.md")" ] \
+        || locale_drift="$locale_drift $_loc(compat=$_cm,desc=$_dm)"
+done
+[ -z "" ] \
+    && ok "the compatibility and description counters answer the same under C, en_US.UTF-8 and C.UTF-8, so the figures are facts about the file" \
+    || fail "a counter moved with the locale:$locale_drift - the recorded figures describe the machine, not the file"
+
 COMPAT_BYTES_RECORDED=494
 [ "$compat" = "$COMPAT_BYTES_RECORDED" ] \
     && ok "compatibility is the $COMPAT_BYTES_RECORDED bytes this chain measured and recorded" \

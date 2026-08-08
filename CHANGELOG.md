@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-08-08
+
+Run against a real repository for the second time, on a worktree whose diff touched a shared tree, and the answer was 25 consumers — most of the repository. That is correct and it is expensive, and nothing said so before starting.
+
+### Added
+
+- **The fan-out is reported before it is launched, and it gates nothing.** Two numbers, in the Output Contract so an agent holding only the body still states them: how many overlays this change needs, and how many services the base stack currently has up. The developer decides whether that trade is worth it; the run proceeds either way.
+- **The denominator is the runtime's answer, never the count of units in the topology.** This is the whole of the rule. A compose file defining 45 services while 19 are up makes *26 of 45* read as a saving where *10 of 19* is the real trade against a second full stack, and the two point opposite ways. Measured on the repository this was tested against: a shared-tree change fanned out to 25 recorded consumers of which **10 were actually running**. The rule exists because that mistake was made during this release — the topology's count was taken for a fact about the moment, which is the same defect this project spends its verification budget on everywhere else.
+
 ## [2.0.0] — 2026-08-07
 
 Run against a real repository for the first time — 43 services, four compose files — the skill resolved the whole topology in under a second and then refused 116 of 156 `(service, store)` pairs. The overlay never launched. This release replaces the isolation half of the skill with the two things that run produced: a scope, and a copy.
@@ -74,6 +83,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.0
 [2.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.0.0
 [1.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.0.0

@@ -862,7 +862,7 @@ fi
 # slice 1a; +3 at slice 4b, where Output Contract bullet 5 gained the copy and
 # its age. 484 + 3 = 487, and the plan's "488 or 487" resolves to 487 for the
 # same reason 1a landed at 484 rather than 485.
-BODY_WORDS_RECORDED=487
+BODY_WORDS_RECORDED=497
 [ "$words" -eq "$BODY_WORDS_RECORDED" ] \
     && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
     || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"
@@ -1708,6 +1708,59 @@ rm -rf "$lf"
 # built from. The length is read from the prose instead of hard-coded, because
 # a hard-coded 8 would supply the very step whose absence is the defect.
 DISCOVERY="$SKILL/references/discovery.md"
+
+# --- the fan-out is reported, and reported against what is RUNNING -----------
+# A change to a shared tree can reach most of a repository, and the developer is
+# the one who decides whether starting that is worth it. The rule is
+# informational and gates nothing, so what is checked here is that it is STATED
+# and that it names the right denominator.
+#
+# The denominator is the whole point. Measured on a real repository during this
+# release: a shared-tree change fanned out to 25 recorded consumers of which
+# only 10 were running, while the topology defined 45 services. "26 of 45" and
+# "10 of 19" describe the same run and point opposite ways, and the first is the
+# one a manifest can produce without asking the runtime anything.
+fanout_reports()   { grep -q 'Report the fan-out before launching it' "$1" 2>/dev/null; }
+fanout_denominator() { grep -q 'denominator is the runtime' "$1" 2>/dev/null; }
+fanout_gates_nothing() { grep -qiE 'gates nothing|informational' "$1" 2>/dev/null; }
+
+fanout_reports "$DISCOVERY" \
+    && ok "discovery.md says the fan-out is reported before it is launched" \
+    || fail "discovery.md does not say the fan-out is reported, so a change reaching most of the repo starts silently"
+fanout_denominator "$DISCOVERY" \
+    && ok "...and that the denominator is the runtime's answer, not the count of units the topology defines" \
+    || fail "discovery.md does not name the denominator, and a topology count reads as a saving where the running count is the real trade"
+fanout_gates_nothing "$DISCOVERY" \
+    && ok "...and that it gates nothing: the reader decides, the run proceeds either way" \
+    || fail "discovery.md does not say the fan-out report is informational, so a reader may take it for a refusal"
+
+# The SKILL body must carry it too, because the body is what always loads and a
+# reference may never be read. Paid for out of the word budget rather than added
+# on top of it - the figure below moved with this line.
+grep -q 'Before launching: overlays to start, against services already running' "$SKILL/SKILL.md" \
+    && ok "the body's Output Contract requires both numbers, so an agent holding only the body still reports them" \
+    || fail "the body does not require the fan-out numbers, so only a reader of discovery.md would ever report them"
+
+# Each of the four asserted on ITS OWN sentence: a fixture with one stripped
+# must fail exactly its own row, or one claim is covering for another.
+ff=$(mktemp -d)
+grep -v 'Report the fan-out before launching it' "$DISCOVERY" > "$ff/no-report.md"
+grep -v 'denominator is the runtime'            "$DISCOVERY" > "$ff/no-denom.md"
+grep -vi 'gates nothing'                        "$DISCOVERY" > "$ff/no-info.md"
+grep -v 'Before launching: overlays to start'   "$SKILL/SKILL.md" > "$ff/no-body.md"
+fanout_reports "$ff/no-report.md" \
+    && fail "the fan-out fixture still carries its sentence after the strip" \
+    || ok "rejected: discovery.md with the fan-out report deleted"
+fanout_denominator "$ff/no-denom.md" \
+    && fail "the denominator fixture still carries its sentence after the strip" \
+    || ok "rejected: discovery.md with the running-denominator rule deleted"
+fanout_gates_nothing "$ff/no-info.md" \
+    && fail "the informational fixture still carries its sentence after the strip" \
+    || ok "rejected: discovery.md with the gates-nothing statement deleted"
+grep -q 'Before launching: overlays to start' "$ff/no-body.md" \
+    && fail "the body fixture still carries its line after the strip" \
+    || ok "rejected: the body with its fan-out bullet deleted"
+rm -rf "$ff"
 
 section_zero()  { awk '/^## 0\./ { on = 1; next } /^## / { if (on) exit } on' "$1"; }
 hash8_command() {

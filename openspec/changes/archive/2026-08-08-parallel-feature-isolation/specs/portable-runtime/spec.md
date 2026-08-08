@@ -1,48 +1,52 @@
 # portable-runtime
 
-New capability. Runtime and portability decisions: `../../proposal.md` (Contract surfaces, T1, T3). Platform evidence: `../../exploration.md` Q3, Q5.
+Modified capability. The requirements under `## MODIFIED Requirements` replace the same-named requirements introduced by `portable-multi-stack` (`../../../archive/2026-08-01-portable-multi-stack/specs/portable-runtime/spec.md`) and amended by `overlay-reaping` (`../../../archive/2026-08-01-overlay-reaping/specs/portable-runtime/spec.md`); each is restated in full, carrying its still-valid clauses forward. Scope as a contract term (D1), the shipped provider script (D5), the body budget on a baseline that does not close (T4): `../../proposal.md`.
+
+`No agent-specific coupling in shipped files`, `Declared compatibility` and `Port allocation returns a candidate, not a guarantee` are unchanged by this delta and are deliberately not restated.
 
 ## ADDED Requirements
 
-### Requirement: No agent-specific coupling in shipped files
+### Requirement: The operating scope is declared where a reader meets it
 
-No file under `skills/stackgraft/` MAY name a filesystem path, environment variable, or tool that only one agent provides. Every `assets/` and `references/` link in SKILL.md MUST resolve relative to the skill directory, and no external URL MAY serve as a primary reference.
-(Verify: portability grep across shipped files; file review that each link resolves.)
+The shipped files MUST state the operating scope in all three places a reader meets the skill: the `description`, the Activation Contract, and `README.md`. The scope is **local development — one host, one already-running base stack, and N worktrees of one repository in parallel**.
 
-#### Scenario: Portability grep
+CI, shared hosts, remote hosts, and multi-developer stacks MUST be stated as **declared non-goals**, not left as untested territory: silence about scope is what let an in-place isolation premise be adopted as a universal truth, and every defect this change repairs descends from that silence. Stating the scope is also a grant — against one laptop and gigabyte-scale volumes the skill may copy state and may refuse everything remote without apology — so the statement MUST NOT be softened into a preference. No shipped file MAY imply universal applicability, and a later change MUST NOT widen the scope without restating it in all three places, so that widening it is a visible edit rather than a quiet reading.
 
-- GIVEN the shipped skill folder
-- WHEN it is searched for single-agent paths, environment variables, and vendor tool names
-- THEN there are no matches, including the previous home-directory manifest path and the vendor code-index rule
+The conditional runtime the shipped isolation provider needs MUST be declared where the other conditional dependencies are declared, alongside the existing container-tooling condition, rather than introduced as a new unconditional requirement.
+(Verify: file review of `description`, the Activation Contract and `README.md` — the scope and the non-goals appear in each; character count of `description` after the edit; portability grep for any claim of universal applicability; file review that the provider's runtime dependency is declared beside the existing conditional ones.)
 
-#### Scenario: Tool-neutral hazard retained
-
-- GIVEN the worktree-placement hazard
-- WHEN the Hard Rules are read
-- THEN the prohibition on `/tmp` and `/var/tmp` stands on its own bullet, justified without naming any vendor tool
-
-### Requirement: Declared compatibility
-
-Frontmatter MUST carry a `compatibility` value of at most 500 characters on one line, naming POSIX systems, the unconditional dependencies, and the conditional ones. It MUST additionally declare that proving ownership of a host-run overlay needs `ps -o lstart=`, and that where that field is absent host-run overlays are report-only. The field already sits within a few characters of the ceiling, so room for that declaration MUST be made by cutting existing text — never by exceeding 500 characters and never by wrapping onto a second line. Windows-native support is out of scope and MUST NOT be implied anywhere in the shipped files.
-(Verify: file review of frontmatter; character count of the value after the change; portability grep for Windows-only constructs.)
-
-#### Scenario: Frontmatter read
-
-- GIVEN SKILL.md frontmatter
-- WHEN `compatibility` is read
-- THEN it declares POSIX-only support and names git and a POSIX shell as required, with container tooling required only for container-based repositories
-
-#### Scenario: Start-time dependency declared
+#### Scenario: Description read
 
 - GIVEN SKILL.md frontmatter after this change
-- WHEN `compatibility` is read
-- THEN it names `ps -o lstart=` as what host-overlay ownership proof needs, and states that host overlays are report-only where it is unavailable
+- WHEN `description` is read
+- THEN it states the local-development scope
+- AND it remains one physical quoted line of at most 250 characters with trigger words first
 
-#### Scenario: Ceiling respected
+#### Scenario: Activation Contract read
 
-- GIVEN the `compatibility` value after the declaration is added
-- WHEN its length is measured
-- THEN it is one physical line of at most 500 characters
+- GIVEN the Activation Contract
+- WHEN it is read
+- THEN it states the scope and names CI, shared hosts, remote hosts, and multi-developer stacks as non-goals
+
+#### Scenario: README read
+
+- GIVEN `README.md`
+- WHEN a prospective user reads its opening
+- THEN the same scope and the same non-goals are stated there
+
+#### Scenario: A user outside the scope
+
+- GIVEN a user whose stack runs on a shared or CI host
+- WHEN they read the first statement of scope they meet
+- THEN they are told the skill is not for that situation, rather than discovering it through a refusal later
+
+#### Scenario: Provider dependency declared conditionally
+
+- GIVEN the compatibility declaration after this change
+- WHEN it is read
+- THEN the runtime the shipped provider needs is named as conditional, beside the existing container-tooling condition
+
+## MODIFIED Requirements
 
 ### Requirement: Zero-install script runtime
 
@@ -110,83 +114,6 @@ Every other script, `reap.sh` included, MUST NOT write or edit files — the age
 - GIVEN the repository's object format changed since the manifest was written
 - WHEN fingerprints are compared
 - THEN every comparison mismatches and full rediscovery runs, rather than a false match
-
-### Requirement: The operating scope is declared where a reader meets it
-
-The shipped files MUST state the operating scope in all three places a reader meets the skill: the `description`, the Activation Contract, and `README.md`. The scope is **local development — one host, one already-running base stack, and N worktrees of one repository in parallel**.
-
-CI, shared hosts, remote hosts, and multi-developer stacks MUST be stated as **declared non-goals**, not left as untested territory: silence about scope is what let an in-place isolation premise be adopted as a universal truth, and every defect this change repairs descends from that silence. Stating the scope is also a grant — against one laptop and gigabyte-scale volumes the skill may copy state and may refuse everything remote without apology — so the statement MUST NOT be softened into a preference. No shipped file MAY imply universal applicability, and a later change MUST NOT widen the scope without restating it in all three places, so that widening it is a visible edit rather than a quiet reading.
-
-The conditional runtime the shipped isolation provider needs MUST be declared where the other conditional dependencies are declared, alongside the existing container-tooling condition, rather than introduced as a new unconditional requirement.
-(Verify: file review of `description`, the Activation Contract and `README.md` — the scope and the non-goals appear in each; character count of `description` after the edit; portability grep for any claim of universal applicability; file review that the provider's runtime dependency is declared beside the existing conditional ones.)
-
-#### Scenario: Description read
-
-- GIVEN SKILL.md frontmatter after this change
-- WHEN `description` is read
-- THEN it states the local-development scope
-- AND it remains one physical quoted line of at most 250 characters with trigger words first
-
-#### Scenario: Activation Contract read
-
-- GIVEN the Activation Contract
-- WHEN it is read
-- THEN it states the scope and names CI, shared hosts, remote hosts, and multi-developer stacks as non-goals
-
-#### Scenario: README read
-
-- GIVEN `README.md`
-- WHEN a prospective user reads its opening
-- THEN the same scope and the same non-goals are stated there
-
-#### Scenario: A user outside the scope
-
-- GIVEN a user whose stack runs on a shared or CI host
-- WHEN they read the first statement of scope they meet
-- THEN they are told the skill is not for that situation, rather than discovering it through a refusal later
-
-#### Scenario: Provider dependency declared conditionally
-
-- GIVEN the compatibility declaration after this change
-- WHEN it is read
-- THEN the runtime the shipped provider needs is named as conditional, beside the existing container-tooling condition
-
-### Requirement: Port allocation returns a candidate, not a guarantee
-
-The port selection contract MUST be stated as a *candidate* port. It MUST exclude `portPolicy.reserved`, every known `basePort`, every port already allocated in the current run, and every port this repository's own live overlays are known to hold, and it MUST NOT assert that the port is free. The held-port set MUST be sourced from the report path and MUST NOT require a mutation flag. That knowledge narrows the unknowable set without closing it: ports held by anything that is not a stackgraft overlay of this repository — another repository's overlays included — remain unknown. The authoritative check is therefore still the launcher's strict-port failure, so every overlay launch MUST use the launcher's strict-port option and MUST NOT permit silent fallback to another port. A strict-port failure MUST cause a new candidate to be requested, and the failed port MUST NOT be recorded in the manifest.
-(Verify: file review of the script's documented output contract, SKILL.md Hard Rules, and the example's launch commands; a held port exercised end to end.)
-
-#### Scenario: Candidate accepted
-
-- GIVEN a candidate port inside the allowed range for the service's `portGroup`
-- WHEN the launcher binds it with strict-port enabled
-- THEN the overlay runs on that port and the port is recorded
-
-#### Scenario: Known-held port excluded
-
-- GIVEN a live labelled overlay of this repository publishes a port inside the allowed range
-- WHEN a candidate is requested with no mutation flag passed
-- THEN that port is among the exclusions and is not returned
-
-#### Scenario: Candidate already occupied
-
-- GIVEN the candidate port is held by a process the run did not start
-- WHEN the launcher fails on strict-port
-- THEN a new candidate is requested and the failed port is not recorded
-- AND no process is killed to free it
-
-#### Scenario: No port-inspection tool present
-
-- GIVEN neither common port-listing utility exists on the host
-- WHEN a candidate is requested
-- THEN a candidate is still returned from the allowed range minus the exclusions
-- AND the run does not fail for lack of an availability check
-
-#### Scenario: Range exhausted or exceeded
-
-- GIVEN no candidate remains inside the allowed range
-- WHEN a port is requested
-- THEN the run stops and asks the user before binding anything outside the range
 
 ### Requirement: Skill body stays within the style-guide budget
 

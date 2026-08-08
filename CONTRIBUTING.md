@@ -18,11 +18,13 @@ Issues and pull requests are welcome. This project is small and has a few opinio
 
 **The body is sealed.** `SKILL.md` may state *that* a verdict is required and *where* it comes from — never a condition under which an overlay is permitted. A summary of the rule in the body would make skipping the reference permissive, which is exactly the failure the seal prevents.
 
-**The body has a hard budget.** 500 words, because under progressive disclosure it is the only file loaded whole. Adding to it means cutting from it first:
+**The body has a hard budget.** At most 500 **words** — the unit the counter below measures, never tokens, because no tokenizer runs on the floor this project supports. It is a hard budget because under progressive disclosure the body is the only file loaded whole. Adding to it means cutting from it first:
 
 ```sh
 awk 'f{n+=NF} /^---$/{c++; if(c==2) f=1} END{print n}' skills/stackgraft/SKILL.md
 ```
+
+The shipped body measures **487**, so there are thirteen words of headroom. `.github/scripts/verify.sh` asserts that measured number as a literal rather than merely asserting it is under 500, and it reads **this paragraph's own two figures** and holds them to the same measurement — which is what stops this paragraph and the check drifting apart in silence. They had drifted: this sentence said 484 for two slices after the body reached 487.
 
 ## Verifying a change
 

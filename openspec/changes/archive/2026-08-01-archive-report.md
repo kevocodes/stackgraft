@@ -56,7 +56,7 @@ Two completed SDD changes have been archived and their delta specs have been mer
    - Unenumerable fingerprint sets revalidate always
    - Non-runnable units fan out through one direction of truth
 
-**Verification Status** (per proposal § Success criteria):
+**Verification Status** (per proposal Success criteria):
 - [x] `manifest.example.json` validates against `manifest.schema.json`
 - [x] SKILL.md body ≤ 700 tokens; section order matches style guide
 - [x] Portability grep: no agent-specific path, env var, or tool name
@@ -118,7 +118,7 @@ Two completed SDD changes have been archived and their delta specs have been mer
 3. **topology-discovery** — 1 added requirement
    - ADDED: "A container-kind `overlayCommand` MUST expose a label anchor" (insertion mechanism, `up` refusal, piped-template handling, quoted-string protection, anchor matching)
 
-**Key Amendment Notes** (Per proposal, §Amendments after design):
+**Key Amendment Notes** (Per proposal, Amendments after design):
 - **A3**: Slice 1 net budget corrected to −34 (not +0)
 - **A5**: Anchor insertion wins; piped templates with intact anchor accepted per DS24
 - **A6**: with-lock.sh carve-out widened to four writes (lock dir, transient reclaim name, staleness ref, file rename)
@@ -127,7 +127,7 @@ Two completed SDD changes have been archived and their delta specs have been mer
 - **A10**: Absolute base-stack guarantee narrowed to positive allowlist only; port exclusion caller-supplied and caller-defeatable
 - **A11**: Carve-out count is four, not three; transient reclaim-time rename name is stated
 
-**Verification Status** (per proposal § Success criteria):
+**Verification Status** (per proposal Success criteria):
 - [x] Every container-kind overlay launch emits all five labels
 - [x] `docker ps --filter label=stackgraft.repo=<hash8>` reconstructs overlay state with manifest deleted
 - [x] Pid recycled between registration and reap is refused, refusal names identity mismatch

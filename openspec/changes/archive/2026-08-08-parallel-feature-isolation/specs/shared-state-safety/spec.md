@@ -1,32 +1,32 @@
 # shared-state-safety
 
-Capability introduced by `portable-multi-stack` and substantially extended by `parallel-feature-isolation`. Scope (D1), change-scoped gating (D2 and T1), per-store determinacy (D3), two hazards and two mechanisms (D4), seeded copies (D5, D6), the generated lifecycle target (Q5): `../../proposal.md`.
+Modified capability. The requirements under `## MODIFIED Requirements` replace the same-named requirements introduced by `portable-multi-stack` (`../../../archive/2026-08-01-portable-multi-stack/specs/shared-state-safety/spec.md`); each is restated in full, carrying its still-valid clauses forward. Scope (D1), change-scoped gating (D2 and T1), per-store determinacy (D3), two hazards and two mechanisms (D4), seeded copies (D5, D6), the generated lifecycle target (Q5): `../../proposal.md`.
 
 The data hazard's mechanism is specified in `../isolation-providers/spec.md` and the coordination hazard's in `../coordination-identity/spec.md`. This capability decides which mechanism a pair needs and consumes both; it never re-derives either. `Per-service acceptance, invalidated by fingerprint drift` is unchanged by this delta and is deliberately not restated.
 
 Scope is a term of every requirement below: local development, one host, one already-running base stack, N worktrees of one repository in parallel. A pair outside that scope is not a harder pair — it is not in scope, and it refuses by name.
 
-## ADDED Requirements (from parallel-feature-isolation)
+## ADDED Requirements
 
 ### Requirement: Change-scoped pair selection is one-directional and evidence-bound
 
-The gate's subject MUST be the pairs the change can reach. The worktree diff that already selects which services to overlay MUST also select which pairs enter the gate, and a service that reaches no store MUST contribute no pairs at all. The narrowing MUST be one-directional: it MAY only **remove** a pair whose store a per-`(unit, store)` determinacy record states the changed code does not reach, it MUST NOT add confidence to any pair that survives, and no surviving pair's W or X MAY be read as better evidenced because the diff was small. The relieving record MUST expire on the same `serviceFingerprint` as every other classification, so relief granted for code that has since changed is withdrawn without anyone acting.
+The gate's subject MUST be the pairs the change can reach. The worktree diff that already selects which units to overlay MUST also select which pairs enter the gate, and a unit that reaches no store MUST contribute no pairs at all. The narrowing MUST be one-directional: it MAY only **remove** a pair whose store a per-`(unit, store)` determinacy record states the changed code does not reach, it MUST NOT add confidence to any pair that survives, and no surviving pair's W or X MAY be read as better evidenced because the diff was small. The relieving record MUST expire on the same `serviceFingerprint` as every other classification, so relief granted for code that has since changed is withdrawn without anyone acting.
 
 **This MUST NOT be read as repealing the rule that `dependsOn` cannot narrow a pair set, and the shipped files MUST say so in those words.** `dependsOn` is a declaration: saying less would gate less, and the laziest manifest would be the least refused. A per-store determinacy record is evidence: it names what was looked at, records how, and expires. What changes is only where the claim is written, not whether a claim is needed. Absence of a record is undetermined, which refuses; absence is never relief. The run MUST report every pair the narrowing removed and the record that removed it, so a narrowing is visible rather than inferred.
 (Verify: file review that the narrowing rule and its evidence obligation are stated together in `references/shared-state.md`, and that the `dependsOn` prohibition is restated beside it; a frontend-only diff run end to end against a multi-store repository; a run whose relieving record has drifted.)
 
 #### Scenario: Change touches no store
 
-- GIVEN the diff changes only paths belonging to a service's frontend, and that service's determinacy records state the changed code reaches no store
+- GIVEN the diff changes only paths belonging to a unit's frontend, and that unit's determinacy records state the changed code reaches no store
 - WHEN the gate builds its subject
 - THEN zero pairs are gated, zero copies are provisioned, and the overlay launches
 - AND the run names the pairs it removed and the records that removed them
 
 #### Scenario: Declaration still narrows nothing
 
-- GIVEN a service records `dependsOn: []`
+- GIVEN a unit records `dependsOn: []`
 - WHEN the gate builds its subject
-- THEN every entry in `backingStores` still yields a pair for that service
+- THEN every entry in `backingStores` still yields a pair for that unit
 - AND each of those pairs is undetermined until its own record answers W and X
 
 #### Scenario: Narrowing without a record
@@ -113,7 +113,7 @@ The teardown half MUST be generated together with the create half, since half a 
 - WHEN teardown is considered
 - THEN the teardown is still not executed, the pair falls back to the default seeded copy or refuses, and the failure is reported with the command that produced it
 
-## ADDED Requirements (from portable-multi-stack)
+## MODIFIED Requirements
 
 ### Requirement: Dependency pair classification
 
@@ -187,28 +187,29 @@ Any pair whose W or X cannot be determined MUST be treated as `W=yes, X=yes, N=n
 - WHEN an escalation trigger fires for U
 - THEN the recorded claim is overridden and the verdict is ISOLATE or REFUSE
 
-#### Scenario: Manifest claim contradicted by the worktree
-
-- GIVEN the manifest records `writes: []` for S
-- WHEN an escalation trigger fires for S
-- THEN the recorded claim is overridden and the verdict is ISOLATE or REFUSE
-
 ### Requirement: Competitive attachment is unsafe without writing
 
-A pair MUST be refused whenever X holds, even when W is false. `competesOn` MUST be evaluated independently of `writes`. Plain attach MUST be refused until a distinct consumer identity is supplied, after which the pair is re-classified — never approved by the substitution alone.
+A pair MUST be refused whenever X holds, even when W is false. `competesOn` MUST be evaluated independently of the determinacy record's W. Plain attach MUST be refused until a distinct consumer identity is supplied and proven per `../coordination-identity/spec.md`, after which the pair is re-classified — never approved by the substitution alone. Resolving X MUST NOT provision, request, or reserve a store copy, and a pair carrying X and not W MUST leave the container runtime's volume and instance inventory unchanged.
+(Verify: file review that the X procedure lives in `../coordination-identity/spec.md` and that `references/shared-state.md` links rather than restates it; an X-only pair exercised with the runtime inventory diffed before and after.)
 
 #### Scenario: Read-only consumer joins the base coordination group
 
-- GIVEN S only reads, and `competesOn` names D with an identity key
-- WHEN the gate classifies `(S, D)`
+- GIVEN U only reads, and `competesOn` names D with an identity key
+- WHEN the gate classifies `(U, D)`
 - THEN plain attach is REFUSED and a distinct consumer identity is required
 
 #### Scenario: Distinct identity supplied
 
-- GIVEN a distinct identity is recorded for `(S, D)`
+- GIVEN a distinct identity is recorded and proven for `(U, D)`
 - WHEN the pair is re-classified with X false
 - THEN the verdict follows W and N
 - AND the output states that the overlay now receives deliveries the base stack also receives
+
+#### Scenario: No copy is made for a coordination hazard
+
+- GIVEN `(U, D)` carries X and not W
+- WHEN the pair is resolved by identity
+- THEN no provider operation runs and the runtime's volume and instance inventory is unchanged
 
 ### Requirement: Escalation triggers override recorded claims
 
@@ -241,7 +242,12 @@ The triggers listed in `references/shared-state.md` — a migration in the diff 
 - WHEN the two are combined
 - THEN the escalation wins, the pair is gated, and the run states which trigger re-widened it
 
-## MODIFIED Requirements
+## RENAMED Requirements
+
+### Requirement: Isolation reuses the server, never the namespace → ISOLATE means a seeded copy, and in-instance isolation is the optimisation
+
+(Reason: the old name asserts the mechanism the change replaces. ISOLATE now means the overlay gets its own copy of the state by default; reusing the running server is one of two mechanisms rather than the definition.)
+(Migration: references to the old name in `references/`, `docs/SHARED-STATE.md` and `docs/HOW-IT-WORKS.md` must point at the new name; the MODIFIED block below is the requirement's new text.)
 
 ### Requirement: ISOLATE means a seeded copy, and in-instance isolation is the optimisation
 
@@ -277,27 +283,3 @@ On an ISOLATE verdict the skill MUST give the overlay state it can write without
 - GIVEN the pair matches one of the cases with no safe answer
 - WHEN the gate classifies it
 - THEN it is reported as a refusal with the case named, no copy is provisioned, no namespace is created, and no workaround is attempted
-
-### Requirement: Per-service acceptance, invalidated by fingerprint drift
-
-The only bypass MUST be an `acceptedRisks` entry keyed by `"<service>::<store>"`. Each entry MUST record the accepting timestamp and the service's source fingerprint at acceptance time. Latest-only per key is structural: `acceptedRisks` is an object, so a key cannot repeat. An entry MUST be treated as absent once that service's source fingerprint drifts. No global bypass MAY exist.
-(Verify: schema validation — `acceptedRisks` is an object whose keys match `^[^:]+::[^:]+$` and whose entries require `at` and `serviceFingerprint`. Service and store are carried by the key and MUST NOT be duplicated as fields, so the key and the entry body cannot disagree.)
-
-#### Scenario: Explicit acceptance recorded
-
-- GIVEN the gate refused `(S, D)` and the user explicitly accepts that risk
-- WHEN the overlay launches
-- THEN an `acceptedRisks` entry for `(S, D)` records the timestamp and S's current fingerprint
-
-#### Scenario: Stale acceptance after source drift
-
-- GIVEN an `acceptedRisks` entry for `(S, D)` whose recorded fingerprint differs from S's current fingerprint
-- WHEN the gate evaluates `(S, D)`
-- THEN the entry is ignored, the original verdict applies, and the overlay is refused until the user accepts again
-- AND a new acceptance replaces the stale entry rather than appending to it
-
-#### Scenario: Acceptance does not generalize
-
-- GIVEN an accepted entry for `(catalog-api, postgres)`
-- WHEN the gate evaluates `(catalog-api, kafka)` or `(billing-service, postgres)`
-- THEN no acceptance applies and each pair is classified on its own

@@ -64,6 +64,14 @@
 # unlisted, and whose published port is not among the values passed.
 #
 # target: c:<container-id>            one argument
+#         v:<volume-name>             one argument, a store copy. REMOVE ONLY,
+#                                     and that is the deliberate asymmetry: a
+#                                     copy is state nothing on this host can
+#                                     reproduce, so the cheap verb is not
+#                                     available for it. A v: target under stop
+#                                     is refused by name, exactly as a p: under
+#                                     remove is. Removal therefore takes the
+#                                     removal verb IN ADDITION to -m.
 #         p:<pid> <recorded-lstart>   TWO arguments, the second verbatim as it
 #                                     was recorded. remove has no meaning for a
 #                                     process, so a p: target under remove is
@@ -76,6 +84,11 @@
 # stdout: tab-separated records, one per line, the first field naming the kind:
 #         worktree   a worktree entry and whether it is live
 #         container  an overlay of this repository, its verdict, or its outcome
+#         copy       a store copy of this repository, its verdict, or its
+#                    outcome. `copy checked none` is a verified zero; a runtime
+#                    that would not answer emits degraded instead, because a
+#                    report saying no copies over an unanswered query tells a
+#                    developer their disk is clear when it may hold gigabytes
 #         process    a host-kind overlay this run signalled
 #         host       the host-overlay registry: checked, or unknown and why
 #         held       one port a live overlay of this repository holds
@@ -145,7 +158,7 @@ usage() {
     printf 'usage: sh %s [-C <repoRoot>] [-b <basePort>]... report <hash8>\n' "$0" >&2
     printf '       sh %s [-C <repoRoot>] -b <basePort>... -m stop|remove <hash8> <target>...\n' "$0" >&2
     printf '       -b one baseStack port, repeated once per port; a container mutation needs at least one\n' >&2
-    printf '       target: c:<container-id>  or  p:<pid> <recorded-lstart>\n' >&2
+    printf '       target: c:<container-id>  ·  v:<volume-name> (remove only)  ·  p:<pid> <recorded-lstart>\n' >&2
     exit 2
 }
 
@@ -363,6 +376,49 @@ ps_fmt="{{.ID}}$tab{{.State}}$tab{{.Label \"stackgraft.labels\"}}$tab{{.Label \"
 scoped_rows() { docker ps --all --filter "label=stackgraft.repo=$hash8" "$@" --format "$ps_fmt" 2>/dev/null; }
 scoped_ids()  { docker ps --all --filter "label=stackgraft.repo=$hash8" "$@" --quiet 2>/dev/null; }
 
+# The copy listing, scoped the same way and for the same reason. A copy is a
+# NAMED volume this skill provisioned, and an unscoped `docker volume ls` on a
+# developer's machine reaches every object everything else they have ever run
+# left behind - measured at 5578 on the machine this was written on.
+#
+# `--filter name=` is a SUBSTRING match on volumes rather than an equality, so
+# the name is matched against this output instead of passed to the runtime:
+# filtering on `pg` would otherwise reach `pg-backup` and everything else whose
+# name contains it. Measured on Docker 29.5.3.
+vol_fmt="{{.Name}}$tab{{.Label \"stackgraft.labels\"}}$tab{{.Label \"stackgraft.worktree\"}}$tab{{.Label \"stackgraft.store\"}}"
+scoped_copies() { docker volume ls --filter "label=stackgraft.repo=$hash8" --format "$vol_fmt" 2>/dev/null; }
+
+# Splits one copy row into the four globals its classifier reads, and REFUSES A
+# ROW THAT IS NOT FOUR FIELDS rather than splitting it anyway.
+#
+# The arity test is the whole point and it is not defensive padding. `${x%%t*}`
+# and `${x#*t}` both return x unchanged when x holds no tab, so a three-field
+# row makes v_wt and v_store the SAME non-empty string - and the completeness
+# test downstream, which only asks whether either is empty, does not fire. The
+# row then classifies on a worktree value that is really the store's, or on a
+# truncated path, and the verdict it reaches is `orphan`, whose action is an
+# irreversible `docker volume rm`.
+#
+# Reachable rather than theoretical: a docker label value may contain a newline,
+# and `docker volume ls --format` then emits one logical row as two physical
+# lines. A worktree path containing one - legal on every platform this runs on -
+# splits into a first line of three fields.
+#
+# Returns 1 for a row that is not four fields. Every caller must treat that as
+# unreadable, which is unknown, which never orphans anything.
+split_copy() {
+    _c=$1
+    case $_c in
+        *"$tab"*"$tab"*"$tab"*"$tab"*) return 1 ;;
+        *"$tab"*"$tab"*"$tab"*)        ;;
+        *)                             return 1 ;;
+    esac
+    v_name=${_c%%"$tab"*};  _c=${_c#*"$tab"}
+    v_ver=${_c%%"$tab"*};   _c=${_c#*"$tab"}
+    v_wt=${_c%%"$tab"*}
+    v_store=${_c#*"$tab"}
+}
+
 # Splits one row into the six globals the classifier reads. Parameter
 # expansion rather than read, because a service name or a path containing a
 # space has to survive whole.
@@ -404,6 +460,39 @@ classify() {
         return 0
     fi
     case $(wt_state "$r_wt" "$wt_index") in
+        live)         printf 'worktree-still-listed\n' ;;
+        prunable)     printf 'worktree-prunable\n' ;;
+        unresolvable) printf 'worktree-unresolvable\n' ;;
+        *)            printf 'orphan\n' ;;
+    esac
+}
+
+# The copy's classifier, and it is DELIBERATELY not `classify` with a flag on.
+# A copy carries FOUR labels where an overlay carries five - stackgraft.service
+# holds a manifest service key and a copy belongs to a store rather than to a
+# service - so one shared function would have to weaken the completeness test
+# for both, and completeness is the whole of the candidacy rule. The base-port
+# branch has no meaning here either: a volume publishes nothing.
+#
+# Everything else is the same on purpose. Liveness is the same worktree list,
+# an unrecognised label version is the same fail-safe refusal, and an
+# unreadable list makes every absence unknown rather than orphaned - because a
+# copy wrongly called an orphan is the most expensive mistake this script can
+# make, not the least.
+classify_copy() {
+    if [ "$v_ver" != "$LABELS_VERSION" ]; then
+        printf 'unrecognised-label-version\n'
+        return 0
+    fi
+    if [ -z "$v_wt" ] || [ -z "$v_store" ]; then
+        printf 'incomplete-label-set\n'
+        return 0
+    fi
+    if [ "$wt_ok" -eq 0 ]; then
+        printf 'worktree-list-unavailable\n'
+        return 0
+    fi
+    case $(wt_state "$v_wt" "$wt_index") in
         live)         printf 'worktree-still-listed\n' ;;
         prunable)     printf 'worktree-prunable\n' ;;
         unresolvable) printf 'worktree-unresolvable\n' ;;
@@ -497,6 +586,109 @@ report_containers() {
     done
 }
 
+# hash8 as the caller SPELLED it is not evidence that it is this repository's.
+# The scoped query trusts it whole, and liveness is judged against -C's worktree
+# list, so a run given repository A's root and repository B's hash returns B's
+# copies, finds B's worktrees absent from A's list, and calls every one of them
+# an orphan. That pairing is unchecked for `c:` too, but a container is gated by
+# the mandatory -b and comes back from its image; a copy comes back from
+# nothing, so the pairing is proven here before anything irreversible runs.
+#
+# Derived the way `discovery.md` section 0 derives it and `sidecar_path` already
+# resolves it: the git common dir, made absolute, hashed with no trailing
+# newline, cut to eight characters. A derivation that cannot be made is UNKNOWN
+# and refuses; it never falls through to trusting the argument.
+derived_hash8() {
+    _raw=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
+    [ -n "$_raw" ] || return 1
+    # `CDPATH= cd -- <path> && pwd -P`, which is what discovery.md section 0
+    # specifies and NOT a string concatenation of root and the answer. The two
+    # differ: the answer is relative to the worktree top, `.git` can be a FILE
+    # under --separate-git-dir with the real directory elsewhere, and a
+    # concatenated path keeps whatever symlink spelling it was handed. Hashing a
+    # different spelling produces a different hash8, and this run would then
+    # refuse every copy the launcher labelled.
+    #
+    # `CDPATH=` is load-bearing for the reason both other scripts carry it: with
+    # CDPATH exported, `cd -- .git` can enter a NEIGHBOURING repository's git
+    # dir. Here that would mean deriving another repository's hash8 and refusing
+    # our own copies - or, with the argument to match, accepting theirs.
+    _cd=$(cd -- "$root" 2>/dev/null && CDPATH= cd -- "$_raw" 2>/dev/null && pwd -P) || return 1
+    [ -n "$_cd" ] || return 1
+    _dig=$(printf '%s' "$_cd" | git hash-object --stdin 2>/dev/null) || return 1
+    case $_dig in
+        '' | *[!0-9a-f]*) return 1 ;;
+    esac
+    printf '%.8s\n' "$_dig"
+}
+
+# The copies, reported on every invocation exactly as the containers are. This
+# is the half with the highest cost attached to getting it wrong in the quiet
+# direction: a report that says NO COPIES over a runtime that never answered
+# tells a developer their disk is clear when it may be holding gigabytes, and
+# they will believe it because it is a number.
+report_copies() {
+    # `store_incomplete` is DELIBERATELY not set here. It says the held-PORT set
+    # is short of what is really held, and a copy publishes no port - so raising
+    # it from this function would make the run assert something false about
+    # ports because something was unknown about disk. The degraded record above
+    # is the signal, and it says which thing is unknown.
+    if [ "$docker_ok" -eq 0 ]; then
+        emit degraded docker-unavailable \
+            'the container runtime is absent, so store copies are unknown - never zero'
+        return 0
+    fi
+    # The report mutates nothing, but it makes CLAIMS, and a claim about another
+    # repository's copies is a false one however harmless the run is. Given one
+    # repository's root and another's hash8, every copy under that label has a
+    # worktree absent from THIS list, so all of them print as orphans - and the
+    # run then hands a person the exact command to remove another repository's
+    # live state. The mutating path refuses this; the report used to report it.
+    if ! _rmine=$(derived_hash8); then
+        emit degraded repository-identity-unknown \
+            "this repository's own hash8 could not be derived, so whether $hash8 names it is unknown and no copy is classified"
+        return 0
+    fi
+    if [ "$_rmine" != "$hash8" ]; then
+        emit degraded hash8-is-not-this-repository \
+            "the repository at $root derives hash8 '$_rmine' and this run was given '$hash8', so the copies under that label are another repository's and are not classified here"
+        return 0
+    fi
+    if ! _crows=$(scoped_copies); then
+        emit degraded docker-unavailable \
+            'the container runtime did not answer the copy listing, so store copies are unknown - never zero'
+        return 0
+    fi
+    if [ -z "$_crows" ]; then
+        emit copy checked none
+        return 0
+    fi
+    printf '%s\n' "$_crows" | while IFS= read -r _crow; do
+        [ -n "$_crow" ] || continue
+        if ! split_copy "$_crow"; then
+            emit degraded copy-row-unreadable \
+                'a copy listing row did not carry its four fields, so what it describes is unknown and it is reported rather than classified'
+            continue
+        fi
+        _cv=$(classify_copy)
+        case $_cv in
+            unrecognised-label-version | incomplete-label-set)
+                emit refused "v:$v_name" "$_cv" \
+                    'reported, never acted on: this is not a record this run can read as ownership'
+                ;;
+            worktree-still-listed)
+                emit copy "$v_name" "$v_store" "$v_wt" live
+                ;;
+            orphan)
+                emit copy "$v_name" "$v_store" "$v_wt" orphan
+                ;;
+            *)
+                emit copy "$v_name" "$v_store" "$v_wt" "unknown:$_cv"
+                ;;
+        esac
+    done
+}
+
 report_registry() {
     _sc=$(sidecar_path) || _sc=
     if [ -z "$_sc" ]; then
@@ -533,6 +725,7 @@ if [ "$verb" = report ]; then
     store_incomplete=0
     report_worktrees
     report_containers
+    report_copies
     report_registry
     report_legacy
     if [ "$store_incomplete" -ne 0 ]; then
@@ -642,6 +835,97 @@ prove_process() {
     plan="${plan}p$tab$_pid$nl"
 }
 
+# A copy is the most expensive thing this script can be wrong about. An overlay
+# container stopped by mistake is back from its image in seconds; a copy removed
+# by mistake is state NOTHING on this host can reproduce, because the base stack
+# has moved on since it was taken. So the proof is the container proof plus one
+# more refusal, and it runs the opposite way to intuition on purpose: the cheap
+# verb is not available for a copy at all.
+
+prove_volume() {
+    _name=$1
+    if [ "$docker_ok" -eq 0 ]; then
+        refuse "v:$_name" docker-unavailable \
+            'the container runtime is absent or did not answer'
+        return 0
+    fi
+    if ! _mine=$(derived_hash8); then
+        refuse "v:$_name" repository-identity-unknown \
+            "this repository's own hash8 could not be derived from $root, so whether $hash8 names it is unknown, and nothing irreversible runs on unknown"
+        return 0
+    fi
+    if [ "$_mine" != "$hash8" ]; then
+        refuse "v:$_name" hash8-is-not-this-repository \
+            "the repository at $root derives hash8 '$_mine' and this run was given '$hash8': the copies under that label belong to another repository, whose worktrees are absent from this one's list and would every one of them read as orphans"
+        return 0
+    fi
+    # THE REMOVAL FLAG IN ADDITION TO THE MUTATION FLAG, and this is the line
+    # where the addition happens. `stop` has no meaning for a volume, so a v:
+    # target under it is refused BY NAME rather than silently downgraded - the
+    # same direction `remove` already takes for a p: target one branch along.
+    # `remove` refuses without -m before any target is read, so reaching this
+    # line at all means both were given.
+    if [ "$verb" != remove ]; then
+        refuse "v:$_name" malformed-target \
+            'stop has no meaning for a copy: removal is the only verb for one, and it needs -m in addition'
+        return 0
+    fi
+    # A listing that DID NOT ANSWER is unknown, never empty. `for row in $(...)`
+    # cannot draw that distinction - a failed listing runs the body zero times
+    # exactly as an empty one does - so the exit status is taken first and the
+    # refusal says which of the two it was.
+    if ! _rows=$(scoped_copies); then
+        refuse "v:$_name" copy-listing-unknown \
+            'the copy listing did not answer, so what this repository holds here is unknown rather than none, and nothing was removed'
+        return 0
+    fi
+    # Exact-name matching, here rather than in the query, because the runtime's
+    # own name filter is a substring test - see scoped_copies.
+    _row=
+    _rest=$_rows
+    while [ -n "$_rest" ]; do
+        case $_rest in
+            *"$nl"*) _line=${_rest%%"$nl"*}; _rest=${_rest#*"$nl"} ;;
+            *)       _line=$_rest; _rest= ;;
+        esac
+        [ -n "$_line" ] || continue
+        case $_line in
+            "$_name$tab"*) _row=$_line; break ;;
+        esac
+    done
+    if [ -z "$_row" ]; then
+        refuse "v:$_name" not-a-labelled-copy-of-this-repository \
+            "the scoped query returned no copy named that carrying stackgraft.repo=$hash8"
+        return 0
+    fi
+    if ! split_copy "$_row"; then
+        refuse "v:$_name" copy-row-unreadable \
+            'the runtime returned a row that did not carry its four fields, so what it describes is unknown and unknown is never orphaned'
+        return 0
+    fi
+    _cv=$(classify_copy)
+    case $_cv in
+        orphan) ;;
+        worktree-still-listed)
+            refuse "v:$_name" worktree-still-listed \
+                "its worktree $v_wt is still listed, so the copy belongs to work in progress and is not a target under any flag"
+            return 0 ;;
+        incomplete-label-set)
+            refuse "v:$_name" incomplete-label-set \
+                'a copy carries stackgraft.labels, stackgraft.repo, stackgraft.worktree and stackgraft.store; an object carrying three of the four is not ours to remove'
+            return 0 ;;
+        unrecognised-label-version)
+            refuse "v:$_name" unrecognised-label-version \
+                "it carries stackgraft.labels=$v_ver and this run understands $LABELS_VERSION, so what its labels mean is unknown and acting on it is not available"
+            return 0 ;;
+        *)
+            refuse "v:$_name" "$_cv" \
+                'liveness could not be established for this copy, and unknown is never orphaned'
+            return 0 ;;
+    esac
+    plan="${plan}v$tab$v_name$tab$v_store$tab$v_wt$nl"
+}
+
 # A target that will not parse is refused like any other unprovable target: by
 # name, with its reason, while the rest of the list is still proven and acted
 # on. Ending the whole invocation here is the shape that was already corrected
@@ -678,8 +962,15 @@ while [ "$#" -gt 0 ]; do
                 fi
             fi
             ;;
+        v:*)
+            if [ -z "${target#v:}" ]; then
+                refuse "$target" malformed-target 'empty volume name in a v: target'
+            else
+                prove_volume "${target#v:}"
+            fi
+            ;;
         *)  refuse "$target" malformed-target \
-                'a target is c:<container-id> or p:<pid> <recorded-lstart>' ;;
+                'a target is c:<container-id>, v:<volume-name>, or p:<pid> <recorded-lstart>' ;;
     esac
 done
 
@@ -719,7 +1010,20 @@ while [ -n "$rest" ]; do
                 unactionable=$((unactionable + 1))
             fi
         else
-            if docker rm -f "$a_id" >/dev/null 2>&1; then
+            # -v, and it is a correction rather than a flourish. An image that
+            # declares VOLUME in its own Dockerfile gives every container of it
+            # an anonymous volume whether or not the launch asked for one, so a
+            # removal without -v leaves behind an object with no name, no label
+            # and no owner - the exact shape this script exists to reclaim, in
+            # the one form it could never afterwards find. Measured: the
+            # verification suite's own overlay fixtures leaked one per removal.
+            #
+            # -v reaches ANONYMOUS volumes only; a named one is never removed by
+            # it, measured on Docker 29.5.3 against a container mounting both.
+            # That is what makes it safe here: a base stack's data volume is
+            # named, and so is every copy this skill provisions, so neither is
+            # reachable by this line.
+            if docker rm -f -v "$a_id" >/dev/null 2>&1; then
                 emit container "$a_id" "$a_state" "$a_svc" "$a_port" removed
                 acted=$((acted + 1))
             else
@@ -727,6 +1031,22 @@ while [ -n "$rest" ]; do
                 printf '%s: docker rm failed for %s; the other targets are unaffected\n' "$me" "$a_id" >&2
                 unactionable=$((unactionable + 1))
             fi
+        fi
+    elif [ "$kind" = v ]; then
+        a_name=${fields%%"$tab"*};   fields=${fields#*"$tab"}
+        a_store=${fields%%"$tab"*}
+        a_wt=${fields#*"$tab"}
+        # By NAME, and never `docker volume prune`: a prune decides for itself
+        # what is unused, which is the runtime's judgement standing in for the
+        # proof above. Only the copy this run proved out is named here.
+        if docker volume rm "$a_name" >/dev/null 2>&1; then
+            emit copy "$a_name" "$a_store" "$a_wt" removed
+            acted=$((acted + 1))
+        else
+            emit refused "v:$a_name" remove-failed \
+                'the runtime would not remove the copy'
+            printf '%s: docker volume rm failed for %s; the other targets are unaffected\n' "$me" "$a_name" >&2
+            unactionable=$((unactionable + 1))
         fi
     else
         if kill "$fields" 2>/dev/null; then

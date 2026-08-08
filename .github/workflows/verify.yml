@@ -20,9 +20,29 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq dash
-          python3 -m pip install --quiet jsonschema
+          # --upgrade and NOT --quiet: the runner image already carries a
+          # jsonschema, so a plain install is a silent no-op and the schema
+          # rows then run against whatever version the image happened to ship.
+          # The version is printed so a drift is visible in the log rather than
+          # inferred from a failure.
+          python3 -m pip install --upgrade jsonschema
+          python3 -c 'import importlib.metadata as m; print("jsonschema", m.version("jsonschema"))'
 
+      # The runtime half of the suite - the provider, the copy verification, the
+      # generated read, the anonymous-volume ledger - runs real containers off
+      # this image. Pulled explicitly so a rate-limited or renamed image is a
+      # failing step here rather than nine quiet skips further down.
+      - name: Pull the image the runtime rows launch
+        run: docker pull alpine/git
+
+      # STACKGRAFT_REQUIRE_RUNTIME turns a missing daemon, image or interpreter
+      # into a failure instead of a note. Without it this job ran 565 of 805
+      # rows on a runner with no daemon and printed `all checks passed` - the
+      # mechanism this release exists for, with no executed coverage and no way
+      # for CI to say so.
       - name: Run the verification suite
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/verify.sh
 
   portability:

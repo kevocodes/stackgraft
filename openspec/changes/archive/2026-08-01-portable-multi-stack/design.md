@@ -74,7 +74,7 @@ Rule 3 (−9, verbatim in `traps.md:8`), Hard Rule 2 `lsof` demotion rewrite (�
 compression (−6, verbatim in `traps.md:13`), Activation Contract (−8), Execution Steps 3–8 (−20),
 Output Contract (−16), References descriptions (−14), Decision Gates rows (−15). **Contingency:**
 if PR 1 cannot reach 450, collapse Execution Steps 5–8 to one line each and let
-`references/discovery.md` §5 (which already documents the wiring) carry the detail. The Output
+`references/discovery.md` section 5 (which already documents the wiring) carry the detail. The Output
 Contract stays in the body unconditionally — it defines the return value, and a reference may not load.
 
 ### T2 — Automated isolation vs. zero install

@@ -5991,7 +5991,14 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         printf '%s' "$crep" | grep -q "^refused${ctab}v:sgv-partial-${csfx}${ctab}incomplete-label-set" \
             && ok "...and refuses a copy carrying three of the four labels, because the set is complete or it is not ours" \
             || fail "a partially labelled volume was not refused by the report"
-        printf '%s' "$crep" | grep -q 'sgv-other-${csfx}' \
+        # DOUBLE quotes. A bulk rename that added the per-run suffix rewrote
+        # this pattern inside its single quotes, where ${csfx} does not expand -
+        # so grep searched for the literal bytes `sgv-other-${csfx}`, matched
+        # nothing reap.sh can emit, and the || ok arm fired unconditionally.
+        # Before that rename the single-quoted `sgv-other` was a working
+        # assertion; the rename turned it into a check that cannot fail, one row
+        # above the block repairing exactly that class.
+        printf '%s' "$crep" | grep -q "sgv-other-${csfx}" \
             && fail "the report reached another repository's copy, which the scoped query must exclude" \
             || ok "...and never names a copy labelled for another repository, which no query of ours reaches"
 
@@ -6047,22 +6054,47 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
         # --- the fail-safes the shipped prose promises, actually exercised ---
         # CHANGELOG, SECURITY.md, README and reaping.md all state these. None of
         # them had a fixture: every creap call above passes a valid git repo and
-        # a working daemon, so the unreadable-list, unanswered-listing and
-        # wrong-repository branches shipped as prose with no executed coverage -
+        # a working daemon, so the identity, unanswered-listing, wrong-repository
+        # and truncated-row branches shipped as prose with no executed coverage -
         # in the block whose own header says every rule below has a fixture.
 
-        # A worktree list that cannot be read. -C at a directory that is not a
-        # git repository sets wt_ok=0, which must make every copy unknown rather
-        # than orphaned - the direction with the whole cost attached.
+        # -C at a directory that is not a git repository. This row used to claim
+        # it exercised `worktree-list-unavailable` and it did not: the identity
+        # gate runs first and refuses `repository-identity-unknown`, and the
+        # assertion omitted the reason field, so it passed on a different branch
+        # than its own prose named - a negative rejected for the wrong reason,
+        # which this file counts as no negative at all.
+        #
+        # LIMIT, stated rather than covered: for a `v:` target
+        # `worktree-list-unavailable` is now UNREACHABLE by construction. Both
+        # it and the identity gate need `git -C $root` to answer, and the gate
+        # is tested first, so a root where the worktree list fails is a root
+        # where the derivation already failed. The branch remains in
+        # classify_copy because report_copies still reaches it; the actuator
+        # cannot. That is why this row asserts the reason it really produces.
         cnr=$cr/not-a-repo
         mkdir -p "$cnr"
         sh "$SKILL/scripts/reap.sh" -C "$cnr" -m remove "$CH" "v:sgv-orphan-${csfx}" 2>&1 \
-            | grep -q "^refused${ctab}v:sgv-orphan-${csfx}" \
-            && ok "rejected: an orphaned copy judged against a worktree list that cannot be read - unknown is never orphaned" \
-            || fail "a copy was not refused when the worktree list could not be read"
+            | grep -q "^refused${ctab}v:sgv-orphan-${csfx}${ctab}repository-identity-unknown" \
+            && ok "rejected: a copy whose repository identity cannot be derived at all - unknown never reaches the worktree question, let alone an orphan verdict" \
+            || fail "a root that is not a git repository did not refuse with repository-identity-unknown"
         [ "$(cgone "sgv-orphan-${csfx}")" = here ] \
             && ok "...and the copy is still there, which is the direction that costs nothing to be wrong about" \
-            || fail "a copy was removed on a run that could not read the worktree list"
+            || fail "a copy was removed on a run that could not identify the repository"
+
+        # A copy listing that DID NOT ANSWER, which must be unknown and never
+        # `no copies`. Driven by pointing the client at a port nothing serves:
+        # `command -v docker` still succeeds, so docker_ok stays 1 and the run
+        # reaches the listing, which then fails. This is the branch CHANGELOG,
+        # SECURITY.md and reaping.md all state as a guarantee and nothing
+        # executed until now.
+        DOCKER_HOST=tcp://127.0.0.1:1 sh "$SKILL/scripts/reap.sh" -C "$crepo" -m remove "$CH" "v:sgv-orphan-${csfx}" 2>&1 \
+            | grep -q "^refused${ctab}v:sgv-orphan-${csfx}${ctab}copy-listing-unknown" \
+            && ok "rejected: a copy whose listing did not answer - what this repository holds is unknown rather than none" \
+            || fail "an unanswered copy listing was not refused as unknown, which is how 'no copies' gets reported over a daemon that never spoke"
+        [ "$(cgone "sgv-orphan-${csfx}")" = here ] \
+            && ok "...and nothing was removed on the strength of a listing nobody got" \
+            || fail "a copy was removed on a run whose listing never answered"
 
         # Another repository's hash8 against this root. Every copy under it would
         # read as an orphan, because its worktrees are absent from THIS list.
@@ -6125,7 +6157,15 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
             && ok "...and the runtime agrees: the orphan is gone and the live copy is still there" \
             || fail "the runtime disagrees with what the run reported about the two copies"
 
-        docker volume rm sgv-live-${csfx} sgv-future-${csfx} sgv-other-${csfx} sgv-partial-${csfx} >/dev/null 2>&1
+        # Removed by SUFFIX rather than by an expected list, so a fixture that
+        # failed earlier in the block is still reclaimed. What this does not
+        # cover is an abort from outside - a CI timeout or Ctrl-C - which leaves
+        # this run's volumes behind; the suffix keeps them from corrupting a
+        # later run's arithmetic, and that residual is stated rather than
+        # claimed closed.
+        for _cv in $(docker volume ls -q 2>/dev/null | grep "^sgv-.*-${csfx}$" || true); do
+            docker volume rm "$_cv" >/dev/null 2>&1
+        done
         c_left=$(docker volume ls -q 2>/dev/null | grep -c "^sgv-.*-${csfx}$" || true)
         [ "$c_left" -eq 0 ] \
             && ok "this section removed every copy it created, and left none behind" \
@@ -6134,7 +6174,7 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1;
     git -C "$crepo" worktree remove --force "$cr/live" >/dev/null 2>&1
     rm -rf "$cr"
 else
-    skip "copy-reap rows (no docker daemon)" runtime
+    skip "copy-reap rows (no docker daemon or alpine/git image)" runtime
 fi
 
 # --- the shipped text and the code must agree --------------------------------
@@ -6214,7 +6254,11 @@ copy-row-unreadable|the-arity-test'
 # come to test a different set of pieces than the row does.
 missing_pieces() {
     _f=$1
-    _out=''
+    # The labels are written to the loop's stdout, which is this function's
+    # stdout, which both call sites capture - so the `printf | while` subshell
+    # loses nothing. An accumulator variable here WOULD be lost, which is why
+    # there is none. IFS='|' means a pattern containing a pipe would truncate
+    # into the label; no entry carries one today, and a future one must not.
     printf '%s\n' "$CP_PIECES" | while IFS='|' read -r _pat _label; do
         [ -n "$_pat" ] || continue
         copy_piece "$_f" "$_pat" || printf ' %s' "$_label"
@@ -6232,8 +6276,6 @@ cp_missing=$(missing_pieces "$SKILL/scripts/reap.sh")
 # any file. The ok branch fired unconditionally and the checker was never
 # involved. Each piece is stripped on its own, so one cannot cover for another.
 cd_fx=$(mktemp -d)
-cd_bad=0
-cd_n=0
 printf '%s\n' "$CP_PIECES" | while IFS='|' read -r _pat _label; do
     [ -n "$_pat" ] || continue
     grep -v "$_pat" "$SKILL/scripts/reap.sh" > "$cd_fx/reap.sh" 2>/dev/null
@@ -6243,7 +6285,7 @@ printf '%s\n' "$CP_PIECES" | while IFS='|' read -r _pat _label; do
         printf 'BAD %s\n' "$_label"
     fi
 done > "$cd_fx/verdicts"
-cd_n=$(grep -c '^ok ' "$cd_fx/verdicts")
+cd_n=$(grep -c '^ok ' "$cd_fx/verdicts" || true)
 cd_bad=$(grep -c '^BAD ' "$cd_fx/verdicts" || true)
 if [ "$cd_bad" -eq 0 ] && [ "$cd_n" -eq 6 ]; then
     ok "rejected: reap.sh with each of the 6 copy-reclamation pieces stripped in turn, each named back by the same reader the shipped row uses"

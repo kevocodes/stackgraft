@@ -586,6 +586,42 @@ report_containers() {
     done
 }
 
+# hash8 as the caller SPELLED it is not evidence that it is this repository's.
+# The scoped query trusts it whole, and liveness is judged against -C's worktree
+# list, so a run given repository A's root and repository B's hash returns B's
+# copies, finds B's worktrees absent from A's list, and calls every one of them
+# an orphan. That pairing is unchecked for `c:` too, but a container is gated by
+# the mandatory -b and comes back from its image; a copy comes back from
+# nothing, so the pairing is proven here before anything irreversible runs.
+#
+# Derived the way `discovery.md` section 0 derives it and `sidecar_path` already
+# resolves it: the git common dir, made absolute, hashed with no trailing
+# newline, cut to eight characters. A derivation that cannot be made is UNKNOWN
+# and refuses; it never falls through to trusting the argument.
+derived_hash8() {
+    _raw=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
+    [ -n "$_raw" ] || return 1
+    # `CDPATH= cd -- <path> && pwd -P`, which is what discovery.md section 0
+    # specifies and NOT a string concatenation of root and the answer. The two
+    # differ: the answer is relative to the worktree top, `.git` can be a FILE
+    # under --separate-git-dir with the real directory elsewhere, and a
+    # concatenated path keeps whatever symlink spelling it was handed. Hashing a
+    # different spelling produces a different hash8, and this run would then
+    # refuse every copy the launcher labelled.
+    #
+    # `CDPATH=` is load-bearing for the reason both other scripts carry it: with
+    # CDPATH exported, `cd -- .git` can enter a NEIGHBOURING repository's git
+    # dir. Here that would mean deriving another repository's hash8 and refusing
+    # our own copies - or, with the argument to match, accepting theirs.
+    _cd=$(cd -- "$root" 2>/dev/null && CDPATH= cd -- "$_raw" 2>/dev/null && pwd -P) || return 1
+    [ -n "$_cd" ] || return 1
+    _dig=$(printf '%s' "$_cd" | git hash-object --stdin 2>/dev/null) || return 1
+    case $_dig in
+        '' | *[!0-9a-f]*) return 1 ;;
+    esac
+    printf '%.8s\n' "$_dig"
+}
+
 # The copies, reported on every invocation exactly as the containers are. This
 # is the half with the highest cost attached to getting it wrong in the quiet
 # direction: a report that says NO COPIES over a runtime that never answered
@@ -600,6 +636,22 @@ report_copies() {
     if [ "$docker_ok" -eq 0 ]; then
         emit degraded docker-unavailable \
             'the container runtime is absent, so store copies are unknown - never zero'
+        return 0
+    fi
+    # The report mutates nothing, but it makes CLAIMS, and a claim about another
+    # repository's copies is a false one however harmless the run is. Given one
+    # repository's root and another's hash8, every copy under that label has a
+    # worktree absent from THIS list, so all of them print as orphans - and the
+    # run then hands a person the exact command to remove another repository's
+    # live state. The mutating path refuses this; the report used to report it.
+    if ! _rmine=$(derived_hash8); then
+        emit degraded repository-identity-unknown \
+            "this repository's own hash8 could not be derived, so whether $hash8 names it is unknown and no copy is classified"
+        return 0
+    fi
+    if [ "$_rmine" != "$hash8" ]; then
+        emit degraded hash8-is-not-this-repository \
+            "the repository at $root derives hash8 '$_rmine' and this run was given '$hash8', so the copies under that label are another repository's and are not classified here"
         return 0
     fi
     if ! _crows=$(scoped_copies); then
@@ -789,41 +841,6 @@ prove_process() {
 # has moved on since it was taken. So the proof is the container proof plus one
 # more refusal, and it runs the opposite way to intuition on purpose: the cheap
 # verb is not available for a copy at all.
-# hash8 as the caller SPELLED it is not evidence that it is this repository's.
-# The scoped query trusts it whole, and liveness is judged against -C's worktree
-# list, so a run given repository A's root and repository B's hash returns B's
-# copies, finds B's worktrees absent from A's list, and calls every one of them
-# an orphan. That pairing is unchecked for `c:` too, but a container is gated by
-# the mandatory -b and comes back from its image; a copy comes back from
-# nothing, so the pairing is proven here before anything irreversible runs.
-#
-# Derived the way `discovery.md` section 0 derives it and `sidecar_path` already
-# resolves it: the git common dir, made absolute, hashed with no trailing
-# newline, cut to eight characters. A derivation that cannot be made is UNKNOWN
-# and refuses; it never falls through to trusting the argument.
-derived_hash8() {
-    _raw=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
-    [ -n "$_raw" ] || return 1
-    # `CDPATH= cd -- <path> && pwd -P`, which is what discovery.md section 0
-    # specifies and NOT a string concatenation of root and the answer. The two
-    # differ: the answer is relative to the worktree top, `.git` can be a FILE
-    # under --separate-git-dir with the real directory elsewhere, and a
-    # concatenated path keeps whatever symlink spelling it was handed. Hashing a
-    # different spelling produces a different hash8, and this run would then
-    # refuse every copy the launcher labelled.
-    #
-    # `CDPATH=` is load-bearing for the reason both other scripts carry it: with
-    # CDPATH exported, `cd -- .git` can enter a NEIGHBOURING repository's git
-    # dir. Here that would mean deriving another repository's hash8 and refusing
-    # our own copies - or, with the argument to match, accepting theirs.
-    _cd=$(cd -- "$root" 2>/dev/null && CDPATH= cd -- "$_raw" 2>/dev/null && pwd -P) || return 1
-    [ -n "$_cd" ] || return 1
-    _dig=$(printf '%s' "$_cd" | git hash-object --stdin 2>/dev/null) || return 1
-    case $_dig in
-        '' | *[!0-9a-f]*) return 1 ;;
-    esac
-    printf '%.8s\n' "$_dig"
-}
 
 prove_volume() {
     _name=$1

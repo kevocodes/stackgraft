@@ -158,7 +158,7 @@ usage() {
     printf 'usage: sh %s [-C <repoRoot>] [-b <basePort>]... report <hash8>\n' "$0" >&2
     printf '       sh %s [-C <repoRoot>] -b <basePort>... -m stop|remove <hash8> <target>...\n' "$0" >&2
     printf '       -b one baseStack port, repeated once per port; a container mutation needs at least one\n' >&2
-    printf '       target: c:<container-id>  or  p:<pid> <recorded-lstart>\n' >&2
+    printf '       target: c:<container-id>  ·  v:<volume-name> (remove only)  ·  p:<pid> <recorded-lstart>\n' >&2
     exit 2
 }
 
@@ -388,9 +388,31 @@ scoped_ids()  { docker ps --all --filter "label=stackgraft.repo=$hash8" "$@" --q
 vol_fmt="{{.Name}}$tab{{.Label \"stackgraft.labels\"}}$tab{{.Label \"stackgraft.worktree\"}}$tab{{.Label \"stackgraft.store\"}}"
 scoped_copies() { docker volume ls --filter "label=stackgraft.repo=$hash8" --format "$vol_fmt" 2>/dev/null; }
 
-# Splits one copy row into the four globals its classifier reads.
+# Splits one copy row into the four globals its classifier reads, and REFUSES A
+# ROW THAT IS NOT FOUR FIELDS rather than splitting it anyway.
+#
+# The arity test is the whole point and it is not defensive padding. `${x%%t*}`
+# and `${x#*t}` both return x unchanged when x holds no tab, so a three-field
+# row makes v_wt and v_store the SAME non-empty string - and the completeness
+# test downstream, which only asks whether either is empty, does not fire. The
+# row then classifies on a worktree value that is really the store's, or on a
+# truncated path, and the verdict it reaches is `orphan`, whose action is an
+# irreversible `docker volume rm`.
+#
+# Reachable rather than theoretical: a docker label value may contain a newline,
+# and `docker volume ls --format` then emits one logical row as two physical
+# lines. A worktree path containing one - legal on every platform this runs on -
+# splits into a first line of three fields.
+#
+# Returns 1 for a row that is not four fields. Every caller must treat that as
+# unreadable, which is unknown, which never orphans anything.
 split_copy() {
     _c=$1
+    case $_c in
+        *"$tab"*"$tab"*"$tab"*"$tab"*) return 1 ;;
+        *"$tab"*"$tab"*"$tab"*)        ;;
+        *)                             return 1 ;;
+    esac
     v_name=${_c%%"$tab"*};  _c=${_c#*"$tab"}
     v_ver=${_c%%"$tab"*};   _c=${_c#*"$tab"}
     v_wt=${_c%%"$tab"*}
@@ -591,7 +613,11 @@ report_copies() {
     fi
     printf '%s\n' "$_crows" | while IFS= read -r _crow; do
         [ -n "$_crow" ] || continue
-        split_copy "$_crow"
+        if ! split_copy "$_crow"; then
+            emit degraded copy-row-unreadable \
+                'a copy listing row did not carry its four fields, so what it describes is unknown and it is reported rather than classified'
+            continue
+        fi
         _cv=$(classify_copy)
         case $_cv in
             unrecognised-label-version | incomplete-label-set)
@@ -763,11 +789,57 @@ prove_process() {
 # has moved on since it was taken. So the proof is the container proof plus one
 # more refusal, and it runs the opposite way to intuition on purpose: the cheap
 # verb is not available for a copy at all.
+# hash8 as the caller SPELLED it is not evidence that it is this repository's.
+# The scoped query trusts it whole, and liveness is judged against -C's worktree
+# list, so a run given repository A's root and repository B's hash returns B's
+# copies, finds B's worktrees absent from A's list, and calls every one of them
+# an orphan. That pairing is unchecked for `c:` too, but a container is gated by
+# the mandatory -b and comes back from its image; a copy comes back from
+# nothing, so the pairing is proven here before anything irreversible runs.
+#
+# Derived the way `discovery.md` section 0 derives it and `sidecar_path` already
+# resolves it: the git common dir, made absolute, hashed with no trailing
+# newline, cut to eight characters. A derivation that cannot be made is UNKNOWN
+# and refuses; it never falls through to trusting the argument.
+derived_hash8() {
+    _raw=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
+    [ -n "$_raw" ] || return 1
+    # `CDPATH= cd -- <path> && pwd -P`, which is what discovery.md section 0
+    # specifies and NOT a string concatenation of root and the answer. The two
+    # differ: the answer is relative to the worktree top, `.git` can be a FILE
+    # under --separate-git-dir with the real directory elsewhere, and a
+    # concatenated path keeps whatever symlink spelling it was handed. Hashing a
+    # different spelling produces a different hash8, and this run would then
+    # refuse every copy the launcher labelled.
+    #
+    # `CDPATH=` is load-bearing for the reason both other scripts carry it: with
+    # CDPATH exported, `cd -- .git` can enter a NEIGHBOURING repository's git
+    # dir. Here that would mean deriving another repository's hash8 and refusing
+    # our own copies - or, with the argument to match, accepting theirs.
+    _cd=$(cd -- "$root" 2>/dev/null && CDPATH= cd -- "$_raw" 2>/dev/null && pwd -P) || return 1
+    [ -n "$_cd" ] || return 1
+    _dig=$(printf '%s' "$_cd" | git hash-object --stdin 2>/dev/null) || return 1
+    case $_dig in
+        '' | *[!0-9a-f]*) return 1 ;;
+    esac
+    printf '%.8s\n' "$_dig"
+}
+
 prove_volume() {
     _name=$1
     if [ "$docker_ok" -eq 0 ]; then
         refuse "v:$_name" docker-unavailable \
             'the container runtime is absent or did not answer'
+        return 0
+    fi
+    if ! _mine=$(derived_hash8); then
+        refuse "v:$_name" repository-identity-unknown \
+            "this repository's own hash8 could not be derived from $root, so whether $hash8 names it is unknown, and nothing irreversible runs on unknown"
+        return 0
+    fi
+    if [ "$_mine" != "$hash8" ]; then
+        refuse "v:$_name" hash8-is-not-this-repository \
+            "the repository at $root derives hash8 '$_mine' and this run was given '$hash8': the copies under that label belong to another repository, whose worktrees are absent from this one's list and would every one of them read as orphans"
         return 0
     fi
     # THE REMOVAL FLAG IN ADDITION TO THE MUTATION FLAG, and this is the line
@@ -809,7 +881,11 @@ prove_volume() {
             "the scoped query returned no copy named that carrying stackgraft.repo=$hash8"
         return 0
     fi
-    split_copy "$_row"
+    if ! split_copy "$_row"; then
+        refuse "v:$_name" copy-row-unreadable \
+            'the runtime returned a row that did not carry its four fields, so what it describes is unknown and unknown is never orphaned'
+        return 0
+    fi
     _cv=$(classify_copy)
     case $_cv in
         orphan) ;;

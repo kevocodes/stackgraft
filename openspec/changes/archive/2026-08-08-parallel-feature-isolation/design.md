@@ -90,8 +90,8 @@ still closes, out of different money:
 | Slice | Edit | From | To | Δ |
 |---|---|---:|---:|---:|
 | 1a | Activation Contract gains the scope-and-non-goals sentence (D1) | 27 | 48 | **+21** |
-| 1a | Step 1 drops "never this checkout" — verbatim in `discovery.md` §0 | 21 | 17 | −4 |
-| 1a | Step 2 recast; the fingerprint recipe is verbatim in `discovery.md` §5 step 1 | 27 | 20 | −7 |
+| 1a | Step 1 drops "never this checkout" — verbatim in `discovery.md` section 0 | 21 | 17 | −4 |
+| 1a | Step 2 recast; the fingerprint recipe is verbatim in `discovery.md` section 5 step 1 | 27 | 20 | −7 |
 | 1a | Step 3 — "overlays of this repository" → "this repository's overlays" | 11 | 10 | −1 |
 | 1a | Step 4 drops the duplicate pointer (gate row 1 carries it) | 8 | 7 | −1 |
 | 1a | Step 8 drops the exclusion enumeration (step 3 and `portable-runtime` own it) | 22 | 18 | −4 |
@@ -148,7 +148,7 @@ thing D6 exists to distinguish a copy from.
 
 | Rung | Source | Confidence | Note |
 |---|---|---|---|
-| 1 | The store service's **exec-form** `healthcheck.test` from the resolver output `discovery.md` §1 already produces | `declared` | Repository-authored, runs inside the container, usually already a real query |
+| 1 | The store service's **exec-form** `healthcheck.test` from the resolver output `discovery.md` section 1 already produces | `declared` | Repository-authored, runs inside the container, usually already a real query |
 | 2 | A **read** command from the repository's own lifecycle target family for that store (rung 1 of the isolation ladder, or DS37's generated pair) | `declared` | Same contract, same discovery pass |
 | 3 | nothing | — | **Destroy the copy, refuse the pair, name the store and say no query could be derived** |
 
@@ -188,8 +188,8 @@ exit:   0 ok · 2 usage · 3 refused, nothing created or removed · 4 environmen
 
 | Operation | Takes | Returns | Post-condition |
 |---|---|---|---|
-| `provision` | the source volume name and the image reference — both runtime facts `discovery.md` §1 already resolved — plus the label set | `volume<TAB>…`, `instance<TAB>…`, `bytes<TAB>n`, `seconds<TAB>n` | the copy volume exists, carries **this repository's complete label set**, and its measured byte count is non-zero. That is a structural post-condition, **not** proof of isolation — DS34 is |
-| `address` | the same triple | `host`, `port`, `instance`, and zero or more `env<TAB>KEY<TAB>VALUE` | a value, never a delivery: the launch's existing channel carries it, and where no route does the pair refuses **before** launching, the same rule `isolation.env` already lives under (`discovery.md` §6) |
+| `provision` | the source volume name and the image reference — both runtime facts `discovery.md` section 1 already resolved — plus the label set | `volume<TAB>…`, `instance<TAB>…`, `bytes<TAB>n`, `seconds<TAB>n` | the copy volume exists, carries **this repository's complete label set**, and its measured byte count is non-zero. That is a structural post-condition, **not** proof of isolation — DS34 is |
+| `address` | the same triple | `host`, `port`, `instance`, and zero or more `env<TAB>KEY<TAB>VALUE` | a value, never a delivery: the launch's existing channel carries it, and where no route does the pair refuses **before** launching, the same rule `isolation.env` already lives under (`discovery.md` section 6) |
 | `destroy` | the same triple | nothing on stdout | the instance and the copy are gone, or the run **fails loudly naming what it left** |
 
 | | |
@@ -396,7 +396,7 @@ diff ──► units (paths, consumers) ──► DERIVE pairs: units × backing
                           │ any unproven ─► REFUSE            ▼
                           ▼                            provision  volume :ro ─► copy ─► instance
                     delivered at launch                       │  (base engine never signalled)
-                    (discovery.md §6 route)                   ▼
+                    (discovery.md section 6 route)                   ▼
                                                         address  host · port · instance · env
                                                               │
                                                         DS34 readback:

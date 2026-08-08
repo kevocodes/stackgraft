@@ -51,7 +51,7 @@ exit:   0 committed  ·  2 usage error  ·  3 lock not acquired (destination unt
 Two details the implementation must not re-decide. The destination is hashed with
 `git hash-object --stdin < <path>`, **not** `fingerprint.sh`'s `--no-filters -- <path>` form: the cache
 file lives outside any repository, and the stdin form is the one `pick-port.sh` and
-`references/discovery.md` §0 already rely on there. And the payload is **copied**, never renamed, so a
+`references/discovery.md` section 0 already rely on there. And the payload is **copied**, never renamed, so a
 caller that must retry after exit 5 still holds its payload.
 
 **DS22 — `mkdir` lock, holder identity inside it, liveness-first staleness with a time-bounded fallback.**
@@ -162,9 +162,9 @@ accepted: insertion lands ahead of it.
 
 | | |
 |---|---|
-| **Choice** | Anchor insertion, with a structural post-condition: the resulting token sequence equals the original with **only** the label elements added at the anchor — program, operand order, and every other element unchanged. Values are placed one per argv element, or single-quoted as one shell word, per `references/discovery.md` §6. |
+| **Choice** | Anchor insertion, with a structural post-condition: the resulting token sequence equals the original with **only** the label elements added at the anchor — program, operand order, and every other element unchanged. Values are placed one per argv element, or single-quoted as one shell word, per `references/discovery.md` section 6. |
 | **Alternative** | Append at the end (D2's literal wording). **Alternative**: synthesise the labels into `overlayCommand` at discovery time. **Alternative**: fall back to sidecar registration when a container template cannot be labelled. |
-| **Rationale** | Suffix-append breaks the discovery-preferred form, which is the form `references/discovery.md` §3 *mandates*. Anchor insertion is also strictly **more permissive** than D2 forecast: a template that pipes or wraps (`cd X && docker compose run … \| tee log`) keeps working, so D2's accepted cost shrinks rather than binds. Refusing an `up`-shaped template introduces no new constraint — §3 already forbids the whole-stack `up` for `overlayCommand`, so the refusal enforces an existing rule and its remedy is the line discovery would have produced anyway. **Silent fallback to the sidecar is the one option that must not exist**: the pid of a `docker compose run` client is not the container, so a container recorded by pid is a false ownership record, and killing it kills the CLI while the container keeps the port. |
+| **Rationale** | Suffix-append breaks the discovery-preferred form, which is the form `references/discovery.md` section 3 *mandates*. Anchor insertion is also strictly **more permissive** than D2 forecast: a template that pipes or wraps (`cd X && docker compose run … \| tee log`) keeps working, so D2's accepted cost shrinks rather than binds. Refusing an `up`-shaped template introduces no new constraint — section 3 already forbids the whole-stack `up` for `overlayCommand`, so the refusal enforces an existing rule and its remedy is the line discovery would have produced anyway. **Silent fallback to the sidecar is the one option that must not exist**: the pid of a `docker compose run` client is not the container, so a container recorded by pid is a false ownership record, and killing it kills the CLI while the container keeps the port. |
 
 Schema `overlayCommand` description gains exactly this, and nothing else (no field, no version bump):
 
@@ -302,8 +302,8 @@ Measured with the tool the house design fixed:
 | Step 8 gains `per references/reaping.md` (labels actually get applied) | 12 | 14 | **+2** |
 | References bullet 1 gains `references/reaping.md` and `scripts/with-lock.sh` | 7 | 9 | **+2** |
 | Activation Contract compaction | 37 | 27 | −10 |
-| Step 1 — the `CDPATH=`/`--git-common-dir` recipe is verbatim in `discovery.md` §0 | 29 | 20 | −9 |
-| Step 2 — the `hash8` recipe and discard rules are verbatim in `discovery.md` §0 and §5 | 36 | 26 | −10 |
+| Step 1 — the `CDPATH=`/`--git-common-dir` recipe is verbatim in `discovery.md` section 0 | 29 | 20 | −9 |
+| Step 2 — the `hash8` recipe and discard rules are verbatim in `discovery.md` section 0 and section 5 | 36 | 26 | −10 |
 | Decision Gates rows 1–3 collapsed into one (step 3 already delegates to `discovery.md`) | 38 | 17 | −21 |
 | Gates: `Shared/common dir changed` | 13 | 9 | −4 |
 | Gates: `Port needed outside the range` | 13 | 10 | −3 |
@@ -388,7 +388,7 @@ every invocation (DS28):
 | `skills/stackgraft/SKILL.md` | Modify | 2 | Two Decision Gate rows; the report Execution Step; `scripts/reap.sh` in References |
 | `skills/stackgraft/references/reaping.md` | Create | 1 | Label contract and the `stackgraft.labels=1` constant; anchor table; sidecar shape; `(pid, lstart)` capture and probe; the lock discipline |
 | `skills/stackgraft/references/reaping.md` | Modify | 2 | Liveness procedure; reconciliation table; `REAP`/`REPORT` verdicts; refusal cases; legacy reporting |
-| `skills/stackgraft/references/discovery.md` | Modify | 1 | §6 gains the label-insertion step beside the existing `isolation.env` and `overlayIdentity` launch obligations |
+| `skills/stackgraft/references/discovery.md` | Modify | 1 | section 6 gains the label-insertion step beside the existing `isolation.env` and `overlayIdentity` launch obligations |
 | `skills/stackgraft/references/traps.md` | Modify | 1 | Pid reuse; the cwd proof has no referent once the worktree is gone; last-writer-wins on a concurrently rewritten manifest; **the path-spelling trap of DS27** |
 | `skills/stackgraft/references/traps.md` | Modify | 2 | The unlabelled-legacy blind spot |
 | `skills/stackgraft/scripts/with-lock.sh` | Create | 1 | DS21 + DS22 |
@@ -403,7 +403,7 @@ on a dangling link, and slice 1's label contract would have no home. The file is
 slice 1 with its instrumentation half and extended in slice 2**, which matches the proposal's own
 content list for it ("label contract, sidecar shape, liveness procedure, reconciliation, refusal
 cases") better than deferring the whole file does. `references/discovery.md` is added to slice 1 for the
-same reason: §6 already owns launch-time obligations, and the label insertion is one.
+same reason: section 6 already owns launch-time obligations, and the label insertion is one.
 
 ## Verification Plan
 
@@ -441,7 +441,7 @@ pairs every assertion with a negative; every row below keeps that discipline.
 
 | Boundary | Applicability | Design response | Planned RED tests |
 |---|---|---|---|
-| Documentation-like paths | **Applicable** — `overlayCommand` is repository data that this change now *modifies* before execution | DS24: closed anchor table, structural post-insertion check (label elements added, nothing else changed), label values as one argv element or one single-quoted word per `discovery.md` §6, refusal where no anchor exists | Fixture table of templates, one refusal per rule (rows 11–13) |
+| Documentation-like paths | **Applicable** — `overlayCommand` is repository data that this change now *modifies* before execution | DS24: closed anchor table, structural post-insertion check (label elements added, nothing else changed), label values as one argv element or one single-quoted word per `discovery.md` section 6, refusal where no anchor exists | Fixture table of templates, one refusal per rule (rows 11–13) |
 | Git repository selection | **Applicable** — `git worktree list --porcelain` decides liveness, and a path-spelling difference decides *kill or not* | DS27: both sides normalised with `CDPATH= cd -- … && pwd -P`; `core.quotePath=false`; an unnormalisable path is unproven, never orphaned; `-C <repoRoot>` mirrors `fingerprint.sh` | Run from a linked worktree, a subdirectory, and a symlinked spelling; the symlinked case must **not** read as orphaned |
 | Process and container termination *(row added — this is the change's actual new hazard)* | **Applicable** — `docker stop`, `docker rm -f`, `kill` | DS29: proof re-verified inside the actuator; `c:` targets re-verified through the label filter; `p:` targets re-verified by `(pid, lstart)`; a live worktree disqualifies any target; unrecognised `stackgraft.labels` reports only | Rows 10, 15, 17 |
 | Commit state | **N/A** — the reaper reads no index, no diff, and no commit | — | — |

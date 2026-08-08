@@ -5845,46 +5845,239 @@ rm -rf "$gfx"
     && ok "the fixture repository this section wrote into is gone, along with everything it wrote there" \
     || fail "the fixture repository survived this section: $grepo"
 
-# --- copy reclamation: specified, unimplemented, and SAID so -----------------
-# reaping.md section 9a specifies candidacy, liveness and a two-flag interlock
-# for store copies. scripts/reap.sh accepts `c:` containers and `p:` processes
-# and NOTHING else - no volume query, no stackgraft.store read, no copy line in
-# the report - so an orphaned copy is neither detected nor reclaimed, and
-# `destroy` removes one with no flags at all.
+# --- copy reclamation: the v: target, proven against real volumes ------------
+# reaping.md section 9a specifies candidacy by the complete four-label copy set,
+# liveness against git's worktree list, and the removal verb IN ADDITION to the
+# mutation flag. It shipped as prose with no code behind it for a whole release
+# chain, and five files described it as working - which is why every rule below
+# has a fixture that must be REFUSED and the volume must still be there after.
 #
-# Five shipped files described that as working. This block ties the claim to the
-# code in BOTH directions: while reap.sh has no copy target the texts must say
-# so, and the day one is added these rows fail and send whoever added it back to
-# the same five files. That coupling is the point - an unimplemented MUST that
-# nobody can see is how this one survived a whole release chain.
-reap_has_copy_target() {
-    grep -q 'stackgraft\.store' "$SKILL/scripts/reap.sh" 2>/dev/null \
-        || grep -qE '^\s+v:\*\)' "$SKILL/scripts/reap.sh" 2>/dev/null
-}
-DISCLOSE_FILES="README.md CHANGELOG.md SECURITY.md $SKILL/references/reaping.md $SKILL/references/isolation-providers.md"
-# shellcheck disable=SC2086
-undisclosed=$(for f in $DISCLOSE_FILES; do
-    grep -qi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' "$f" || printf '%s ' "$f"
-done)
+# A copy is the one object in this project that nothing can reproduce, so the
+# rows are written the pessimistic way round: the positive is one row, and the
+# refusals are six.
+if [ "$docker_ready" -eq 1 ]; then
+    # This section runs before the file's shared TAB is defined, and `set -u`
+    # would abort on it rather than mismatch quietly. One local literal, taken
+    # from printf rather than written as an escape the shell may not expand.
+    ctab=$(printf '\t')
+    cr=$(mktemp -d)
+    crepo=$cr/repo
+    git init -q "$crepo" 2>/dev/null
+    git -C "$crepo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null
+    git -C "$crepo" worktree add -q "$cr/live" -b live 2>/dev/null
+    git -C "$crepo" worktree add -q "$cr/gone" -b gone 2>/dev/null
+    c_live=$(cd "$cr/live" 2>/dev/null && pwd -P)
+    c_gone=$(cd "$cr/gone" 2>/dev/null && pwd -P)
+    git -C "$crepo" worktree remove --force "$cr/gone" 2>/dev/null
+    rm -rf "$cr/gone"
+    CH=aabbccdd
+    cmk() {
+        docker volume create --label stackgraft.repo="$2" --label stackgraft.labels="$3" \
+            --label stackgraft.worktree="$4" --label stackgraft.store="$5" "$1" >/dev/null 2>&1
+    }
+    creap() { sh "$SKILL/scripts/reap.sh" -C "$crepo" "$@" 2>&1; }
+    cgone() { docker volume inspect "$1" >/dev/null 2>&1 && printf 'here\n' || printf 'gone\n'; }
 
-if reap_has_copy_target; then
-    fail "reap.sh now has a copy target, so the five files that say it has none are stale - update them and this row"
-elif [ -z "$undisclosed" ]; then
-    ok "reap.sh has no copy target, and all five files that describe copy reclamation say so rather than describing it as working"
+    if [ -z "$c_live" ] || [ -z "$c_gone" ]; then
+        fail "the copy-reap fixture could not build its two worktrees, so every row below would assert nothing"
+    else
+        cmk sgv-orphan    "$CH"    1 "$c_gone" pg
+        cmk sgv-live      "$CH"    1 "$c_live" pg
+        cmk sgv-future    "$CH"    9 "$c_gone" pg
+        cmk sgv-other     11223344 1 "$c_gone" pg
+        docker volume create --label stackgraft.repo="$CH" --label stackgraft.labels=1 \
+            --label stackgraft.worktree="$c_gone" sgv-partial >/dev/null 2>&1
+
+        # The report half first: a copy is classified before anything can act on
+        # one, and `checked none` over an unanswered runtime is the reading this
+        # whole section exists to make impossible.
+        crep=$(creap report "$CH")
+        printf '%s' "$crep" | grep -q "^copy${ctab}sgv-orphan${ctab}pg${ctab}.*${ctab}orphan$" \
+            && ok "the report classifies a copy whose worktree is gone as an orphan" \
+            || fail "the report does not classify an orphaned copy: $(printf '%s' "$crep" | grep sgv-orphan)"
+        printf '%s' "$crep" | grep -q "^copy${ctab}sgv-live${ctab}pg${ctab}.*${ctab}live$" \
+            && ok "...and one whose worktree is still listed as live, which is a target under no flag" \
+            || fail "the report does not classify a live copy"
+        printf '%s' "$crep" | grep -q "^refused${ctab}v:sgv-future${ctab}unrecognised-label-version" \
+            && ok "...and reports an unreadable label-set version rather than acting on it" \
+            || fail "the report does not refuse a copy carrying a label-set version it cannot read"
+        printf '%s' "$crep" | grep -q "^refused${ctab}v:sgv-partial${ctab}incomplete-label-set" \
+            && ok "...and refuses a copy carrying three of the four labels, because the set is complete or it is not ours" \
+            || fail "a partially labelled volume was not refused by the report"
+        printf '%s' "$crep" | grep -q 'sgv-other' \
+            && fail "the report reached another repository's copy, which the scoped query must exclude" \
+            || ok "...and never names a copy labelled for another repository, which no query of ours reaches"
+
+        # THE INTERLOCK. Two rows, because it is two conditions: the removal verb
+        # and the mutation flag, and neither stands in for the other.
+        creap -m stop "$CH" v:sgv-orphan | grep -q "^refused${ctab}v:sgv-orphan${ctab}malformed-target" \
+            && ok "rejected: stop on a copy - the cheap verb is not available for state nothing can reproduce" \
+            || fail "stop was accepted for a copy target"
+        [ "$(cgone sgv-orphan)" = here ] \
+            && ok "...and the copy is still there after that refusal" \
+            || fail "the copy was removed by a verb that must not reach it"
+        creap remove "$CH" v:sgv-orphan >/dev/null 2>&1
+        [ $? -eq 2 ] \
+            && ok "rejected: remove without -m is a usage error, so the removal verb alone mutates nothing" \
+            || fail "remove without the mutation flag did not exit 2"
+        [ "$(cgone sgv-orphan)" = here ] \
+            && ok "...and the copy is still there after that one too" \
+            || fail "the copy was removed by a run that never received the mutation flag"
+
+        # The four proofs, each asserted on ITS OWN reason: a row satisfied by
+        # any refusal at all would let one proof cover for another.
+        creap -m remove "$CH" v:sgv-live | grep -q "^refused${ctab}v:sgv-live${ctab}worktree-still-listed" \
+            && ok "rejected: a copy whose worktree is still listed, refused by that reason and no other" \
+            || fail "a live copy was not refused as worktree-still-listed"
+        creap -m remove "$CH" v:sgv-future | grep -q "^refused${ctab}v:sgv-future${ctab}unrecognised-label-version" \
+            && ok "rejected: a copy carrying a label-set version this run cannot read" \
+            || fail "a future label-set version was not refused by name"
+        creap -m remove "$CH" v:sgv-partial | grep -q "^refused${ctab}v:sgv-partial${ctab}incomplete-label-set" \
+            && ok "rejected: a copy carrying three of the four labels" \
+            || fail "an incompletely labelled copy was not refused by name"
+        creap -m remove "$CH" v:sgv-other | grep -q "^refused${ctab}v:sgv-other${ctab}not-a-labelled-copy-of-this-repository" \
+            && ok "rejected: a copy labelled for another repository, which the scoped query never returned" \
+            || fail "another repository's copy was not refused by name"
+        creap -m remove "$CH" v: | grep -q "^refused${ctab}v:${ctab}malformed-target" \
+            && ok "rejected: an empty volume name, refused as a target rather than ending the invocation" \
+            || fail "an empty v: target was not refused by name"
+
+        # An UNLABELLED volume holding data, which is the shape a developer's own
+        # `docker volume create` leaves and the one thing here that must be
+        # unreachable by construction rather than by care: it carries no
+        # stackgraft.repo, so the scoped query never returns it under any flag.
+        docker volume create sgv-unlabelled >/dev/null 2>&1
+        docker run --rm --entrypoint sh -v sgv-unlabelled:/d alpine/git \
+            -c 'printf mine > /d/precious' >/dev/null 2>&1
+        creap -m remove "$CH" v:sgv-unlabelled | grep -q "^refused${ctab}v:sgv-unlabelled${ctab}not-a-labelled-copy-of-this-repository" \
+            && ok "rejected: an unlabelled volume, which no scoped query of ours ever returns" \
+            || fail "an unlabelled volume was not refused by name"
+        [ "$(docker run --rm --entrypoint sh -v sgv-unlabelled:/d:ro alpine/git -c 'cat /d/precious' 2>/dev/null)" = mine ] \
+            && ok "...and its contents are untouched, byte for byte, after both flags were passed" \
+            || fail "an unlabelled volume's data did not survive a reap that named it"
+        docker volume rm sgv-unlabelled >/dev/null 2>&1
+
+        c_survivors=$(docker volume ls -q 2>/dev/null | grep -c '^sgv-' || true)
+        [ "$c_survivors" -eq 5 ] \
+            && ok "all 5 fixture copies survived every refusal above, so not one of them removed anything" \
+            || fail "only $c_survivors of 5 fixture copies survived the refusals, so one of them removed a copy"
+
+        # ...and the positive, LAST, because it is the only one that destroys
+        # anything. A mixed batch, so the row also proves a refusal beside a
+        # proven target does not withhold the work the caller asked for.
+        cmix=$(creap -m remove "$CH" v:sgv-orphan v:sgv-live)
+        printf '%s' "$cmix" | grep -q "^copy${ctab}sgv-orphan${ctab}pg${ctab}.*${ctab}removed$" \
+            && ok "a proven orphaned copy is removed under remove + -m, and the run names it with its store" \
+            || fail "the proven orphan was not removed: $cmix"
+        printf '%s' "$cmix" | grep -q "^acted${ctab}1$" \
+            && ok "...and acted counts exactly the one target that proved out, never the refusal beside it" \
+            || fail "acted did not report exactly one target"
+        printf '%s' "$cmix" | grep -q "^refused${ctab}v:sgv-live" \
+            && ok "...while the live copy beside it is still refused, so a refusal does not cascade and does not withhold" \
+            || fail "the live copy in the mixed batch was not refused"
+        [ "$(cgone sgv-orphan)" = gone ] && [ "$(cgone sgv-live)" = here ] \
+            && ok "...and the runtime agrees: the orphan is gone and the live copy is still there" \
+            || fail "the runtime disagrees with what the run reported about the two copies"
+
+        docker volume rm sgv-live sgv-future sgv-other sgv-partial >/dev/null 2>&1
+        c_left=$(docker volume ls -q 2>/dev/null | grep -c '^sgv-' || true)
+        [ "$c_left" -eq 0 ] \
+            && ok "this section removed every copy it created, and left none behind" \
+            || fail "$c_left fixture copy/copies outlived this section"
+    fi
+    git -C "$crepo" worktree remove --force "$cr/live" >/dev/null 2>&1
+    rm -rf "$cr"
 else
-    fail "reap.sh has no copy target and these files do not disclose it: $undisclosed"
+    skip "copy-reap rows (no docker daemon)" runtime
 fi
 
-# ...and the negative: a file with the disclosure stripped must be named. Without
-# it the row above passes over a list nobody reads.
+# --- the shipped text and the code must agree --------------------------------
+# For a whole release chain reaping.md section 9a specified copy reclamation and
+# scripts/reap.sh implemented none of it, while five files described it as
+# working. The code exists now and the rows above exercise it. What this block
+# guards is the OTHER direction: that the four structural pieces the documents
+# promise are all still in the script, so deleting one fails here rather than
+# turning five documents into fiction again.
+# Every volume query in every shipped script carries the repo filter, and this
+# is a STATIC row on purpose: the fixtures above prove the queries that exist
+# today are scoped, and this proves nobody added an unscoped one beside them. An
+# unfiltered `docker volume ls` on a developer's machine reaches everything
+# they have ever run - 5578 objects on the machine this was written on - and
+# none of it is ours to enumerate or to remove.
+#
+# COMMENTS ARE NOT CODE, and skipping them is not a convenience here. The first
+# version of this row fired on the shipped script's own comment - the one
+# explaining why the query is scoped names the unscoped form in prose - so a
+# correct file failed its own check. That is the fourth self-reference this
+# suite has produced: a row whose subject includes the text of the row, or of
+# the thing it documents. The rule that falls out of all four: when a check
+# greps for a string, ask what the check's own words look like to it.
+volume_query_lines() {
+    grep -n 'docker volume ls' "$SKILL"/scripts/*.sh 2>/dev/null \
+        | grep -vE ':[0-9]+:[[:space:]]*#'
+}
+unscoped_volume_query() { volume_query_lines | grep -v 'label=stackgraft\.repo='; }
+
+[ -z "$(unscoped_volume_query)" ] \
+    && ok "every volume listing in every shipped script is scoped by stackgraft.repo, so none reaches a neighbouring repository's objects" \
+    || fail "an unscoped volume listing ships: $(unscoped_volume_query)"
+
+# ...and the row can tell that apart from a file with no volume query at all,
+# which would satisfy it by absence - the gate-on-an-optional-field shape. It
+# counts CODE lines for the same reason the row above skips comments: a file
+# that only talks about volume listings would otherwise satisfy this too.
+[ -n "$(volume_query_lines)" ] \
+    && ok "...and there is at least one volume listing in code for that row to have checked" \
+    || fail "no shipped script queries volumes at all, so the scoping row above passed over nothing"
+
+# The negative, and it must be REJECTED for the right reason: an unscoped query
+# added as real code is caught, while the comment beside it still is not.
+uq_fx=$(mktemp -d)
+mkdir -p "$uq_fx/scripts"
+cp "$SKILL"/scripts/*.sh "$uq_fx/scripts/" 2>/dev/null
+printf '\nleaky_listing() { docker volume ls --quiet; }\n' >> "$uq_fx/scripts/reap.sh"
+uq_hit=$(grep -n 'docker volume ls' "$uq_fx"/scripts/*.sh 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*#' | grep -v 'label=stackgraft\.repo=')
+printf '%s' "$uq_hit" | grep -q 'leaky_listing' \
+    && ok "rejected: an unscoped volume listing added as code, while the prose that names one is still not mistaken for it" \
+    || fail "an unscoped volume listing in real code is invisible to the row above: '$uq_hit'"
+rm -rf "$uq_fx"
+
+copy_piece() { grep -q "$1" "$SKILL/scripts/reap.sh" 2>/dev/null; }
+
+cp_missing=''
+copy_piece 'v:\*)'                  || cp_missing="$cp_missing the-v:-target"
+copy_piece 'stackgraft\.store'      || cp_missing="$cp_missing the-store-label"
+copy_piece 'docker volume rm'       || cp_missing="$cp_missing the-removal"
+copy_piece 'stop has no meaning for a copy' || cp_missing="$cp_missing the-stop-refusal"
+[ -z "$cp_missing" ] \
+    && ok "reap.sh carries all four pieces copy reclamation needs: the v: target, the store label, the removal, and the refusal of the cheap verb" \
+    || fail "reap.sh is missing:$cp_missing - so the documents describing copy reclamation are fiction again"
+
+# The negative is a scratch copy with the interlock deleted, because the piece
+# most likely to be "simplified" away later is the one that costs a keystroke
+# and buys the whole safety property.
 cd_fx=$(mktemp -d)
-grep -vi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' SECURITY.md > "$cd_fx/undisclosed.md"
-if grep -qi 'no copy target\|implements none of it\|not implemented\|Nothing reclaims it for you' "$cd_fx/undisclosed.md"; then
-    fail "the disclosure fixture still carries the sentence after the strip, so the row below asserts nothing"
+mkdir -p "$cd_fx/scripts"
+grep -v 'stop has no meaning for a copy' "$SKILL/scripts/reap.sh" > "$cd_fx/scripts/reap.sh"
+if grep -q 'stop has no meaning for a copy' "$cd_fx/scripts/reap.sh"; then
+    fail "the interlock fixture still carries the refusal after the strip, so the row below asserts nothing"
 else
-    ok "rejected: SECURITY.md with its copy-reclamation disclosure deleted, which is how the claim shipped as working"
+    ok "rejected: reap.sh with the stop-is-not-available-for-a-copy refusal removed"
 fi
 rm -rf "$cd_fx"
+
+# ...and the documents must describe it, since the whole defect was five files
+# claiming a mechanism nobody had built. Each names the interlock in its own
+# words, so a reword keeps the row and a deletion loses it.
+DESCRIBE_FILES="README.md SECURITY.md $SKILL/references/reaping.md $SKILL/references/isolation-providers.md"
+# shellcheck disable=SC2086
+silent=$(for f in $DESCRIBE_FILES; do
+    grep -qi 'removal flag\|removal verb\|reap.*cop\|cop.*reap' "$f" || printf '%s ' "$f"
+done)
+[ -z "$silent" ] \
+    && ok "...and all four shipped documents still describe copy reclamation, which is now a thing that exists" \
+    || fail "these files no longer describe copy reclamation: $silent"
 
 # --- SECURITY.md discloses the writing half ----------------------------------
 # The commit that gave this skill repository writes touched README.md, the

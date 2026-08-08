@@ -196,7 +196,7 @@ docker rm -f -v <name> && docker volume rm <name>
 
 **`-v` is not decoration.** Without it the anonymous volumes the store's image declared — and that the provisioning run therefore created — are orphaned: unnamed, unlabelled, and reachable by no query anyone can write, which is the one class `references/reaping.md` can never afterwards reclaim. Measured on server 29.5.3: the flag removes the container's **anonymous** volumes and leaves every **named** one, and every copy this skill makes is a named `sg-` volume, so the removal by name beside it still has the copy to remove.
 
-An unlabelled object is never provisioned over, never destroyed, and never named as a copy of ours. `references/reaping.md` section 9a specifies how a copy whose worktree is gone is to be reclaimed, and states at the top of that section that **`scripts/reap.sh` implements none of it**: an orphaned copy is not detected here, and `destroy` above is the only shipped path that removes one.
+An unlabelled object is never provisioned over, never destroyed, and never named as a copy of ours — see `references/reaping.md` section 9a, which reclaims a copy whose worktree is gone as a `v:` target and takes the removal verb in addition to the mutation flag before it touches one.
 
 ## What the run reports
 

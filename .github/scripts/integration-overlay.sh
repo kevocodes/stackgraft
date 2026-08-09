@@ -194,16 +194,22 @@ case "$PORT" in
         ;;
 esac
 
-# --- the migration, applied through the overlay's own road ------------------
-# The escalation the diff triggered is what puts this pair on the copy road at
-# all. Running it here is the run doing what the worktree asked for.
+# --- nothing here applies the migration, and that is the repair -------------
+# An earlier version of this file ran the migration itself, with a psql command
+# it composed -- which is the one thing `references/discovery.md` forbids
+# outright: an overlay's road is derived from the repository or it is not taken.
+# A floor that invents the step proves a road nobody has.
+#
+# The unit migrates from its own entrypoint instead, which is the ordinary
+# shape and the one the gate's `migrates` escalation exists for. So the
+# migration reaches the copy because the overlay was launched against the copy,
+# and for no other reason. Nothing below runs it.
 
-if docker exec -i "$COPY_NAME" psql -U shop -d shop -v ON_ERROR_STOP=1 \
-        -f /dev/stdin < "$TREE/db/migrations/001_add_discount.sql" >/dev/null 2>&1; then
-    ok 'the migration applies to the copy'
-else
-    fail 'the migration did not apply to the copy'
-fi
+case $(awk '/migrations/ { m = 1 } /psql/ { p = 1 } END { print (m && p) ? "runs" : "no" }' \
+        "$TREE/services/catalog-api/serve.sh") in
+    runs) ok 'the unit applies its own migrations on startup, so the run needs no route of its own and invents none' ;;
+    *)    fail 'the unit no longer migrates from its entrypoint, so this floor is back to proving a road nobody has' ;;
+esac
 
 # --- the overlay: the worktree's code, the picked port, wired to the copy ----
 
@@ -213,6 +219,7 @@ if docker run -d --name "$OVERLAY_NAME" --network "$NETWORK" \
         --label "stackgraft.kind=overlay" \
         --env "DATABASE_URL=postgres://shop:shop@$COPY_NAME:5432/shop" \
         -v "$TREE/services/catalog-api":/app:ro \
+        -v "$TREE/db":/db:ro \
         -p "127.0.0.1:$PORT:8080" \
         "$IMAGE" sh /app/serve.sh >/dev/null 2>&1; then
     ok "the overlay launches from the worktree's own code, bound strictly to 127.0.0.1:$PORT"

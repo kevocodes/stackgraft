@@ -77,14 +77,10 @@ else
     exit 1
 fi
 
-# The second store holds what a session store holds. postgres seeds itself from
-# db/init.sql; this is the same setup step for an engine with no init
-# convention, and it is fixture setup rather than any part of the mechanism.
-SESSIONS=$(docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" ps -q sessions)
-for k in a b c d e f g; do
-    docker exec "$SESSIONS" redis-cli SET "session:$k" "value-$k" >/dev/null 2>&1
-done
-docker exec "$SESSIONS" redis-cli SAVE >/dev/null 2>&1
+# The fixture ships its session store already holding state, seeded by the
+# stack's own one-shot rather than by this file. A store that ships empty
+# cannot be told from an empty instance, so seeding it here would have been the
+# harness manufacturing the very difference it then reads.
 
 # The repository's own read is also the readiness probe. Waiting on an engine's
 # own liveness command would put engine knowledge back into the procedure, and

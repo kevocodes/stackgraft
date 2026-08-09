@@ -150,6 +150,10 @@ while IFS="$(printf '\t')" read -r unit paths; do
 done < "$WORK/units.tsv"
 
 BASE_FP=$(awk -F'\t' '$1=="catalog-api"{print $2}' "$WORK/fps.tsv")
+# The same paths the baseline weighed, or the comparison below is between two
+# different questions: this unit owns the migrations it applies, so its tree is
+# more than the directory its code sits in.
+CATALOG_PATHS=$(awk -F'\t' '$1=="catalog-api"{gsub(/,/, " ", $2); print $2}' "$WORK/units.tsv")
 case "$BASE_FP" in
     ''|*[!0-9a-f]*) fail "the serviceFingerprint recipe produced no hash: '$BASE_FP'" ;;
     *) ok "the serviceFingerprint recipe produces a value over the unit's own paths: ${BASE_FP%"${BASE_FP#????????}"}…" ;;
@@ -159,16 +163,16 @@ esac
 # untracked file each move it, and that reverting returns it to the exact base.
 # It says that was verified on a scratch repository; nothing reproduced it here.
 printf '\n# unstaged\n' >> "$MAIN/services/catalog-api/handle.sh"
-FP_UNSTAGED=$(service_fingerprint "$MAIN" services/catalog-api)
+FP_UNSTAGED=$(service_fingerprint "$MAIN" $CATALOG_PATHS)
 git -C "$MAIN" add services/catalog-api/handle.sh >/dev/null 2>&1
-FP_STAGED=$(service_fingerprint "$MAIN" services/catalog-api)
+FP_STAGED=$(service_fingerprint "$MAIN" $CATALOG_PATHS)
 printf 'x\n' > "$MAIN/services/catalog-api/untracked.txt"
-FP_UNTRACKED=$(service_fingerprint "$MAIN" services/catalog-api)
+FP_UNTRACKED=$(service_fingerprint "$MAIN" $CATALOG_PATHS)
 rm -f "$MAIN/services/catalog-api/untracked.txt"
 git -C "$MAIN" checkout -q -- services/catalog-api 2>/dev/null
 git -C "$MAIN" reset -q HEAD -- services/catalog-api 2>/dev/null
 git -C "$MAIN" checkout -q -- services/catalog-api 2>/dev/null
-FP_REVERTED=$(service_fingerprint "$MAIN" services/catalog-api)
+FP_REVERTED=$(service_fingerprint "$MAIN" $CATALOG_PATHS)
 
 [ "$FP_UNSTAGED" != "$BASE_FP" ] \
     && ok 'an unstaged edit inside the unit moves its serviceFingerprint' \
@@ -364,8 +368,8 @@ esac
     && ok 'the store records mechanism none, because this repository defines no lifecycle target -- the ordinary case' \
     || fail "isolation mechanism is wrong: $(claim 'd["backingStores"]["postgres"]["isolation"]["mechanism"]')"
 
-[ "$(claim 'd["services"]["catalog-api"]["paths"]')" = "['services/catalog-api']" ] \
-    && ok "the service's paths are relative to repoRoot, so a diff in any checkout maps through them" \
+[ "$(claim 'd["services"]["catalog-api"]["paths"]')" = "['db', 'services/catalog-api']" ] \
+    && ok "the unit owns the migrations it applies, so a migrations directory maps to a unit instead of mapping nowhere" \
     || fail "paths are wrong: $(claim 'd["services"]["catalog-api"]["paths"]')"
 
 [ "$(claim 'd["services"]["catalog-api"]["dependsOn"]')" = "['postgres']" ] \

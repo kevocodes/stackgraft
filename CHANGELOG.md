@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] — 2026-08-09
+
+The copy road was driven against a real store for the first time, and it did not complete. Not because the copy was wrong — the copy was byte-for-byte correct on the first attempt — but because the instance it had to be compared against never started, so nothing could certify it.
+
+Every runtime row in this repository launches `docker run --entrypoint sh` against `alpine/git`, and overriding the entrypoint is exactly what keeps a store image's boot requirements out of view. The remaining rows ask whether a document contains a sentence and whether a record validates. Both classes are worth having and both caught something during this release. Neither can notice a recipe that does not run, because they check that the prose says what the prose says: **the broken recipe was pinned, carried a negative control, and 848 checks were defending it exactly as written.**
+
+### Fixed
+
+- **The empty instance was launched with no environment and never booted, so no copy could ever be certified.** `postgres` exits `1` with *"Database is uninitialized and superuser password is not specified"* before a query could be issued against it, and an instance that never booted is not an empty instance but an absent one — the discriminating comparison could not be made, and the pair refused however faithful the copy actually was. That is a different failure from the one this project documented: not *until a read command exists*, but *even with one*. The environment is now read back from the base container exactly as the image, the mount point and the command already were, which is what `references/isolation-providers.md`'s own rule required rather than an exception to it. It is passed as a file rather than expanded on a command line, because the shipped image bakes in a value holding whitespace — one argument to the runtime and several to a shell. Emptiness stays a property of what the instance is *given*: it mounts nothing, so it initialises the store's empty shape and never its contents, which is the distinction the discriminator reads.
+- **The three-outputs table gave rung 1's issuing route as though it were the only one.** ``docker exec "$instance" "$@"`` reaches a vector already inside the image; a rung-2 candidate is a file in the repository, which is not in that image and never will be, so issued that way it resolves to nothing and the pair fails for a reason that has nothing to do with the data. The host route is now stated beside the table, and *one route* is scoped to the three issues of a single candidate rather than to the two rungs.
+
+### Added
+
+- **A behavioural floor, which does not ship and is the reason both fixes above exist.** `.github/scripts/integration.sh` boots `postgres:16-alpine` **under its own entrypoint** and drives the three outputs end to end — read the image, mount point, state volume and environment back from the runtime, copy the volume, start the copy on it, start an empty instance, issue one read through one route against all three, assert both comparisons, and leave the volume inventory as it found it. Eleven checks, run as their own CI job against a fixture built to be the ordinary case rather than a friendly one: a `CMD-SHELL` healthcheck the argv rule excludes, no lifecycle target anywhere in the repository, and a `scripts/` directory that already exists. One of its checks proves an un-environed instance still fails, so the environment cannot be taken back out and the floor still pass.
+
+**Scope, so this is not read as more than it is.** The floor proves the provider road against **one** real engine. The offer flow above it — showing a generated family, approval, the fingerprint over three files — has no floor of its own yet, and `README.md`'s `Honest limits` keeps its entry saying so.
+
 ## [2.1.0] — 2026-08-08
 
 Run against a real repository for the second time, on a worktree whose diff touched a shared tree, and the answer was 25 consumers — most of the repository. That is correct and it is expensive, and nothing said so before starting.
@@ -83,6 +100,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.1
 [2.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.0
 [2.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.0.0
 [1.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v1.1.0

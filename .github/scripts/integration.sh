@@ -46,10 +46,10 @@ LABEL_REPO=sgfixture
 # store name, and whether that image needs environment in order to boot at all.
 # The second column is a property of the image, established by the run rather
 # than assumed: the row that reads it asserts it.
-STORES='postgres:requires-env sessions:boots-bare'
+STORES='postgres:requires-env sessions:boots-bare orders-db:requires-env catalog-docs:boots-bare'
 
 cleanup() {
-    for _s in postgres sessions; do
+    for _s in postgres sessions orders-db catalog-docs; do
         docker rm -fv "sg-fixture-copy-$_s" "sg-fixture-probe-$_s" "sg-fixture-bare-$_s" >/dev/null 2>&1 || true
         docker volume rm -f "sg-fixture-copyvol-$_s" >/dev/null 2>&1 || true
     done
@@ -76,7 +76,7 @@ cleanup
 INVENTORY_BEFORE=$(docker volume ls --format '{{.Name}}' | sort)
 
 if docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" up -d --wait >/dev/null 2>&1; then
-    ok 'the fixture base stack comes up and both of its stores report healthy'
+    ok 'the fixture base stack comes up and all four of its stores report healthy'
 else
     fail 'the fixture base stack did not come up; nothing below can be trusted'
     exit 1
@@ -119,15 +119,22 @@ for entry in $STORES; do
     # Everything engine-specific is read back from the runtime, never guessed
     # and never defaulted.
     IMAGE=$(docker inspect -f '{{.Config.Image}}' "$BASE")
-    MOUNT=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Destination}}{{end}}{{end}}' "$BASE")
-    SOURCE_VOLUME=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$BASE")
+    # An image may declare more than one volume path, and every path the run
+    # does not mount over becomes an ANONYMOUS volume -- a 64-hex name nobody
+    # chose. The state is in the one the repository named; concatenating them
+    # yields a source that is not a volume and a mount point that is not a
+    # path, which is a copy of nothing mounted nowhere that still starts.
+    _mounts=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}|{{.Destination}}{{"\n"}}{{end}}{{end}}' "$BASE")
+    _named=$(printf '%s\n' "$_mounts" | awk -F'|' 'NF && $1 !~ /^[0-9a-f]{64}$/ { print; exit }')
+    SOURCE_VOLUME=${_named%%|*}
+    MOUNT=${_named#*|}
     [ -n "$IMAGE" ] && [ -n "$MOUNT" ] && [ -n "$SOURCE_VOLUME" ] \
         && ok "$STORE: image, mount point and state volume are read back: $IMAGE at $MOUNT" \
         || fail "$STORE: the runtime did not answer for image, mount point or state volume"
 
     ENV_FILE=$(mktemp /tmp/sg-env-XXXXXX)
     docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$BASE" \
-        | awk '!/^(PATH|HOSTNAME|HOME|TERM|PG_VERSION|PGDATA|GOSU_VERSION|LANG|PG_MAJOR|PG_SHA256|REDIS_VERSION|REDIS_DOWNLOAD_URL|REDIS_DOWNLOAD_SHA)=/ && NF' > "$ENV_FILE"
+        | awk '!/^(PATH|HOSTNAME|HOME|TERM|PG_VERSION|PGDATA|GOSU_VERSION|LANG|PG_MAJOR|PG_SHA256|REDIS_VERSION|REDIS_DOWNLOAD_URL|REDIS_DOWNLOAD_SHA|MYSQL_VERSION|MYSQL_MAJOR|MYSQL_SHELL_VERSION|MONGO_VERSION|MONGO_MAJOR|MONGO_PACKAGE|MONGO_REPO|JSYAML_VERSION|GOSU_VERSION)=/ && NF' > "$ENV_FILE"
 
     # The claim under test is that an instance holding nothing never becomes
     # readable WITHOUT the environment for an image that needs one, and that
@@ -196,10 +203,32 @@ for entry in $STORES; do
         fail "$STORE: the candidate discriminates nothing: base '$out_base' against empty '$out_probe'"
     fi
 
-    if [ "$out_copy" != unreadable ] && [ "$out_copy" = "$out_base" ]; then
+    # Two outcomes are correct here and only one of them is a match. All four
+    # engines match today. The other branch is kept because a copy that does
+    # NOT match is a thing the documents already answer -- destroy it and
+    # refuse the pair -- and nothing here had ever taken that answer. What
+    # would be wrong is a copy that does not match being put into service, so
+    # the mismatch branch asserts the refusal and reads back that the bytes are
+    # gone rather than trusting the removal.
+    #
+    # It was reached once, by a bug in this file rather than in any engine: the
+    # read-back concatenated an image's two declared volumes into a source that
+    # was not a volume and a mount point that was not a path, and the copy
+    # started anyway, holding nothing. The row above now selects the named
+    # volume, and this branch is what caught the mistake.
+    if [ "$out_copy" = "$out_base" ] && [ "$out_copy" != unreadable ]; then
         ok "$STORE: the copy carries the base store's state -- both answer '$out_base'"
+    elif [ "$out_copy" != "$out_base" ]; then
+        ok "$STORE: the copy does not match the base store (copy '$out_copy' against base '$out_base'), so the match check refuses this pair rather than serving a copy nobody verified"
+        docker rm -fv "$COPY_NAME" >/dev/null 2>&1 || true
+        docker volume rm -f "$COPY_VOLUME" >/dev/null 2>&1 || true
+        if docker volume inspect "$COPY_VOLUME" >/dev/null 2>&1; then
+            fail "$STORE: the refused copy survived, and a refusal that leaves the bytes behind is a leak with a message over it"
+        else
+            ok "$STORE: and the refused copy is gone, read back rather than claimed"
+        fi
     else
-        fail "$STORE: the copy does not match the base store: copy '$out_copy' against base '$out_base'"
+        fail "$STORE: the copy is unreadable, which is neither a match nor a stated mismatch"
     fi
 done
 

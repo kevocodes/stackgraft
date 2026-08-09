@@ -1,0 +1,10 @@
+#!/bin/sh
+# The read half for the relational order store, in the same shape as the rest:
+# it counts what the instance it is given carries, names no table this
+# repository owns, and an instance holding nothing answers zero.
+set -eu
+
+instance=${1:?usage: db-read-orders-db <instance>}
+
+exec docker exec "$instance" mysql -uroot -pshop -N -B \
+    -e "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'shop'"

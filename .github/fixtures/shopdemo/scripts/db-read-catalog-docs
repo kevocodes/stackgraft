@@ -1,0 +1,9 @@
+#!/bin/sh
+# The read half for the document store. A different engine and a different
+# client; the same question, and the same shape of answer.
+set -eu
+
+instance=${1:?usage: db-read-catalog-docs <instance>}
+
+exec docker exec "$instance" mongosh --quiet shop \
+    --eval 'db.getCollectionNames().length'

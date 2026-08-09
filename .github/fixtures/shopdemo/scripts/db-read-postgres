@@ -1,0 +1,13 @@
+#!/bin/sh
+# The read half of a lifecycle family, written the way the generated one is
+# specified: it counts what the instance it is given carries, names no table
+# this repository owns, and answers zero on an instance holding nothing.
+#
+# It takes the instance as its one argument and is issued on the host, because
+# it is a file in this repository rather than a program inside the store image.
+set -eu
+
+instance=${1:?usage: db-read-postgres <instance>}
+
+exec docker exec "$instance" psql -U shop -d shop -tAc \
+    "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')"

@@ -38,7 +38,18 @@ services:
   # because `redis-cli ping` answers PONG on an instance holding nothing.
   sessions:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    # It seeds itself on first boot, because a store that ships empty cannot be
+    # told from an empty instance: its read candidate answers zero on both, and
+    # the discriminator it exists to satisfy has nothing to read.
+    command:
+      - sh
+      - -c
+      - >
+        redis-server --save 60 1 --appendonly no &
+        until redis-cli ping >/dev/null 2>&1; do sleep 0.2; done;
+        [ "$$(redis-cli DBSIZE)" -eq 0 ] &&
+        for k in a b c d e f g; do redis-cli SET "session:$$k" "value-$$k" >/dev/null; done;
+        redis-cli SAVE >/dev/null; wait
     volumes:
       - sessions-data:/data
     ports:
@@ -58,6 +69,9 @@ services:
       DATABASE_URL: postgres://shop:shop@postgres:5432/shop
     volumes:
       - ./services/catalog-api:/app:ro
+      # The migrations this service applies on startup belong to it, so they
+      # are part of its own tree rather than a directory that maps nowhere.
+      - ./db:/db:ro
     command: ["sh", "/app/serve.sh"]
     ports:
       - "18080:8080"

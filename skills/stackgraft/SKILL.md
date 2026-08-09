@@ -33,7 +33,7 @@ Skip for single-service repos, cheap `up`, or full isolation.
 | Situation | Action |
 |-----------|--------|
 | Manifest missing, matched, or drifted | Discover, reuse, or refresh that slice — see `references/discovery.md` |
-| Changed paths map nowhere | No overlay; run tests, say so |
+| Changed paths map nowhere | No overlay; the diff still gates |
 | Shared/common dir changed | Overlay its `consumers` |
 | Port outside the range | Stop and ask |
 | Any overlay | Gate it — `references/shared-state.md` |

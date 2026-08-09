@@ -341,8 +341,8 @@ fi
 
 claim() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2], {}, {"d": d}))' "$MANIFEST" "$1" 2>/dev/null; }
 
-[ "$(claim 'sorted(d["backingStores"])')" = "['postgres', 'sessions']" ] \
-    && ok 'both stores are discovered as backing stores, and the pass does not stop at the first' \
+[ "$(claim 'sorted(d["backingStores"])')" = "['catalog-docs', 'orders-db', 'postgres', 'sessions']" ] \
+    && ok 'all four stores are discovered as backing stores, and the pass does not stop at the first' \
     || fail "backingStores is wrong: $(claim 'sorted(d["backingStores"])')"
 
 [ "$(claim 'sorted(d["services"])')" = "['catalog-api']" ] \
@@ -356,9 +356,10 @@ claim() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eva
     && ok 'the first substrate is read off the image' \
     || fail "substrate is wrong: $(claim 'd["backingStores"]["postgres"]["substrate"]')"
 
-[ "$(claim 'd["backingStores"]["sessions"]["substrate"]')" = redis ] \
-    && ok 'the second is read off the image too, and its service name says nothing: sessions holds a redis' \
-    || fail "the substrate was taken from the key rather than the image: $(claim 'd["backingStores"]["sessions"]["substrate"]')"
+substrates=$(claim 'sorted((k, v["substrate"]) for k, v in d["backingStores"].items())')
+[ "$substrates" = "[('catalog-docs', 'mongo'), ('orders-db', 'mysql'), ('postgres', 'postgres'), ('sessions', 'redis')]" ] \
+    && ok "every substrate is read off the image and three of the four service names say nothing about it: $substrates" \
+    || fail "a substrate was taken from the key rather than the image: $substrates"
 
 case "$(claim 'd["backingStores"]["sessions"]["notes"][0]')" in
     *'exec-form vector'*)
@@ -384,7 +385,7 @@ esac
     && ok 'bindsTo takes the most restrictive of the published forms, which is the fail-closed direction for wiring an overlay' \
     || fail "bindsTo is wrong: $(claim 'd["baseStack"]["bindsTo"]')"
 
-[ "$(claim 'd["portPolicy"]["reserved"]')" = "[15432, 16379, 18080]" ] \
+[ "$(claim 'd["portPolicy"]["reserved"]')" = "[13306, 15432, 16379, 17017, 18080]" ] \
     && ok 'every published host port is reserved, so pick-port.sh is never handed one the base stack holds' \
     || fail "reserved is wrong: $(claim 'd["portPolicy"]["reserved"]')"
 

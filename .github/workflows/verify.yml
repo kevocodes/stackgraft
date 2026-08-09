@@ -61,6 +61,8 @@ jobs:
         run: |
           docker pull postgres:16-alpine
           docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
 
       - name: Drive the copy road end to end
         env:
@@ -81,6 +83,8 @@ jobs:
         run: |
           docker pull postgres:16-alpine
           docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
 
       - name: Drive the overlay run end to end
         env:
@@ -101,8 +105,12 @@ jobs:
       - name: Install the validator
         run: python3 -m pip install --upgrade jsonschema
 
-      - name: Pull the store image the resolver reports
-        run: docker pull postgres:16-alpine
+      - name: Pull the store images the resolver reports
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
 
       - name: Drive discovery and validate what it produces
         env:
@@ -124,6 +132,8 @@ jobs:
         run: |
           docker pull postgres:16-alpine
           docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
 
       - name: Drive the offer, the approval and the two falsifiers
         env:

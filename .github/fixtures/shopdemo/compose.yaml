@@ -60,6 +60,43 @@ services:
       timeout: 3s
       retries: 20
 
+  # A third engine, and a second that refuses to boot without environment --
+  # so the environment read-back is not a postgres accommodation. Its
+  # healthcheck IS an exec-form vector, like the session store's, and answers
+  # the same on an instance holding nothing, so it reaches the discriminator
+  # with a candidate in hand and is refused there rather than by the argv rule.
+  orders-db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: shop
+      MYSQL_DATABASE: shop
+    volumes:
+      - orders-data:/var/lib/mysql
+      - ./db/orders.sql:/docker-entrypoint-initdb.d/orders.sql:ro
+    ports:
+      - "127.0.0.1:13306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  # A fourth, and a document store rather than a relational one: a different
+  # data model, a different client, and nothing in the procedure that reads it
+  # changes. It needs no environment to boot, like the session store.
+  catalog-docs:
+    image: mongo:7
+    volumes:
+      - docs-data:/data/db
+      - ./db/docs.js:/docker-entrypoint-initdb.d/docs.js:ro
+    ports:
+      - "127.0.0.1:17017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   catalog-api:
     image: postgres:16-alpine
     depends_on:
@@ -83,3 +120,5 @@ services:
 volumes:
   shop-data:
   sessions-data:
+  orders-data:
+  docs-data:

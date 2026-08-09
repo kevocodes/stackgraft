@@ -36,6 +36,8 @@ fail() { checks=$((checks + 1)); failures=$((failures + 1)); printf '  FAIL  %s\
 skip() { skips=$((skips + 1));   printf '  skip  %s\n' "$1"; }
 
 FIXTURE=$(CDPATH= cd -- "$(dirname "$0")/../fixtures/shopdemo" && pwd -P)
+REPO_SCRIPTS=$(CDPATH= cd -- "$(dirname "$0")/../../skills/stackgraft/scripts" && pwd -P)
+PROV_OUT=$(mktemp /tmp/sg-prov-XXXXXX)
 PROJECT=sg-fixture-shopdemo
 LABEL_REPO=sgfixture
 
@@ -50,7 +52,8 @@ cleanup() {
         docker volume rm -f "sg-fixture-copyvol-$_s" >/dev/null 2>&1 || true
     done
     docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" down -v >/dev/null 2>&1 || true
-    rm -f /tmp/sg-env-* 2>/dev/null
+    rm -f /tmp/sg-env-* /tmp/sg-prov-* 2>/dev/null
+    sh "$REPO_SCRIPTS/provider-docker.sh" destroy abcdef01 "$FIXTURE" postgres >/dev/null 2>&1
     return 0
 }
 trap cleanup EXIT INT TERM
@@ -164,7 +167,7 @@ for entry in $STORES; do
     fi
 
     if docker run -d --name "$COPY_NAME" \
-            --label "stackgraft.repo=$LABEL_REPO" --label "stackgraft.worktree=integration" \
+            --label "stackgraft.repo=$LABEL_REPO" --label "stackgraft.worktree=$FIXTURE" \
             --label "stackgraft.store=$STORE" --label "stackgraft.kind=copy" \
             --env-file "$ENV_FILE" -v "$COPY_VOLUME":"$MOUNT" "$IMAGE" >/dev/null 2>&1; then
         ok "$STORE: the copy starts as a second instance of the same image on the copied state"
@@ -173,7 +176,7 @@ for entry in $STORES; do
     fi
 
     docker run -d --name "$PROBE_NAME" \
-        --label "stackgraft.repo=$LABEL_REPO" --label "stackgraft.worktree=integration" \
+        --label "stackgraft.repo=$LABEL_REPO" --label "stackgraft.worktree=$FIXTURE" \
         --label "stackgraft.probe=$STORE" --env-file "$ENV_FILE" "$IMAGE" >/dev/null 2>&1 || true
 
     wait_readable "$READ" "$BASE"       || true
@@ -197,6 +200,47 @@ for entry in $STORES; do
         fail "$STORE: the copy does not match the base store: copy '$out_copy' against base '$out_base'"
     fi
 done
+
+# --- the shipped provider, and where it publishes the copy ------------------
+# Every row above builds its copy by hand. The provider this skill actually
+# ships had never been run by anything here, and the first agent to run it
+# found that the copy it starts is published on every interface: a full
+# duplicate of the developer's data, reachable with the base store's own
+# credentials, from a store that binds loopback and nothing else.
+
+printf '\n  -- the shipped provider --\n'
+P_STORE=postgres
+P_BASE=$(docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" ps -q "$P_STORE")
+P_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$P_BASE")
+P_SRC=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$P_BASE")
+
+if sh "$REPO_SCRIPTS/provider-docker.sh" provision abcdef01 "$FIXTURE" "$P_STORE" \
+        "$P_SRC" "$P_IMAGE" "$P_BASE" \
+        "stackgraft.labels=1" "stackgraft.repo=abcdef01" \
+        "stackgraft.worktree=$FIXTURE" "stackgraft.store=$P_STORE" > "$PROV_OUT" 2>/dev/null; then
+    ok 'the shipped provider provisions a copy of a real store, which nothing here had ever run'
+else
+    fail "the shipped provider could not provision: $(head -3 "$PROV_OUT" | tr '\n' ' ')"
+fi
+
+P_INST=$(awk -F'\t' '$1=="instance"{print $2}' "$PROV_OUT")
+if [ -n "$P_INST" ]; then
+    published=$(docker port "$P_INST" 2>/dev/null | awk '{print $3}' | sort -u | tr '\n' ' ')
+    case "$published" in
+        *0.0.0.0*|*'[::]'*)
+            fail "the provider publishes the copy beyond loopback ($published): a duplicate of the base data, on every interface, with the base store's own credentials" ;;
+        '')
+            ok 'the provider publishes the copy nowhere on the host, so it is reachable only on the runtime network' ;;
+        *)
+            ok "the provider publishes the copy on loopback only: $published" ;;
+    esac
+else
+    fail 'the provider named no instance, so where it published cannot be established'
+fi
+
+sh "$REPO_SCRIPTS/provider-docker.sh" destroy abcdef01 "$FIXTURE" "$P_STORE" >/dev/null 2>&1 \
+    && ok 'and its own destroy removes what it made' \
+    || fail 'the provider could not remove the copy it made'
 
 # The engine that ships an exec-form healthcheck is the one that reaches the
 # discriminator with a rung-1 candidate in hand, and is refused there rather

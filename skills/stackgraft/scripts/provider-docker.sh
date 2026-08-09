@@ -453,7 +453,21 @@ provision() {
     # invented: an engine that needs a variable to start needs the one it is
     # already running under, and defaulting one from a sibling is the invention
     # discovery.md forbids. PATH is dropped because it belongs to the image.
-    set -- -d --name "$name" -v "$name":"$mount" -P "$@"
+    # Published on LOOPBACK ONLY, one flag per exposed port, never with -P.
+    # -P hands every exposed port to the runtime bound to 0.0.0.0, so a full
+    # copy of the developer's data becomes reachable on every interface of
+    # their machine with the base store's own credentials -- while the store it
+    # was copied from commonly binds loopback and nothing else. The copy is the
+    # more sensitive object of the two, not the less: it holds the same bytes
+    # and nobody is watching it. An empty host port keeps the runtime as the
+    # only port allocator, which is the property -P was there for.
+    set -- -d --name "$name" -v "$name":"$mount" "$@"
+    for _ep in $(docker image inspect -f '{{range $p, $_ := .Config.ExposedPorts}}{{$p}} {{end}}' "$image" 2>/dev/null); do
+        case $_ep in
+            */tcp) set -- "$@" -p "127.0.0.1::${_ep%/tcp}" ;;
+            */udp) set -- "$@" -p "127.0.0.1::${_ep%/udp}/udp" ;;
+        esac
+    done
     [ -n "${net:-}" ] && set -- "$@" --network "$net"
     [ -n "${base_ep:-}" ] && set -- "$@" --entrypoint "$base_ep"
     while IFS= read -r e; do

@@ -304,7 +304,10 @@ manifest = {
         'teardownCommand': 'docker compose --project-directory {{repoRoot}} stop',
         # Loopback only where every published spec says so; any bare form
         # publishes on every interface and the weaker reading wins.
-        'bindsTo': '127.0.0.1' if binds == {'127.0.0.1'} else '0.0.0.0',
+        # The most restrictive of the published specs, never the widest:
+        # loopback where the truth is wider costs a longer route that works,
+        # and the reverse sends an overlay at an address that refuses it.
+        'bindsTo': '127.0.0.1' if '127.0.0.1' in binds else '0.0.0.0',
     },
     'backingStores': stores,
     'services': services,
@@ -377,8 +380,8 @@ esac
     || fail "dependsOn is wrong: $(claim 'd["services"]["catalog-api"]["dependsOn"]')"
 
 # One spec is loopback and one is bare, so the weaker reading has to win.
-[ "$(claim 'd["baseStack"]["bindsTo"]')" = 0.0.0.0 ] \
-    && ok 'bindsTo takes the weaker of the two published forms: a bare mapping publishes on every interface' \
+[ "$(claim 'd["baseStack"]["bindsTo"]')" = 127.0.0.1 ] \
+    && ok 'bindsTo takes the most restrictive of the published forms, which is the fail-closed direction for wiring an overlay' \
     || fail "bindsTo is wrong: $(claim 'd["baseStack"]["bindsTo"]')"
 
 [ "$(claim 'd["portPolicy"]["reserved"]')" = "[15432, 16379, 18080]" ] \

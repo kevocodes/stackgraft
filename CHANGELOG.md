@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] — 2026-08-09
+
+An agent holding nothing but this skill and a repository was run against a fixture, isolated from every test in this repository so it could not read the answers. It stopped at the port question, correctly, and its report named seven things these documents left to be guessed. This release closes them.
+
+The instrument matters as much as the findings: five layers of behavioural checks pass on this codebase, and none of them could have found any of this. They drive the mechanism with a script that already knows what to pass it. What an agent supplies instead is the absence of that knowledge, and that turns out to be the thing worth testing.
+
+### Fixed
+
+- **A first run stopped at the port question and threw away everything it had discovered.** The rule it stopped on is right and is unchanged: never guess a range, never widen another group's, never fall back to any free port. What it cost was the defect. `portPolicy` requires only `reserved`, derived from the base stack's published ports and needing nobody's answer, and `ranges` is optional — so a manifest carrying the whole discovery and no `ranges` is valid, and is what a stopping run leaves behind. Nothing said so, so a resolver pass, every fingerprint and every classification were discarded and the next run asked the same question having redone all of it. The stop is one question; it was costing the pass, every run, forever. **The key it asks about is now derived too**: `portGroup` is the unit's own name unless the repository already groups its units, because inventing a category is inventing a range one level up and does it silently, a mis-keyed unit drawing from a range that looks answered.
+- **Nothing applied a worktree's migration, and inventing a route was forbidden.** The central act of the change had no derivable road. The repair is not a new road: a unit that migrates does it from its own entrypoint, which is the shape the `migrates` escalation was always written for, so the migration reaches the copy because the overlay was launched against the copy and for no other reason.
+- **The base stack was unfindable whenever its selector differs from the name its file declares** — `-p`, `COMPOSE_PROJECT_NAME`, or the directory. The three `baseStack` commands now carry the selector read back from the runtime. The dangerous half is the reading: **an empty status table is not a stopped stack**, it is a selector that asked for nothing, and step 6 starts what is missing — so a wrong selector brought up a second copy of a running stack on the ports the first one held, which is the outcome this skill exists to avoid.
+- **The diff-based migration escalation had no scope**, so an `ALTER TABLE` refused a cache and a broker too: the amplification the per-pair record exists to end, returning through the escalation door. It is scoped now the way `migrates` is, and unevidenced leaves every store of that unit undetermined. It reads the diff and never a source, which is why it needs no fingerprint — a migrations directory can never be a `sources[]` entry, and nothing is lost, because the diff is recomputed every run.
+- **A changed path that maps to no unit still enters the gate's diff.** The decision gate governs which units are overlaid; the escalations read the diff of the units already selected. Those never collided, and the table read as though they did.
+- **`none` could be read as possibly undetermined.** A careful reader hesitated between refusing and copying on identical evidence. N is undetermined when nobody established what the store offers, and answered `no` when a pass established that it offers nothing; an `inferred` record is not a third state to weigh.
+- **The rung-2 read was prescribed in a form the contract governing it rejects outright.** `2.1.1` stated that a repository's read file is issued on the host as ``sh <file> "$instance"`` — and the template contract rejects `sh` as the program by name, so the one shape this version added was refused by the rule it was subordinated to. The file is invoked directly instead, as the executable it is written to be; a read file that is not executable supplies no vector and the rung is empty. **What shape that record takes is stated too**: the path relative to `repoRoot` as a one-element vector, with the instance appended by the issuer rather than stored in it, because the instance changes three times per verification and the candidate does not.
+- **`bindsTo` took the widest published form where it should take the narrowest.** One field cannot hold two bindings, and the fail-closed direction is the narrow one: loopback where the truth is wider costs a route that goes the long way round and works, while every-interface where the truth is loopback sends an overlay at an address that refuses it and reads as a store that is down.
+- **The shipped example broke the quoting rule it illustrates**, carrying bare `{{worktree}}` and `{{repoRoot}}` where section 6 requires each substituted value be one single-quoted word. `references/traps.md` excuses that file's *values* as illustrative; a rule it demonstrates wrongly is a different thing, and every placeholder in it is quoted now.
+
+### Known
+
+- **A container-run overlay whose compose file writes its connection string as a literal has no channel to reach an isolated copy, and refuses.** That is correct — launching anyway points the overlay at the base store, which is the contamination the gate exists to stop — but the shape is ordinary rather than exotic, and a refusal that only says *no route* leaves a developer with nothing to do. It now **names the change and whose it is**: the variable in the unit's own `environment:` with no value, or written as `${…}`, either being one line in a file the developer owns, reviews and commits. The skill does not write it, stage it, or offer to. It never edits a file it did not author, and that prohibition is general rather than scoped to the section it appears in — which is now said where the question arises.
+
 ## [2.1.1] — 2026-08-09
 
 The copy road was driven against a real store for the first time, and it did not complete. Not because the copy was wrong — the copy was byte-for-byte correct on the first attempt — but because the instance it had to be compared against never started, so nothing could certify it.
@@ -100,6 +122,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.2
 [2.1.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.1
 [2.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.0
 [2.0.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.0.0

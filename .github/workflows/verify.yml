@@ -45,6 +45,26 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/verify.sh
 
+  integration:
+    name: the seeded-copy road against a real store
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A real store image, booted by its own entrypoint. Every other runtime
+      # row in this repository runs `--entrypoint sh` against alpine/git, which
+      # is what kept an image's boot requirements invisible: the shipped empty-
+      # instance recipe passed no environment, postgres exited 1 before any
+      # query could be issued, and no prose row could notice because the prose
+      # said what the prose said.
+      - name: Pull the store image the floor boots
+        run: docker pull postgres:16-alpine
+
+      - name: Drive the copy road end to end
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration.sh
+
   portability:
     name: scripts run on a minimal image
     runs-on: ubuntu-latest

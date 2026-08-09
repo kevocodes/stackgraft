@@ -224,8 +224,21 @@ printf '        generated read: base=%s  empty=%s\n' "$out_base" "$out_probe"
 # The document says a generated SELECT 1 must fail this test exactly as
 # pg_isready does. Both answer the same on an instance holding nothing, which
 # is the one distinction the whole road exists to make.
-sel_base=$(docker exec "$BASE" psql -U shop -d shop -tAc 'SELECT 1' 2>/dev/null)
-sel_probe=$(docker exec "$PROBE_NAME" psql -U shop -d shop -tAc 'SELECT 1' 2>/dev/null)
+# Waited for rather than sampled: an empty answer is an instance that has not
+# finished booting, and reading it as "it answered differently" would turn a
+# race into evidence that the rule refusing SELECT 1 rests on nothing.
+answer_select1() {
+    _n=0
+    while [ "$_n" -lt 40 ]; do
+        _a=$(docker exec "$1" psql -U shop -d shop -tAc 'SELECT 1' 2>/dev/null)
+        [ -n "$_a" ] && { printf '%s' "$_a"; return 0; }
+        _n=$((_n + 1))
+        sleep 1
+    done
+    printf 'unreadable'
+}
+sel_base=$(answer_select1 "$BASE")
+sel_probe=$(answer_select1 "$PROBE_NAME")
 [ "$sel_base" = "$sel_probe" ] \
     && ok "a generated SELECT 1 answers '$sel_base' on both and is refused as a query, exactly as pg_isready is" \
     || fail "SELECT 1 discriminated ('$sel_base' against '$sel_probe'), so the rule refusing it rests on nothing"

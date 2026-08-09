@@ -104,9 +104,9 @@ So the copy is **crash-consistent**: a file-level copy of a running engine is wh
 |------|--------|----------------|
 | 1 | the store service's **exec-form** `healthcheck.test`, as the resolver already reported it | an argument vector, already in the shape this skill runs |
 | 2 | a **read** command from the repository's own lifecycle target family for that store, including one the run offered to write per `references/shared-state.md` | the same, out of a file the repository owns |
+| 3 | nothing | destroy the copy, refuse the pair, name the store, and say that **no query could be derived** |
 
 A rung-2 `verification.command` is that file's path relative to `repoRoot`, as a one-element vector, and the instance is appended by the issuer rather than stored in it: the vector is the candidate and the instance is which instance it is being asked about, which changes three times per verification while the candidate does not.
-| 3 | nothing | destroy the copy, refuse the pair, name the store, and say that **no query could be derived** |
 
 A `CMD-SHELL` healthcheck is not a candidate: it is shell source again rather than an argument vector, and it falls through to rung 2 and then to rung 3. The template contract in `references/shared-state.md` governs the harvested vector unchanged — every rule there applies to every command this skill discovers and runs against a store — so a vector whose program re-parses its argument is rejected here for the reason it is rejected there.
 

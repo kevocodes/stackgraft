@@ -112,10 +112,19 @@ awk '
 mv "$TREE/services/catalog-api/handle.sh.new" "$TREE/services/catalog-api/handle.sh"
 chmod +x "$TREE/services/catalog-api/handle.sh"
 
+# The change here is uncommitted, which is the ordinary shape: a developer
+# opens a worktree, edits, and runs this before committing anything. A subject
+# derived from the committed diff alone sees none of it and selects no unit --
+# on exactly the run this skill exists for.
+committed=$(git -C "$TREE" diff --name-only main...HEAD | wc -l | tr -d ' ')
+[ "$committed" = 0 ] \
+    && ok 'the committed diff against the base branch is empty, so a subject derived from it alone would select nothing and produce no overlay' \
+    || fail "this scenario no longer has an uncommitted change ($committed committed path(s)), so it stops covering the ordinary shape"
+
 changed=$(git -C "$TREE" status --porcelain --untracked-files=all | awk '{print $2}' | sort | tr '\n' ' ')
 case "$changed" in
-    *db/migrations/*|*services/catalog-api/*)
-        ok "the worktree diff touches a migrations directory and the service's own tree: $changed" ;;
+    *db/migrations/*)
+        ok "the change set includes the untracked migrations directory, which is the strongest escalation the gate has and the easiest leg to drop: $changed" ;;
     *)
         fail "the worktree diff is not the subject this run needs: $changed" ;;
 esac

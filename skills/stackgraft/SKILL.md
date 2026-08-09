@@ -45,7 +45,7 @@ Skip for single-service repos, cheap `up`, or full isolation.
 2. Load `${XDG_CACHE_HOME:-$HOME/.cache}/stackgraft/<repo-basename>-<hash8>.json`; derive `hash8` and discard per `references/discovery.md` sections 0 and 5. If unwritable, run manifest-less and say so.
 3. Report this repository's overlays per `references/reaping.md`; exclude their ports.
 4. Discover or refresh per Decision Gates.
-5. Diff the worktree against its base branch; map changes through `paths`.
+5. Diff the worktree and its working tree; map changes through `paths`.
 6. Confirm base-stack health; start what is missing.
 7. Before launching, read `references/shared-state.md`; record every verdict it demands.
 8. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one excluded port per argument. Bind strictly.

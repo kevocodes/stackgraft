@@ -19,9 +19,9 @@
   ],
 
   "baseStack": {
-    "startCommand": "docker compose --project-directory {{repoRoot}} up -d",
-    "statusCommand": "docker compose --project-directory {{repoRoot}} ps --format '{{.Service}} {{.State}} {{.Publishers}}'",
-    "teardownCommand": "docker compose --project-directory {{repoRoot}} stop",
+    "startCommand": "docker compose --project-directory '{{repoRoot}}' up -d",
+    "statusCommand": "docker compose --project-directory '{{repoRoot}}' ps --format '{{.Service}} {{.State}} {{.Publishers}}'",
+    "teardownCommand": "docker compose --project-directory '{{repoRoot}}' stop",
     "bindsTo": "127.0.0.1"
   },
 
@@ -33,8 +33,8 @@
       "isolation": {
         "mechanism": "database",
         "applyVia": "compose-exec",
-        "command": "make -C {{repoRoot}} db-create DB={{isolationIdent}}",
-        "teardownCommand": "make -C {{repoRoot}} db-drop DB={{isolationIdent}}",
+        "command": "make -C '{{repoRoot}}' db-create DB={{isolationIdent}}",
+        "teardownCommand": "make -C '{{repoRoot}}' db-drop DB={{isolationIdent}}",
         "env": { "DATABASE_URL": "postgresql://bookshop@postgres:5432/{{isolationIdent}}" },
         "discoveredFrom": "Makefile",
         "confidence": "declared",
@@ -77,8 +77,8 @@
       "isolation": {
         "mechanism": "topic-prefix",
         "applyVia": "compose-exec",
-        "command": "make -C {{repoRoot}} topic-create TOPIC={{isolationIdent}}.book-events",
-        "teardownCommand": "make -C {{repoRoot}} topic-delete TOPIC={{isolationIdent}}.book-events",
+        "command": "make -C '{{repoRoot}}' topic-create TOPIC={{isolationIdent}}.book-events",
+        "teardownCommand": "make -C '{{repoRoot}}' topic-delete TOPIC={{isolationIdent}}.book-events",
         "env": { "KAFKA_TOPIC_PREFIX": "{{isolationIdent}}." },
         "discoveredFrom": "Makefile",
         "confidence": "declared"
@@ -130,7 +130,7 @@
         "SEARCH_URL": "http://search-indexer:8090"
       },
       "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/books -H 'Content-Type: application/json' -d '{\"title\":\"...\",\"isbn\":\"...\"}'",
-      "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8080 catalog-api",
+      "overlayCommand": "docker compose --project-directory '{{worktree}}' run --rm --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
         "THE PARTIALLY-INFORMED PASS, which is the shape the retired writes array could not express: postgres and kafka are recorded, and events has NO record at all. The pass could not establish what this unit publishes on the shared Redis channel, so it wrote nothing for that pair rather than a guess — and the silence is undetermined, which refuses. Under writes: [\"postgres\", \"events\", \"kafka\"] the same pass would have had to omit the field entirely and lose all three.",
         "migrates names postgres alone, so F5 stops amplifying: the startup migration no longer makes W = yes against events and kafka. Those two are classified on their own records, or on the absence of one.",
@@ -182,7 +182,7 @@
         "notes": "dependsOn names two stores; all three pairs were classified anyway, because the pair set comes from backingStores and never from what a unit declares."
       },
       "verifyRequest": "curl -sS -i 'http://localhost:{{port}}/search?q=test'",
-      "overlayCommand": "docker compose --project-directory {{worktree}} run --rm --no-deps --publish {{port}}:8090 search-indexer",
+      "overlayCommand": "docker compose --project-directory '{{worktree}}' run --rm --no-deps --publish {{port}}:8090 search-indexer",
       "notes": [
         "The theft case in one entry: every mutates claim is false, yet joining the base group.id starves a service nobody modified of the partitions it was consuming. The competes boolean is what the gate reads; competesOn beside it holds the KNOB, group.id, and the distinct value an overlay would attach under belongs in overlayIdentity. Until one is recorded and verified distinct the pair stays refused.",
         "Its postgres record is the undeclared store classified anyway: dependsOn names only events and kafka, and a store a unit forgot to declare is exactly the one the gate exists to catch.",
@@ -242,8 +242,8 @@
       },
       "peerEnv": {},
       "verifyRequest": "curl -sS -i http://localhost:{{port}}/",
-      "prepareCommand": "cp -a --reflink=auto {{repoRoot}}/apps/storefront/node_modules {{worktree}}/apps/storefront/node_modules",
-      "overlayCommand": "cd {{worktree}}/apps/storefront && npm run dev -- --port {{port}} --strictPort",
+      "prepareCommand": "cp -a --reflink=auto '{{repoRoot}}'/apps/storefront/node_modules '{{worktree}}'/apps/storefront/node_modules",
+      "overlayCommand": "cd '{{worktree}}'/apps/storefront && npm run dev -- --port {{port}} --strictPort",
       "notes": [
         "Not dockerized. Service URLs fall back to http://localhost:PORT in code, so it reaches the base stack with no config.",
         "prepareCommand clones the dependency tree instead of reinstalling it: near-instant, near-zero disk, and each server keeps its own pre-bundle cache. The clone flag is platform-specific and this repoRoot is a Linux path, so the command uses GNU cp's --reflink=auto, which clones on btrfs or XFS and falls back to a plain copy elsewhere. The macOS equivalent is cp -Rc, an APFS clone; -c is not a GNU cp flag and fails on Linux."

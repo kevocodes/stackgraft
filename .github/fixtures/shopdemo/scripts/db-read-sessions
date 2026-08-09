@@ -1,0 +1,13 @@
+#!/bin/sh
+# The read half for the second store, in the same shape as the first: it counts
+# what the instance it is given carries, names no key this repository owns, and
+# an instance holding nothing answers zero.
+#
+# What differs from db-read-postgres is only what this repository knows about
+# its own store. The procedure that issues it does not change, which is the
+# whole of what "blind to the substrate" is supposed to mean.
+set -eu
+
+instance=${1:?usage: db-read-sessions <instance>}
+
+exec docker exec "$instance" redis-cli DBSIZE

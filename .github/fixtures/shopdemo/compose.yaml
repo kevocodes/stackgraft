@@ -31,6 +31,24 @@ services:
       timeout: 3s
       retries: 20
 
+  # A second engine, and deliberately one that differs from the first in every
+  # way the procedure is supposed to be blind to: it needs no environment to
+  # boot, its healthcheck IS an exec-form vector -- so it is a rung-1 candidate
+  # where postgres never gets that far -- and it still supplies no query,
+  # because `redis-cli ping` answers PONG on an instance holding nothing.
+  sessions:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - sessions-data:/data
+    ports:
+      - "127.0.0.1:16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   catalog-api:
     image: postgres:16-alpine
     depends_on:
@@ -46,3 +64,4 @@ services:
 
 volumes:
   shop-data:
+  sessions-data:

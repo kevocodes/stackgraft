@@ -140,6 +140,28 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-family.sh
 
+  parallel:
+    name: two worktrees at once
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The claim this skill is named for, and the one every other floor leaves
+      # untested by running exactly one worktree: two features on the same
+      # service, each with its own data, and one teardown that does not eat the
+      # other's.
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+
+      - name: Drive two worktrees against one base stack
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-parallel.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

@@ -269,6 +269,26 @@ else
     fail 'the provider named no instance, so where it published cannot be established'
 fi
 
+# A run can only exclude a port it can name. The published port is chosen by
+# the runtime at provision time, so it is in no manifest -- `address` is where
+# a run recovers it, and a later pick that is not handed it can be given the
+# copy's own port as a candidate.
+ADDR_OUT=$(sh "$REPO_SCRIPTS/provider-docker.sh" address $FIX_HASH "$FIXTURE" "$P_STORE" 2>/dev/null)
+addr_port=$(printf '%s\n' "$ADDR_OUT" | awk -F'\t' '$1=="port"{print $2}' | head -1)
+runtime_port=$(docker port "$P_INST" 2>/dev/null | awk -F: '{print $NF}' | head -1)
+if [ -n "$addr_port" ] && [ "$addr_port" = "$runtime_port" ]; then
+    ok "address reports the host port the runtime actually published ($addr_port), so a run has the value it needs to exclude it from a later pick"
+else
+    fail "address reported '$addr_port' where the runtime published '$runtime_port', so a run cannot exclude its own copy's port"
+fi
+
+# And pick-port.sh honours it as an exclusion like any other.
+picked=$(sh "$REPO_SCRIPTS/pick-port.sh" "$addr_port" "$addr_port" "$FIXTURE" "$addr_port" 2>/dev/null)
+rc=$?
+[ -z "$picked" ] && [ "$rc" -ne 0 ] \
+    && ok 'a range whose only member is the copy port yields nothing rather than yielding it, so the exclusion is real' \
+    || fail "pick-port.sh returned '$picked' for a range whose only member was excluded"
+
 # The copy's instance carries this repository's hash, so it reaches the
 # container listing too -- where it has a store and no service or port. Before
 # this was told apart, the report named one object twice: once as the copy it

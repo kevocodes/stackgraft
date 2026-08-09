@@ -2,7 +2,7 @@
   "name": "stackgraft",
   "displayName": "stackgraft",
   "description": "Run only the services your git worktree changed, on alternate ports, grafted onto the stack you already have running.",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "author": {
     "name": "kevocodes",
     "url": "https://github.com/kevocodes"

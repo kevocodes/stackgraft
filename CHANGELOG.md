@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.7] — 2026-08-09
+
+The last two an agent run left open. Neither blocking, and both the same shape: an object a run creates and then cannot point at.
+
+### Fixed
+
+- **A published copy holds a host port and nothing recorded it.** The runtime picks it at provision time, so it belongs in no manifest — per-worktree and per-provision, exactly like the instance name, and `portPolicy` holds the base stack's ports rather than this run's. But it is a real allocation, and `scripts/pick-port.sh` excludes what it is given and nothing else, so a later run could be handed the copy's own port as a candidate. A run now reports the ports its own copies publish and passes them as exclusions, recovering each from the `port` record `address` already returned. Not tracked in the cache, because a value the runtime chooses is not a fact about the repository — recovered from the runtime, which is where every other engine-specific fact here comes from.
+- **An overlay running a store's image inherits an anonymous volume nobody can find.** A unit that runs `postgres` for `psql` alone still gets that image's declared volume, created by the launch and carrying none of this skill's labels — so no scoped query returns it, and an unscoped listing on a working machine returns thousands. `2.1.6` made the teardown carry `-v`, which takes it; the run names it as well, which is what lets a developer who already removed the container without the flag find the object afterwards.
+
 ## [2.1.6] — 2026-08-09
 
 A fifth agent ran with **no port range supplied**, so the stop this skill is built around was exercised for the first time rather than skipped. It stopped at step 8 with the whole discovery already written down — a schema-valid manifest carrying `reserved` and no `ranges` — asked one question, wrote only that key on the answer, and completed: an overlay on a picked port, pointed at a verified copy, with the base store untouched at column level.
@@ -181,6 +190,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.7]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.7
 [2.1.6]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.6
 [2.1.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.5
 [2.1.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.4

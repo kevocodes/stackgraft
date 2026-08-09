@@ -171,12 +171,27 @@ wait_ready "$COPY_NAME" && ok 'the copy answers as a store' || fail 'the copy ne
 
 # --- the port, picked by the skill's own script ------------------------------
 
-PORT=$(sh "$SCRIPTS/pick-port.sh" 18000 18200 "$TREE" 2>/dev/null)
+# The base stack publishes 18080, which sits inside the range asked for here.
+# Step 3 of the skill excludes this repository's held ports before step 8 picks
+# one, and each exclusion is its own argument -- "15432,18080" is a single
+# argument that is not a port and is rejected by name rather than split.
+BASE_PORTS=$(docker compose -p "$PROJECT" -f "$MAIN/compose.yaml" ps --format json 2>/dev/null \
+    | python3 -c 'import json,sys; print(" ".join(sorted({str(p["PublishedPort"]) for l in sys.stdin for p in (json.loads(l).get("Publishers") or []) if p.get("PublishedPort")})))' 2>/dev/null)
+# shellcheck disable=SC2086
+PORT=$(sh "$SCRIPTS/pick-port.sh" 18000 18200 "$TREE" $BASE_PORTS 2>/dev/null)
 case "$PORT" in
     ''|*[!0-9]*) fail "pick-port.sh did not yield an integer: '$PORT'" ;;
-    *) [ "$PORT" -ge 18000 ] && [ "$PORT" -le 18200 ] \
-        && ok "pick-port.sh yields a candidate inside the requested range: $PORT" \
-        || fail "pick-port.sh yielded $PORT, outside 18000-18200" ;;
+    *)
+        if [ "$PORT" -ge 18000 ] && [ "$PORT" -le 18200 ]; then
+            ok "pick-port.sh yields a candidate inside the requested range: $PORT"
+        else
+            fail "pick-port.sh yielded $PORT, outside 18000-18200"
+        fi
+        case " $BASE_PORTS " in
+            *" $PORT "*) fail "pick-port.sh yielded $PORT, which the base stack publishes" ;;
+            *) ok "the candidate avoids every port the base stack holds: excluded $BASE_PORTS" ;;
+        esac
+        ;;
 esac
 
 # --- the migration, applied through the overlay's own road ------------------

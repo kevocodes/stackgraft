@@ -162,6 +162,28 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-parallel.sh
 
+  zerodisk:
+    name: the zero-disk road
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every other floor takes the copy road, because no fixture defines a
+      # database lifecycle target. This one builds the repository that does, so
+      # the pair reaches step 4 instead of step 5 -- a namespace inside the
+      # instance already running, no volume and no second container.
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+
+      - name: Drive the in-instance road end to end
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-zerodisk.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

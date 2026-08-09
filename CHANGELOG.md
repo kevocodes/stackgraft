@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] — 2026-08-09
+
+The four findings a completed agent run left behind, none of them blocking and one of them a report that refused this skill's own work to itself.
+
+### Fixed
+
+- **The ownership report named one object twice, once as a refusal against itself.** A copy's instance carries this repository's hash, so it reaches the container listing as well — where it has a store and neither a service nor a port, because **a copy belongs to a store rather than to a service**. That is what a copy is, not an overlay that lost two labels. The store label joins the row now and the container pass leaves that object to the pass that owns it, names it, and prints the command that removes it.
+- **The generated-family offer was unreachable on the repository closest to needing it.** One that wrote `db-read-<store>` and neither lifecycle half could never be offered the two it lacks: the read sat at a family name, so the collision rule withdrew the whole offer. That rule exists because a generated name landing on somebody else's file is a conflict this skill has no standing to resolve — and that reasoning does not reach a file **doing that member's job**. Where the file at a family name is a member this rung already accepted, the offer now completes the family: the missing members are generated, the supplied one is untouched, and the approval is fingerprinted over all three, because what a human approves is the family and a value over the new files alone leaves the one they already had outside their consent. Anything else at a family name is a collision as before.
+- **A third route from an overlay to the base stack's network was in use and unlisted.** Running the overlay under the base stack's own project joins that network by construction, with no edit to any file — so it is now preferred over declaring the network `external: true` in the worktree's compose file, which is an edit this skill may never make and may only name for the developer.
+- **`covers` had no per-store token.** It carried `services.<name>` and no `backingStores.<name>`, so a repository whose stores are read from different files could not have a drift in one re-derive that store alone.
+
 ## [2.1.3] — 2026-08-09
 
 A third agent completed the run this skill exists for: the changed service on its own port, against a verified copy of the base stack's data, answering a real request — with the base store measurably untouched afterwards. It also found that the copy it had just been handed was published on every interface of the machine.
@@ -134,6 +145,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.4
 [2.1.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.3
 [2.1.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.2
 [2.1.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.1

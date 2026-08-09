@@ -146,14 +146,37 @@ fi
 BARE_NAME="sg-fixture-bare-$STORE"
 docker rm -fv "$BARE_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$BARE_NAME" --label "stackgraft.probe=$STORE" "$IMAGE" >/dev/null 2>&1 || true
-bare_state=$(docker inspect -f '{{.State.Status}}' "$BARE_NAME" 2>/dev/null || printf 'absent')
+
+# The claim is that such an instance never becomes usable -- not that it is
+# already dead the instant after `run` returns. Reading the status straight back
+# is a race the runner wins and a laptop loses: the container is still `running`
+# while its entrypoint is deciding to exit, and the row then reports the
+# opposite of what happened. So this waits for the outcome instead of sampling
+# the moment, and only a readiness answer falsifies it.
+bare_outcome() {
+    _n=0
+    while [ "$_n" -lt 30 ]; do
+        if docker exec "$BARE_NAME" pg_isready -U shop -d shop >/dev/null 2>&1; then
+            printf 'usable'
+            return 0
+        fi
+        case $(docker inspect -f '{{.State.Status}}' "$BARE_NAME" 2>/dev/null || printf absent) in
+            exited|dead|absent) printf 'refused-to-start'; return 0 ;;
+        esac
+        _n=$((_n + 1))
+        sleep 1
+    done
+    printf 'never-ready'
+}
+
+bare_state=$(bare_outcome)
 bare_why=$(docker logs "$BARE_NAME" 2>&1 | awk 'NF' | head -1 || printf '')
 docker rm -fv "$BARE_NAME" >/dev/null 2>&1 || true
 
-if [ "$bare_state" = running ]; then
-    fail 'an instance of this image launched with no environment stayed up, so this row no longer evidences why the environment is passed'
+if [ "$bare_state" = usable ]; then
+    fail 'an instance of this image launched with no environment became usable, so this row no longer evidences why the environment is passed'
 else
-    ok "an instance of this image launched with no environment does not come up, which is why the empty instance is given the environment read back: $bare_why"
+    ok "an instance of this image launched with no environment never becomes usable ($bare_state), which is why the empty instance is given the environment read back: $bare_why"
 fi
 
 docker run -d --name "$PROBE_NAME" \

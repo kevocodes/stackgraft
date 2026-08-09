@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] — 2026-08-09
+
+A third agent completed the run this skill exists for: the changed service on its own port, against a verified copy of the base stack's data, answering a real request — with the base store measurably untouched afterwards. It also found that the copy it had just been handed was published on every interface of the machine.
+
+### Fixed
+
+- **The seeded copy was published on every interface, and the store it copied was not.** The provider started it with `-P`, which hands every exposed port to the runtime bound to `0.0.0.0`. Measured on the fixture: the copy landed on `0.0.0.0:55006` while the store it duplicates publishes `127.0.0.1:15432` and nothing else. A full copy of the developer's data, opened by the base store's own credentials, reachable from addresses the original deliberately refuses — and **the copy is the more sensitive of the two objects, not the less**: identical bytes, and nobody watching it. It publishes one flag per exposed port now, each bound to `127.0.0.1` with the host port left empty, so the runtime stays the only allocator, which is the property `-P` was there for and the reason this provider says it picks no port.
+
+### Known
+
+- **Nothing in this repository had ever run the shipped provider.** Five layers of behavioural checks build their copies by hand beside it — the same `docker run`, written in the test — so they exercised *a copy* and never *the code that makes one*, which is how `-P` survived all of them. Provision, publication and destroy now go through `scripts/provider-docker.sh`. The lesson generalises past this defect: a floor that reimplements the thing it checks proves the reimplementation.
+
 ## [2.1.2] — 2026-08-09
 
 An agent holding nothing but this skill and a repository was run against a fixture, isolated from every test in this repository so it could not read the answers. It stopped at the port question, correctly, and its report named seven things these documents left to be guessed. This release closes them.
@@ -122,6 +134,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.3
 [2.1.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.2
 [2.1.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.1
 [2.1.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.0

@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.6] — 2026-08-09
+
+A fifth agent ran with **no port range supplied**, so the stop this skill is built around was exercised for the first time rather than skipped. It stopped at step 8 with the whole discovery already written down — a schema-valid manifest carrying `reserved` and no `ranges` — asked one question, wrote only that key on the answer, and completed: an overlay on a picked port, pointed at a verified copy, with the base store untouched at column level.
+
+The stop, the write-before-asking, the resume and the completion are one loop, and this is the release where all four of them ran.
+
+### Fixed
+
+- **`baseStack` has no `notes`, and the schema forbids one.** `2.1.2` said to record a published-spec disagreement there; following that sentence emits a manifest the schema **rejects**, which discards the cache and buys a full rediscovery for a note. It belongs on the unit whose spec differs, in that unit's own `notes`.
+- **The `--rm` fixtures in `references/reaping.md` read as launch forms.** That table demonstrates where ownership labels are appended and holds whatever the rest of the line is — read as forms to copy, it lands a reader on one that deadlocks at the verification step `2.1.5` had just warned about from the other side.
+- **Where the discriminator probe runs was unstated**, and the schema settles it: `discriminates` is required inside `verification`, so the record cannot be written without having issued the candidate. It runs at discovery — and **not for every store in the map**: an empty instance per store, to establish a discriminator for a pair pass 3 removed and nothing will read, spends a container on an answer nobody consumes.
+- **No field held how an isolated store's address reaches the overlay.** A seeded copy's instance name does not exist until it is provisioned and differs per worktree, so it is a value of the run and never of the cache — while `isolation.env` belongs to the in-instance road and is shared by every service paired with that store. The manifest records **which variable carries it**, on the unit that reads it; the run supplies what the provider returned.
+- **The Output Contract owed a teardown the reaper deliberately will not give.** A live overlay is never a target while its worktree is listed, so the command is the runtime's own — naming the container the run recorded and carrying `-v`, because a unit running a store's image inherits that image's declared volume as an anonymous one that no scoped query can find after the fact.
+
+### Known
+
+- **A reported contradiction was measured and is not one.** `--project-directory` *does* select which compose file is read when no `-f` is given: run from one directory against another, the orchestrator read the target's file and used its project name. Recorded because the report was specific and wrong, and the next reader deserves the measurement rather than the claim.
+
 ## [2.1.5] — 2026-08-09
 
 A fourth agent completed the run on a harder subject — four stores rather than two — and the gate held: four pairs derived, three removed each on its own record, the migration escalation scoped to `postgres` alone and neither the keyspace, the second relational store nor the document store touched. That is what `2.1.2`'s scoping repair was for.
@@ -163,6 +181,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.6]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.6
 [2.1.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.5
 [2.1.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.4
 [2.1.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.3

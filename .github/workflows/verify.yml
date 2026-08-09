@@ -105,6 +105,25 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-discovery.sh
 
+  family:
+    name: the generated lifecycle family
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The copy road is proved GIVEN a read command, and the fixture ships one
+      # by hand as though a run had offered it and a human had approved it. The
+      # flow that produces that file had no floor, and on a repository with no
+      # rung-1 candidate it is not optional: without it no copy is ever
+      # certified.
+      - name: Pull the store image the family runs against
+        run: docker pull postgres:16-alpine
+
+      - name: Drive the offer, the approval and the two falsifiers
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-family.sh
+
   portability:
     name: scripts run on a minimal image
     runs-on: ubuntu-latest

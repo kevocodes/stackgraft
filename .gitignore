@@ -6,3 +6,4 @@ __pycache__/
 node_modules/
 .sg-work/
 .sg-work-discovery/
+.sg-work-family/

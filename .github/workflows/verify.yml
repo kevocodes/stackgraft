@@ -83,6 +83,28 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-overlay.sh
 
+  discovery:
+    name: discovery and the manifest it produces
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The schema rows validate manifests written by hand to be validated. No
+      # manifest discovery actually produced had ever been checked against the
+      # schema this repository ships, so this job asks that of a real answer --
+      # and reproduces the serviceFingerprint recipe, whose four claims were
+      # verified once on a scratch repository and never again.
+      - name: Install the validator
+        run: python3 -m pip install --upgrade jsonschema
+
+      - name: Pull the store image the resolver reports
+        run: docker pull postgres:16-alpine
+
+      - name: Drive discovery and validate what it produces
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-discovery.sh
+
   portability:
     name: scripts run on a minimal image
     runs-on: ubuntu-latest

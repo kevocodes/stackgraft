@@ -5,3 +5,4 @@ __pycache__/
 .atl/
 node_modules/
 .sg-work/
+.sg-work-discovery/

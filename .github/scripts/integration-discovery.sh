@@ -242,11 +242,19 @@ for name, svc in (model.get('services') or {}).items():
                 'discoveredFrom': 'compose.yaml',
                 'confidence': 'declared',
             },
+            # Why a mechanism is none is the record that stops the next pass
+            # re-deriving one that does not work, and the two refusals are not
+            # the same refusal: a CMD-SHELL test never becomes a candidate,
+            # while an exec-form vector becomes one and is then refused by the
+            # discriminator instead.
             'notes': [
-                'healthcheck is {} and so supplies no rung-1 candidate: {}'.format(
+                'healthcheck is {}: {}'.format(
                     hc[0] if hc else 'absent',
-                    'shell source rather than an argument vector' if hc[:1] == ['CMD-SHELL']
-                    else 'no exec-form test is declared',
+                    'shell source rather than an argument vector, so the argv rule '
+                    'excludes it before anything else is asked' if hc[:1] == ['CMD-SHELL']
+                    else 'an exec-form vector, so it IS a rung-1 candidate and has to be '
+                    'held to the discriminator like any other' if hc
+                    else 'no test is declared, so there is no rung-1 candidate to weigh',
                 ),
             ],
         }
@@ -326,17 +334,31 @@ fi
 
 claim() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2], {}, {"d": d}))' "$MANIFEST" "$1" 2>/dev/null; }
 
-[ "$(claim 'sorted(d["backingStores"])')" = "['postgres']" ] \
-    && ok 'the store is discovered as a backing store: postgres' \
+[ "$(claim 'sorted(d["backingStores"])')" = "['postgres', 'sessions']" ] \
+    && ok 'both stores are discovered as backing stores, and the pass does not stop at the first' \
     || fail "backingStores is wrong: $(claim 'sorted(d["backingStores"])')"
 
 [ "$(claim 'sorted(d["services"])')" = "['catalog-api']" ] \
     && ok 'the runnable unit is discovered as a service, and the store is not one of them: catalog-api' \
     || fail "services is wrong: $(claim 'sorted(d["services"])')"
 
+# The second store is the one that proves the rule: the service is named
+# `sessions` and the substrate is `redis`, so a pass reading the key would get
+# it wrong and a pass reading the image gets it right.
 [ "$(claim 'd["backingStores"]["postgres"]["substrate"]')" = postgres ] \
-    && ok 'the substrate is read off the image rather than off the service name' \
+    && ok 'the first substrate is read off the image' \
     || fail "substrate is wrong: $(claim 'd["backingStores"]["postgres"]["substrate"]')"
+
+[ "$(claim 'd["backingStores"]["sessions"]["substrate"]')" = redis ] \
+    && ok 'the second is read off the image too, and its service name says nothing: sessions holds a redis' \
+    || fail "the substrate was taken from the key rather than the image: $(claim 'd["backingStores"]["sessions"]["substrate"]')"
+
+case "$(claim 'd["backingStores"]["sessions"]["notes"][0]')" in
+    *'exec-form vector'*)
+        ok 'the note says why this one is refused differently: it IS a rung-1 candidate and must face the discriminator' ;;
+    *)
+        fail "the note collapses two different refusals into one: $(claim 'd["backingStores"]["sessions"]["notes"][0]')" ;;
+esac
 
 [ "$(claim 'd["backingStores"]["postgres"]["isolation"]["mechanism"]')" = none ] \
     && ok 'the store records mechanism none, because this repository defines no lifecycle target -- the ordinary case' \
@@ -355,7 +377,7 @@ claim() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eva
     && ok 'bindsTo takes the weaker of the two published forms: a bare mapping publishes on every interface' \
     || fail "bindsTo is wrong: $(claim 'd["baseStack"]["bindsTo"]')"
 
-[ "$(claim 'd["portPolicy"]["reserved"]')" = "[15432, 18080]" ] \
+[ "$(claim 'd["portPolicy"]["reserved"]')" = "[15432, 16379, 18080]" ] \
     && ok 'every published host port is reserved, so pick-port.sh is never handed one the base stack holds' \
     || fail "reserved is wrong: $(claim 'd["portPolicy"]["reserved"]')"
 

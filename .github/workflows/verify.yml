@@ -57,8 +57,10 @@ jobs:
       # instance recipe passed no environment, postgres exited 1 before any
       # query could be issued, and no prose row could notice because the prose
       # said what the prose said.
-      - name: Pull the store image the floor boots
-        run: docker pull postgres:16-alpine
+      - name: Pull the store images the floor boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
 
       - name: Drive the copy road end to end
         env:
@@ -75,8 +77,10 @@ jobs:
       # them -- a real repository, a real worktree, the skill's own pick-port,
       # an overlay wired to the copy, and the claim the whole skill exists for:
       # that the base store is provably untouched afterwards.
-      - name: Pull the store image the run boots
-        run: docker pull postgres:16-alpine
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
 
       - name: Drive the overlay run end to end
         env:
@@ -116,8 +120,10 @@ jobs:
       # flow that produces that file had no floor, and on a repository with no
       # rung-1 candidate it is not optional: without it no copy is ever
       # certified.
-      - name: Pull the store image the family runs against
-        run: docker pull postgres:16-alpine
+      - name: Pull the store images the family runs against
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
 
       - name: Drive the offer, the approval and the two falsifiers
         env:

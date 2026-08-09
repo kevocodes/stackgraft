@@ -4,3 +4,4 @@ __pycache__/
 .codegraph/
 .atl/
 node_modules/
+.sg-work/

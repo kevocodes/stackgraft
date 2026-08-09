@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.5] — 2026-08-09
+
+A fourth agent completed the run on a harder subject — four stores rather than two — and the gate held: four pairs derived, three removed each on its own record, the migration escalation scoped to `postgres` alone and neither the keyspace, the second relational store nor the document store touched. That is what `2.1.2`'s scoping repair was for.
+
+It reported seven things, and the first is the ordinary run.
+
+### Fixed
+
+- **The subject was derived from a diff that is empty on the run this skill exists for.** A worktree's change is usually uncommitted — a developer opens one, edits, and runs this before committing anything — so a comparison against the base branch sees none of it, selects no unit, and produces no overlay. The change set is three legs now: the committed diff, the staged and unstaged diff, and the untracked files, which are the same three the `serviceFingerprint` recipe hashes and for the same reason — **the code the overlay launches is the working tree, not the commit**. Untracked matters most and drops most easily: a new migrations directory is untracked by definition on the run that adds it, and it is the strongest escalation the gate has.
+- **A refresh discarded the one answer only a human can give.** The topology source covers `portPolicy` because `reserved` is read from it, and carries `revalidate: "always"` — so `ranges`, the answer to the question this skill stops to ask, was re-derived away every run and asked again the next. That is what the stop-and-ask repair exists to prevent, arriving through the refresh door. A refresh writes what it can derive and **carries forward what nothing can**; `covers` gained `portPolicy.reserved` so a source can own the derivable half precisely.
+- **The `nameForm` refusal was unscoped.** Read literally it refused every store in a repository whose namespace grammars nobody recorded — including every one the seeded copy answers *without ever naming*, since the provider names a copy from hashes and never from the name family. It is scoped to the roads that hand a store a name, and the shipped example, which asserted both halves of that contradiction in one sentence, is corrected with it.
+- **A run form that attaches cannot be verified while it runs**, and `--rm` and `-d` are mutually exclusive in Compose, so the only form an orchestrator offers can be one that holds the terminal. Derive the detached form, or background the client and record the **container** — a client's pid is not the container, as `references/reaping.md` already said from the other side.
+- **A rung table broken in `2.1.2`** is repaired: the rung-2 paragraph was inserted between rows 2 and 3, so it rendered as a table, a paragraph and an orphan row.
+
+### Known
+
+- **A container-only repository never reaches zero-checked on host overlays.** Nothing will register a host launch, so the sidecar is never written and `registry-missing` is permanent — the repository's shape rather than a fault in the run. Read it as *this repository runs nothing on the host*, and do not go looking for a file whose absence is the correct state.
+
 ## [2.1.4] — 2026-08-09
 
 The four findings a completed agent run left behind, none of them blocking and one of them a report that refused this skill's own work to itself.
@@ -145,6 +163,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.5
 [2.1.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.4
 [2.1.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.3
 [2.1.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.2

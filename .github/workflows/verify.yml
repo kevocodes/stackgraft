@@ -130,6 +130,19 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-family.sh
 
+  drivability:
+    name: are the documents drivable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No store image and no runtime: this job asks whether everything the
+      # documents tell an agent to reach exists and behaves as written. It is
+      # the necessary condition under "an agent can drive this", and the only
+      # half of it that is testable without a model in the loop.
+      - name: Check the documents against what they point at
+        run: sh .github/scripts/integration-drivability.sh
+
   portability:
     name: scripts run on a minimal image
     runs-on: ubuntu-latest

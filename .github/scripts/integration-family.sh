@@ -76,23 +76,34 @@ would_generate() {
     printf 'db-create-%s\ndb-drop-%s\ndb-read-%s\n' "$STORE" "$STORE" "$STORE"
 }
 
-collisions=$(would_generate | while read -r n; do [ -e "$DIR/$n" ] && printf '%s\n' "$n"; done)
-if [ -n "$collisions" ]; then
-    ok "a generated name lands on a file already in the chosen directory, so the offer is withdrawn rather than resolved: $collisions"
-else
-    fail 'the collision case could not be set up, so the withdrawal rule is unexercised'
-fi
+# The fixture ships db-read-postgres, and that file DOES this member's job --
+# every row below the discriminator proves it. So it is not a collision: the
+# offer completes the family, generating the two nobody wrote and leaving the
+# one they did alone. A true collision is a file at a family name that is not a
+# working member, and that withdraws the whole offer.
+
+supplied=$(would_generate | while read -r n; do [ -x "$DIR/$n" ] && printf '%s\n' "$n"; done)
+missing=$(would_generate | while read -r n; do [ -e "$DIR/$n" ] || printf '%s\n' "$n"; done | tr '\n' ' ')
+[ "$supplied" = "db-read-$STORE" ] \
+    && ok "the repository already supplies one member and it is executable, so the offer completes the family rather than withdrawing: missing $missing" \
+    || fail "the supplied-member case could not be set up: '$supplied'"
+
+# A true collision: something at a family name that is no member at all.
+printf 'not a lifecycle target\n' > "$DIR/db-create-$STORE"
+chmod -x "$DIR/db-create-$STORE"
+[ -e "$DIR/db-create-$STORE" ] && [ ! -x "$DIR/db-create-$STORE" ] \
+    && ok 'a file at a family name that is not executable is a collision, and no offer is made from it' \
+    || fail 'the collision case could not be set up'
+rm -f "$DIR/db-create-$STORE"
 
 before=$(git -C "$MAIN" status --porcelain --untracked-files=all | wc -l | tr -d ' ')
 [ "$before" = 0 ] \
-    && ok 'a withdrawn offer wrote nothing: the working tree is exactly as it was' \
-    || fail "a withdrawn offer left $before change(s) behind"
+    && ok 'and neither case left anything behind: the working tree is exactly as it was' \
+    || fail "the offer decision left $before change(s) behind"
 
 # --- now the ordinary case: nothing defines the family ---------------------
 
-rm -f "$DIR/db-read-$STORE"
-git -C "$MAIN" add -A >/dev/null 2>&1
-git -C "$MAIN" -c user.email=f@example.com -c user.name=f commit -qm 'no lifecycle family here' >/dev/null 2>&1
+# Only the two nobody wrote are generated; the supplied read is untouched.
 
 # What the run would write. Three files, together or not at all. Their contents
 # are the repository's business, exactly as a rung-1 target's are; what this
@@ -126,15 +137,15 @@ chmod +x "$DIR/db-create-$STORE" "$DIR/db-drop-$STORE" "$DIR/db-read-$STORE"
 
 written=$(would_generate | while read -r n; do [ -x "$DIR/$n" ] && printf 'x'; done | wc -c | tr -d ' ')
 [ "$written" = 3 ] \
-    && ok 'all three are written together -- a create, a drop and a read -- because a family of two supplies the second rung with nothing' \
+    && ok 'the family is complete afterwards -- create, drop and read -- two of them generated and one the repository already had' \
     || fail "only $written of the three files exist, and a partial family is not one"
 
 # --- nothing is staged, nothing is committed -------------------------------
 
 staged=$(git -C "$MAIN" diff --cached --name-only | wc -l | tr -d ' ')
 untracked=$(git -C "$MAIN" ls-files --others --exclude-standard -- scripts | wc -l | tr -d ' ')
-if [ "$staged" = 0 ] && [ "$untracked" = 3 ]; then
-    ok "the three files land in the working tree and nowhere else: $untracked untracked, $staged staged"
+if [ "$staged" = 0 ] && [ "$untracked" = 2 ]; then
+    ok "the generated files land in the working tree and nowhere else: $untracked untracked, $staged staged, and the supplied one still tracked"
 else
     fail "the run touched the index: $untracked untracked, $staged staged"
 fi

@@ -38,6 +38,8 @@ skip() { skips=$((skips + 1));   printf '  skip  %s\n' "$1"; }
 FIXTURE=$(CDPATH= cd -- "$(dirname "$0")/../fixtures/shopdemo" && pwd -P)
 REPO_SCRIPTS=$(CDPATH= cd -- "$(dirname "$0")/../../skills/stackgraft/scripts" && pwd -P)
 PROV_OUT=$(mktemp /tmp/sg-prov-XXXXXX)
+FIX_HASH=$(printf '%s' "$(CDPATH= cd -- "$FIXTURE" && CDPATH= cd -- "$(git rev-parse --git-common-dir)" && pwd -P)" \
+    | git hash-object --stdin | cut -c1-8)
 PROJECT=sg-fixture-shopdemo
 LABEL_REPO=sgfixture
 
@@ -53,7 +55,7 @@ cleanup() {
     done
     docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" down -v >/dev/null 2>&1 || true
     rm -f /tmp/sg-env-* /tmp/sg-prov-* 2>/dev/null
-    sh "$REPO_SCRIPTS/provider-docker.sh" destroy abcdef01 "$FIXTURE" postgres >/dev/null 2>&1
+    sh "$REPO_SCRIPTS/provider-docker.sh" destroy $FIX_HASH "$FIXTURE" postgres >/dev/null 2>&1
     return 0
 }
 trap cleanup EXIT INT TERM
@@ -214,9 +216,9 @@ P_BASE=$(docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" ps -q "$P_STORE
 P_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$P_BASE")
 P_SRC=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}' "$P_BASE")
 
-if sh "$REPO_SCRIPTS/provider-docker.sh" provision abcdef01 "$FIXTURE" "$P_STORE" \
+if sh "$REPO_SCRIPTS/provider-docker.sh" provision $FIX_HASH "$FIXTURE" "$P_STORE" \
         "$P_SRC" "$P_IMAGE" "$P_BASE" \
-        "stackgraft.labels=1" "stackgraft.repo=abcdef01" \
+        "stackgraft.labels=1" "stackgraft.repo=$FIX_HASH" \
         "stackgraft.worktree=$FIXTURE" "stackgraft.store=$P_STORE" > "$PROV_OUT" 2>/dev/null; then
     ok 'the shipped provider provisions a copy of a real store, which nothing here had ever run'
 else
@@ -238,7 +240,22 @@ else
     fail 'the provider named no instance, so where it published cannot be established'
 fi
 
-sh "$REPO_SCRIPTS/provider-docker.sh" destroy abcdef01 "$FIXTURE" "$P_STORE" >/dev/null 2>&1 \
+# The copy's instance carries this repository's hash, so it reaches the
+# container listing too -- where it has a store and no service or port. Before
+# this was told apart, the report named one object twice: once as the copy it
+# is, and once as a container refused for an incomplete label set, which is
+# this run refusing its own work to itself.
+REAP_OUT=$(sh "$REPO_SCRIPTS/reap.sh" -C "$FIXTURE" -b 15432 report $FIX_HASH 2>/dev/null)
+copy_lines=$(printf '%s\n' "$REAP_OUT" | awk -F'\t' '$1=="copy" && $2!="checked"' | wc -l | tr -d ' ')
+refused_lines=$(printf '%s\n' "$REAP_OUT" | awk -F'\t' '$1=="refused"' | wc -l | tr -d ' ')
+[ "$copy_lines" = 1 ] \
+    && ok 'the report names the copy once, as a copy' \
+    || fail "the report names $copy_lines copy line(s) for one copy"
+[ "$refused_lines" = 0 ] \
+    && ok 'and refuses nothing: the copy instance belongs to the copy pass, not to an overlay that lost two labels' \
+    || fail "the report refuses $refused_lines object(s) while this run made only a copy: $(printf '%s\n' "$REAP_OUT" | awk -F'\t' '$1=="refused"' | head -1)"
+
+sh "$REPO_SCRIPTS/provider-docker.sh" destroy $FIX_HASH "$FIXTURE" "$P_STORE" >/dev/null 2>&1 \
     && ok 'and its own destroy removes what it made' \
     || fail 'the provider could not remove the copy it made'
 

@@ -381,6 +381,28 @@ esac
     && ok 'every published host port is reserved, so pick-port.sh is never handed one the base stack holds' \
     || fail "reserved is wrong: $(claim 'd["portPolicy"]["reserved"]')"
 
+# This manifest is exactly the shape a first run leaves behind when it stops at
+# the port question: `reserved` is derived and needs nobody's answer, `ranges`
+# is the one thing missing and is deliberately absent rather than guessed. It
+# validating is what makes the stop cost one question instead of the whole
+# discovery pass, every run, forever.
+[ "$(claim '"ranges" in d["portPolicy"]')" = False ] \
+    && ok 'the produced manifest carries no ranges at all -- a stopping run records the answer nobody gave as absent, never as a placeholder' \
+    || fail "the manifest invented a ranges entry: $(claim 'd["portPolicy"].get("ranges")')"
+
+if python3 - "$SCHEMA" "$MANIFEST" <<'PY'
+import json, sys
+from jsonschema import Draft202012Validator
+schema = json.load(open(sys.argv[1])); doc = json.load(open(sys.argv[2]))
+assert 'ranges' not in doc['portPolicy']
+sys.exit(1 if list(Draft202012Validator(schema).iter_errors(doc)) else 0)
+PY
+then
+    ok 'and it validates without ranges, so a run that stops at the port question still caches everything it discovered'
+else
+    fail 'a manifest with reserved and no ranges does not validate, so a stopping run has nothing valid to leave behind'
+fi
+
 # --- section 5: a drifted source is noticed ---------------------------------
 
 printf '\n# a real topology change\n' >> "$MAIN/compose.yaml"

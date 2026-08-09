@@ -66,7 +66,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://shop:shop@postgres:5432/shop
+      # Written so a value from the calling environment wins, which is the
+      # one line that gives an overlay a channel to an isolated copy. A
+      # literal here has none, and the gate refuses that pair rather than
+      # pointing the overlay at the base store.
+      DATABASE_URL: ${DATABASE_URL:-postgres://shop:shop@postgres:5432/shop}
     volumes:
       - ./services/catalog-api:/app:ro
       # The migrations this service applies on startup belong to it, so they

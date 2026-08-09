@@ -36,11 +36,12 @@ CI runs these on every push and pull request, and you can run them locally:
 .github/scripts/integration-overlay.sh    # the overlay run
 .github/scripts/integration-discovery.sh  # discovery and its manifest
 .github/scripts/integration-family.sh     # the generated lifecycle family
+.github/scripts/integration-drivability.sh # the documents, against what they point at
 ```
 
 **The first one and the other four answer different questions, and the difference is the reason the other four exist.** `verify.sh` checks the schema is valid, the example validates against it, every negative fixture is rejected, both scripts pass `dash -n` and actually run, the body is within budget and contains no permitting term, every manifest field named in a document exists in the schema, the four release version strings agree, the released version has a `CHANGELOG.md` entry that extracts to a usable release body, and no agent-specific coupling crept in. Almost all of that asks whether a document says a thing or whether a record validates — worth asking, and unable by construction to notice a recipe that does not run, because the rows check that the prose says what the prose says. A shipped recipe that exited `1` on the first line of a real store was pinned, carried a negative control, and had every one of those checks defending it.
 
-The four integration scripts boot `postgres:16-alpine` and `redis:7-alpine` **under their own entrypoints** and drive the mechanism. An `--entrypoint` override is what hides an image's boot requirements, so they do not use one. Two engines rather than one because blindness to the substrate is a claim about the procedure, and one engine cannot evidence it however thoroughly that one is exercised. Each needs a container runtime and skips by name without one; `STACKGRAFT_REQUIRE_RUNTIME=1` makes that skip fatal, which is what CI sets.
+Four of the five integration scripts boot `postgres:16-alpine` and `redis:7-alpine` **under their own entrypoints** and drive the mechanism. An `--entrypoint` override is what hides an image's boot requirements, so they do not use one. Two engines rather than one because blindness to the substrate is a claim about the procedure, and one engine cannot evidence it however thoroughly that one is exercised. The fifth needs no runtime at all: it asks whether everything the documents tell an agent to reach exists and behaves as written, which is the necessary condition under "an agent can drive this" and the only half of it testable without a model in the loop. The other four need a container runtime and skip by name without one; `STACKGRAFT_REQUIRE_RUNTIME=1` makes that skip fatal, which is what CI sets.
 
 Two things worth doing before you trust a green run:
 

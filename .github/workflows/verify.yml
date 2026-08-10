@@ -184,6 +184,28 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-zerodisk.sh
 
+  agenttrial:
+    name: the agent-trial harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The trial itself needs a model and is human-invoked. Whether the
+      # harness around it still works does not -- and a trial nobody can set up
+      # is a trial nobody runs. This asserts setup, a clean check, that the
+      # check can fail, and that teardown leaves nothing.
+      - name: Pull the store images the subject boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+
+      - name: Set up, check, and tear down a trial with no agent in it
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/agent-trial-smoke.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

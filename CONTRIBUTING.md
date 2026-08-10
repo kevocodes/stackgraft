@@ -45,6 +45,19 @@ CI runs these on every push and pull request, and you can run them locally:
 
 Six of the seven integration scripts boot `postgres`, `redis`, `mysql` and `mongo` **under their own entrypoints** and drive the mechanism. An `--entrypoint` override is what hides an image's boot requirements, so they do not use one. Four engines rather than one because blindness to the substrate is a claim about the procedure, and one engine cannot evidence it however thoroughly that one is exercised. They differ in what the procedure must not care about: two refuse to boot without environment and two need none; one declares a `CMD-SHELL` healthcheck the argv rule excludes and two declare exec-form vectors that reach the discriminator and are refused there; two are relational, one is a keyspace and one is a document store. What changes between them is the read command the repository supplies. The fifth needs no runtime at all: it asks whether everything the documents tell an agent to reach exists and behaves as written, which is the necessary condition under "an agent can drive this" and the only half of it testable without a model in the loop. The other six need a container runtime and skip by name without one; `STACKGRAFT_REQUIRE_RUNTIME=1` makes that skip fatal, which is what CI sets.
 
+## The agent trial
+
+Everything above drives the mechanism with a script that already knows what to pass it, which is why none of it found the seeded copy published on every interface, or a subject derived from a diff that is empty on the ordinary run. **What an agent supplies is the absence of that knowledge.**
+
+```sh
+sh .github/scripts/agent-trial.sh setup      # build the subject, print the prompt
+# hand .github/agent-trial/prompt.md to an agent, with the two paths filled in
+sh .github/scripts/agent-trial.sh check      # measure what the run left
+sh .github/scripts/agent-trial.sh teardown
+```
+
+It is not a CI job: it needs a model in the loop, its cost is real, and its verdict is a report rather than an exit code. What CI does check is that the harness still works — `.github/agent-trial/README.md` says what it does, and what not to tell the agent.
+
 Two things worth doing before you trust a green run:
 
 - **Feed a check something you know is broken** and confirm it goes red. A verifier that cannot fail is not a verifier, and the failure mode is silent.

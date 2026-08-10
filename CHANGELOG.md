@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-08-10
+
+The release this project became adoptable at, and the number moves for one reason: the first run now **says what it will cost you before you install**, which is a thing the skill tells a reader rather than a thing it does differently.
+
+Nothing about a verdict changed. No schema moved. No signature changed.
+
+### Added
+
+- **`README.md` states what a first run costs.** One port range, once per repository, because nothing in your repository says which host ports an overlay may take and this skill will not guess one. Plus, per writing store you actually overlay, a read command it offers to write as three files you approve. Until now that was discoverable only by reading two reference files, which is not where somebody decides whether to install something.
+
+### Fixed
+
+- **The actuator had never been driven, and it is the only code here that stops and removes objects on your machine.** Every other verification reads, copies or launches — a mistake there is a wrong answer, and a mistake here is something gone. One hard rule in the body hangs entirely off it: *never stop a process without proof it is yours*. What existed was the report and one row asserting a portless mutation refuses; the refusal path, never the removal path. It is driven now, negatives first, because on this path a false pass is a container that survived: `stop` and `remove` both refuse while a worktree is still listed, a portless mutation refuses, a copy under `stop` is refused by name, and a container carrying none of these labels is refused and survives. Only then is a worktree deleted, its overlay classified an orphan, stopped, and removed — with the other worktree's overlay still running beside it at every step.
+- **What a first run gets on a repository with no read command had never been driven.** Every copy-road check is handed one because the test fixture ships it; a real repository ships none. So the outcome most repositories meet — the bytes copied, no query derivable for them, the copy destroyed, the pair refused, and the offer made — was documented and unexecuted. It runs now, including the two things that make the refusal safe rather than merely correct: the base store is never wired to instead, and the three names the offer needs are free, which is the way out.
+- **The agent trial was easier than life.** Its subject shipped the read commands, so seven trials had the copy's query pre-answered and never met the offer a real repository reaches on its first run. The subject ships none now.
+
 ## [2.1.10] — 2026-08-10
 
 The seventh trial found the most load-bearing gap of the series, and it was in the body — the one file every run reads first.
@@ -226,6 +242,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.0
 [2.1.10]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.10
 [2.1.9]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.9
 [2.1.8]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.8

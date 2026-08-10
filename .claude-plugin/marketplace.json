@@ -11,7 +11,7 @@
       "name": "stackgraft",
       "source": "./",
       "description": "Starts only the services a worktree changed, on alternate ports, wiring unchanged dependencies back to the running stack — and refuses to launch against shared state without a recorded verdict.",
-      "version": "2.1.10",
+      "version": "2.2.0",
       "author": {
         "name": "Kevin Escobar",
         "url": "https://github.com/kevocodes"

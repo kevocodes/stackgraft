@@ -372,8 +372,8 @@ esac
     && ok 'the store records mechanism none, because this repository defines no lifecycle target -- the ordinary case' \
     || fail "isolation mechanism is wrong: $(claim 'd["backingStores"]["postgres"]["isolation"]["mechanism"]')"
 
-[ "$(claim 'd["services"]["catalog-api"]["paths"]')" = "['db', 'services/catalog-api']" ] \
-    && ok "the unit owns the migrations it applies, so a migrations directory maps to a unit instead of mapping nowhere" \
+[ "$(claim 'd["services"]["catalog-api"]["paths"]')" = "['db/migrations', 'services/catalog-api']" ] \
+    && ok "the unit owns the migrations it applies and nothing beside them: the narrow glob keeps three other stores' seed files out of this unit's paths" \
     || fail "paths are wrong: $(claim 'd["services"]["catalog-api"]["paths"]')"
 
 [ "$(claim 'd["services"]["catalog-api"]["dependsOn"]')" = "['postgres']" ] \

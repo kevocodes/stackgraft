@@ -862,7 +862,7 @@ fi
 # slice 1a; +3 at slice 4b, where Output Contract bullet 5 gained the copy and
 # its age. 484 + 3 = 487, and the plan's "488 or 487" resolves to 487 for the
 # same reason 1a landed at 484 rather than 485.
-BODY_WORDS_RECORDED=496
+BODY_WORDS_RECORDED=498
 [ "$words" -eq "$BODY_WORDS_RECORDED" ] \
     && ok "body is the $BODY_WORDS_RECORDED words this slice measured and recorded" \
     || fail "body is $words words; this slice recorded $BODY_WORDS_RECORDED"

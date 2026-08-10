@@ -35,7 +35,7 @@ Skip for single-service repos, cheap `up`, or full isolation.
 | Manifest missing, matched, or drifted | Discover, reuse, or refresh that slice — see `references/discovery.md` |
 | Changed paths map nowhere | No overlay; the diff still gates |
 | Shared/common dir changed | Overlay its `consumers` |
-| Port outside the range | Stop and ask |
+| Port outside or without a range | Stop and ask |
 | Any overlay | Gate it — `references/shared-state.md` |
 | Overlay outlived its worktree | Report it — `references/reaping.md`; stop nothing unproven |
 

@@ -130,7 +130,7 @@
         "SEARCH_URL": "http://search-indexer:8090"
       },
       "verifyRequest": "curl -sS -i -X POST http://localhost:{{port}}/books -H 'Content-Type: application/json' -d '{\"title\":\"...\",\"isbn\":\"...\"}'",
-      "overlayCommand": "docker compose --project-directory '{{worktree}}' run --rm --no-deps --publish {{port}}:8080 catalog-api",
+      "overlayCommand": "docker compose --project-directory '{{worktree}}' run -d --no-deps --publish {{port}}:8080 catalog-api",
       "notes": [
         "THE PARTIALLY-INFORMED PASS, which is the shape the retired writes array could not express: postgres and kafka are recorded, and events has NO record at all. The pass could not establish what this unit publishes on the shared Redis channel, so it wrote nothing for that pair rather than a guess — and the silence is undetermined, which refuses. Under writes: [\"postgres\", \"events\", \"kafka\"] the same pass would have had to omit the field entirely and lose all three.",
         "migrates names postgres alone, so F5 stops amplifying: the startup migration no longer makes W = yes against events and kafka. Those two are classified on their own records, or on the absence of one.",
@@ -182,7 +182,7 @@
         "notes": "dependsOn names two stores; all three pairs were classified anyway, because the pair set comes from backingStores and never from what a unit declares."
       },
       "verifyRequest": "curl -sS -i 'http://localhost:{{port}}/search?q=test'",
-      "overlayCommand": "docker compose --project-directory '{{worktree}}' run --rm --no-deps --publish {{port}}:8090 search-indexer",
+      "overlayCommand": "docker compose --project-directory '{{worktree}}' run -d --no-deps --publish {{port}}:8090 search-indexer",
       "notes": [
         "The theft case in one entry: every mutates claim is false, yet joining the base group.id starves a service nobody modified of the partitions it was consuming. The competes boolean is what the gate reads; competesOn beside it holds the KNOB, group.id, and the distinct value an overlay would attach under belongs in overlayIdentity. Until one is recorded and verified distinct the pair stays refused.",
         "Its postgres record is the undeclared store classified anyway: dependsOn names only events and kafka, and a store a unit forgot to declare is exactly the one the gate exists to catch.",

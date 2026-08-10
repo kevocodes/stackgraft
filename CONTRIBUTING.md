@@ -24,7 +24,7 @@ Issues and pull requests are welcome. This project is small and has a few opinio
 awk 'f{n+=NF} /^---$/{c++; if(c==2) f=1} END{print n}' skills/stackgraft/SKILL.md
 ```
 
-The shipped body measures **496**, so there are four words of headroom. `.github/scripts/verify.sh` asserts that measured number as a literal rather than merely asserting it is under 500, and it reads **this paragraph's own two figures** and holds them to the same measurement — which is what stops this paragraph and the check drifting apart in silence. They had drifted: this sentence said 484 for two slices after the body reached 487, and it said 487 again for the length of one commit after the Output Contract gained the fan-out line. Both times the row above caught it, which is the whole reason the figure is a literal.
+The shipped body measures **498**, so there are two words of headroom. `.github/scripts/verify.sh` asserts that measured number as a literal rather than merely asserting it is under 500, and it reads **this paragraph's own two figures** and holds them to the same measurement — which is what stops this paragraph and the check drifting apart in silence. They had drifted: this sentence said 484 for two slices after the body reached 487, and it said 487 again for the length of one commit after the Output Contract gained the fan-out line. Both times the row above caught it, which is the whole reason the figure is a literal.
 
 ## Verifying a change
 

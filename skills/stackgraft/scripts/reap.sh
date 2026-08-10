@@ -367,7 +367,7 @@ fi
 
 # The tab is a literal, taken from printf rather than from the CLI's own \t
 # expansion, which is not the same thing on every version of it.
-ps_fmt="{{.ID}}$tab{{.State}}$tab{{.Label \"stackgraft.labels\"}}$tab{{.Label \"stackgraft.worktree\"}}$tab{{.Label \"stackgraft.service\"}}$tab{{.Label \"stackgraft.port\"}}$tab{{.Label \"stackgraft.store\"}}"
+ps_fmt="{{.ID}}$tab{{.State}}$tab{{.Label \"stackgraft.labels\"}}$tab{{.Label \"stackgraft.worktree\"}}$tab{{.Label \"stackgraft.service\"}}$tab{{.Label \"stackgraft.port\"}}$tab{{.Label \"stackgraft.store\"}}$tab{{.Label \"stackgraft.probe\"}}"
 
 # EVERY container listing goes through one of these two, and the hash8 filter
 # is part of the query rather than something applied to its output. An
@@ -429,8 +429,9 @@ split_row() {
     r_ver=${_r%%"$tab"*};   _r=${_r#*"$tab"}
     r_wt=${_r%%"$tab"*};    _r=${_r#*"$tab"}
     r_svc=${_r%%"$tab"*};   _r=${_r#*"$tab"}
-    r_port=${_r%%"$tab"*}
-    r_store=${_r#*"$tab"}
+    r_port=${_r%%"$tab"*};  _r=${_r#*"$tab"}
+    r_store=${_r%%"$tab"*}
+    r_probe=${_r#*"$tab"}
 }
 
 # Candidacy is a POSITIVE, CLOSED allowlist. Only an overlay launch ever writes
@@ -447,6 +448,16 @@ split_row() {
 classify() {
     if [ "$r_ver" != "$LABELS_VERSION" ]; then
         printf 'unrecognised-label-version\n'
+        return 0
+    fi
+    if [ -n "$r_probe" ]; then
+        # The empty instance a copy is compared against. It carries this
+        # repository's hash so a run that died still leaves something a person
+        # can find, and it deliberately carries no complete label set -- the
+        # complete set is what a copy IS. It lives for seconds, mounts nothing,
+        # and is removed by the runtime. Reporting it as a partial launch has
+        # this run name its own probe as an ownership anomaly.
+        printf 'probe-instance\n'
         return 0
     fi
     if [ -n "$r_store" ] && [ -z "$r_svc" ] && [ -z "$r_port" ]; then
@@ -569,7 +580,7 @@ report_containers() {
         split_row "$_row"
         _v=$(classify)
         case $_v in
-            copy-instance) continue ;;
+            copy-instance | probe-instance) continue ;;
             unrecognised-label-version | incomplete-label-set)
                 emit refused "c:$r_id" "$_v" \
                     'reported, never acted on: this is not a record this run can read as ownership'
@@ -592,7 +603,7 @@ report_containers() {
         # firmly as a live overlay does, and port selection cares about which
         # ports are taken rather than about which of them ought to be.
         case $_v in
-            copy-instance) continue ;;
+            copy-instance | probe-instance) continue ;;
             unrecognised-label-version | incomplete-label-set | base-stack-port) ;;
             *) if [ "$r_state" = running ]; then emit held "$r_port"; fi ;;
         esac

@@ -161,7 +161,7 @@ docker run -d --name sg-zerodisk-overlay --network "$NETWORK" \
     --label "stackgraft.worktree=$TREE" --label "stackgraft.service=catalog-api" \
     --label "stackgraft.port=$PORT" \
     --env "DATABASE_URL=postgres://shop:shop@postgres:5432/$IDENT" \
-    -v "$TREE/services/catalog-api":/app:ro -v "$TREE/db":/db:ro \
+    -v "$TREE/services/catalog-api":/app:ro -v "$TREE/db/migrations":/db/migrations:ro \
     -p "127.0.0.1:$PORT:8080" "$IMAGE" sh /app/serve.sh >/dev/null 2>&1 \
     && ok "the overlay launches on $PORT, pointed at the namespace inside the base instance" \
     || fail 'the overlay did not launch'

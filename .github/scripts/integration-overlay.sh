@@ -228,7 +228,7 @@ if docker run -d --name "$OVERLAY_NAME" --network "$NETWORK" \
         --label "stackgraft.kind=overlay" \
         --env "DATABASE_URL=postgres://shop:shop@$COPY_NAME:5432/shop" \
         -v "$TREE/services/catalog-api":/app:ro \
-        -v "$TREE/db":/db:ro \
+        -v "$TREE/db/migrations":/db/migrations:ro \
         -p "127.0.0.1:$PORT:8080" \
         "$IMAGE" sh /app/serve.sh >/dev/null 2>&1; then
     ok "the overlay launches from the worktree's own code, bound strictly to 127.0.0.1:$PORT"

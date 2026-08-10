@@ -112,7 +112,7 @@ A rung-2 `verification.command` is that file's path relative to `repoRoot`, as a
 
 A `CMD-SHELL` healthcheck is not a candidate: it is shell source again rather than an argument vector, and it falls through to rung 2 and then to rung 3. The template contract in `references/shared-state.md` governs the harvested vector unchanged — every rule there applies to every command this skill discovers and runs against a store — so a vector whose program re-parses its argument is rejected here for the reason it is rejected there.
 
-**Measured on the repository this change was written for: zero of its four stores supply a rung-1 candidate.**
+**Measured on the repository this change was written for — a different repository from whichever one you are reading this in — zero of its four stores supplied a rung-1 candidate.** The four rows below name *that* repository's stores. It is a worked example of the argv rule and the discriminator biting, not a finding about the stack in front of you, and the shape is common enough to be mistaken for one: four stores, one of them called `postgres`, no rung-1 candidate for the store that matters. **Re-derive it against yours.** A repository that already ships a read for that store has rung 2 answered and the pair resolves, where this table read as local says it refuses.
 
 | store | exec form? | why it yields no query |
 |-------|-----------|------------------------|

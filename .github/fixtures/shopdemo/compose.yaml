@@ -110,9 +110,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://shop:shop@postgres:5432/shop}
     volumes:
       - ./services/catalog-api:/app:ro
-      # The migrations this service applies on startup belong to it, so they
-      # are part of its own tree rather than a directory that maps nowhere.
-      - ./db:/db:ro
+      # Only the migrations this service applies, not the whole db tree: the
+      # initdb seeds beside them belong to the stores, and mounting them here
+      # would put three other stores' files inside this unit's own paths.
+      - ./db/migrations:/db/migrations:ro
     command: ["sh", "/app/serve.sh"]
     ports:
       - "18080:8080"

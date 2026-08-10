@@ -176,7 +176,7 @@ launch() {
         --label "stackgraft.worktree=$_tree" --label "stackgraft.service=catalog-api" \
         --label "stackgraft.port=$_port" \
         --env "DATABASE_URL=postgres://shop:shop@$_copy:5432/shop" \
-        -v "$_tree/services/catalog-api":/app:ro -v "$_tree/db":/db:ro \
+        -v "$_tree/services/catalog-api":/app:ro -v "$_tree/db/migrations":/db/migrations:ro \
         -p "127.0.0.1:$_port:8080" "$IMAGE" sh /app/serve.sh >/dev/null 2>&1
 }
 launch sg-parallel-overlay-a "$TREE_A" "$COPY_A" "$PORT_A" \

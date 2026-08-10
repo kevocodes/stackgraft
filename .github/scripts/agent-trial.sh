@@ -39,7 +39,10 @@ ok()   { printf '  ok    %s\n' "$1"; }
 bad()  { printf '  FAIL  %s\n' "$1"; FAILED=1; }
 note() { printf '        %s\n' "$1"; }
 
-read_store() { sh "$MAIN/scripts/db-read-$1" "$PROJECT-$1-1" 2>/dev/null || printf 'unreadable'; }
+# The harness keeps its own readers under .harness/, because setup removes the
+# repository's copies on purpose: the subject must not ship the answer, and the
+# measurement still has to be able to ask the question.
+read_store() { sh "$TRIAL/.harness/db-read-$1" "$PROJECT-$1-1" 2>/dev/null || printf 'unreadable'; }
 
 capture() {
     for s in $STORES; do printf '%s\t%s\n' "$s" "$(read_store "$s")"; done
@@ -61,6 +64,16 @@ setup)
 
     # Nothing from this repository's own verification may be reachable: a
     # trial that can read the floors is measuring the floors.
+    # The fixture ships a db-read-<store> per store so the copy-road floors have
+    # a rung-2 source. A real repository has none -- that is the measured case
+    # this skill was built for, "zero of four stores supply a rung-1 candidate" --
+    # so every trial run against the fixture as shipped was easier than life:
+    # the query was pre-answered and the generated-family offer, which is what a
+    # real first run actually meets, was never reached. The trial removes them.
+    mkdir -p "$TRIAL/.harness"
+    cp "$MAIN"/scripts/db-read-* "$TRIAL/.harness/"
+    rm -f "$MAIN"/scripts/db-read-*
+
     if find "$TRIAL" -name 'integration*' -o -name 'verify.sh' | grep -q .; then
         printf 'refusing: a verification script leaked into the trial workspace\n' >&2
         exit 1

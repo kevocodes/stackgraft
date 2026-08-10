@@ -229,6 +229,45 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-theft.sh
 
+  reaping:
+    name: the mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The only code here that stops and removes objects on a developer's
+      # machine. Every other floor reads, copies or launches; a mistake there is
+      # a wrong answer, and a mistake here takes something off the machine.
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+      - name: Drive the actuator, negatives first
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-reaping.sh
+
+  noquery:
+    name: no query, what a real first run gets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every copy-road floor is handed a rung-2 source because the fixture ships
+      # one. A real repository ships none, so the outcome most repositories meet
+      # on their first run -- bytes copied, no query derivable, copy destroyed,
+      # pair refused -- had never been driven.
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+      - name: Drive the refusal a first run actually reaches
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-noquery.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

@@ -42,6 +42,18 @@ dirty=$(git -C "$TRIAL/shopdemo-worktrees/discount" status --porcelain -uall | w
     && ok "the change is uncommitted, which is the ordinary shape: $dirty path(s) dirty, 0 committed" \
     || fail "the subject's change is not in the ordinary shape: $dirty dirty, $committed committed"
 
+# The subject must not ship the answer: a repository with a db-read-<store>
+# already in it has rung 2 pre-answered and never meets the generated-family
+# offer, which is what a real first run actually reaches.
+shipped=$(ls "$TRIAL/shopdemo"/scripts/db-read-* 2>/dev/null | wc -l | tr -d ' ')
+[ "$shipped" = 0 ] \
+    && ok 'the subject ships no read command, so the trial meets the offer a real first run meets' \
+    || fail "the subject ships $shipped read command(s), which pre-answers rung 2 and makes the trial easier than life"
+harness=$(ls "$TRIAL/.harness"/db-read-* 2>/dev/null | wc -l | tr -d ' ')
+[ "$harness" = 4 ] \
+    && ok 'and the harness kept its own copies, so the measurement can still ask what the subject cannot answer' \
+    || fail "the harness has $harness reader(s) of 4, so check cannot measure every store"
+
 leaked=$(find "$TRIAL" \( -name 'integration*' -o -name 'verify.sh' \) 2>/dev/null | wc -l | tr -d ' ')
 [ "$leaked" = 0 ] \
     && ok 'nothing from this repository verification leaked into the subject' \

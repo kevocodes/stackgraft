@@ -710,7 +710,7 @@ report_registry() {
         store_incomplete=1
     elif [ ! -e "$_sc" ]; then
         emit host unknown registry-missing "$_sc"
-        store_incomplete=1
+        store_absent=1
     elif [ ! -r "$_sc" ]; then
         emit host unknown registry-unreadable "$_sc"
         store_incomplete=1
@@ -736,6 +736,7 @@ report_legacy() {
 
 if [ "$verb" = report ]; then
     store_incomplete=0
+    store_absent=0
     report_worktrees
     report_containers
     report_copies
@@ -744,6 +745,14 @@ if [ "$verb" = report ]; then
     if [ "$store_incomplete" -ne 0 ]; then
         emit held incomplete \
             'an ownership store could not be read, so the held-port set is short of what is really held'
+    elif [ "$store_absent" -ne 0 ]; then
+        # Absent is not unreadable. No host launch has ever been registered, so
+        # there is nothing to read and nothing missing: for a repository with no
+        # host-kind unit this is the permanent correct state, and saying "could
+        # not be read" of it sends a developer looking for a file whose absence
+        # is the answer.
+        emit held container-only \
+            'no host launch has ever been registered, so the held-port set covers container overlays only - complete for a repository with no host-kind unit, and short only if this one launches on the host'
     fi
     exit 0
 fi

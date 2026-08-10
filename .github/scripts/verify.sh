@@ -7393,9 +7393,17 @@ if printf '%s' "$out" | grep -q "^host${TAB}unknown${TAB}registry-missing" \
 else
     fail "an absent registry was rendered as zero host overlays, or did not name the file"
 fi
+# This fixture's registry is ABSENT, and this row used to assert the shortfall
+# line an UNREADABLE one produces -- so it conflated the two exactly as the
+# actuator did. An absence is the permanent correct state of a repository with
+# no host-kind unit, and reporting it as a store that could not be read sends a
+# developer looking for a file whose absence is the answer.
+printf '%s' "$out" | grep -q "^held${TAB}container-only" \
+    && ok "an absent registry says the held set covers container overlays only, never that a store could not be read" \
+    || fail "an absent registry still reports itself as a store that could not be read"
 printf '%s' "$out" | grep -q "^held${TAB}incomplete" \
-    && ok "an unreadable store makes the held-port set report itself short" \
-    || fail "the held-port set claimed to be whole with a store unread"
+    && fail "an absent registry claims a read failure, which is the wrong half of unknown" \
+    || ok "rejected: the unreadable-store wording on a registry that simply is not there"
 
 printf 'not a registry at all\n' > "$sc2"
 out=$(XDG_CACHE_HOME="$sf2" sh "$REAP" -C "$sf2/$REGISTRY_REPO" report 00c0ffee 2>/dev/null)

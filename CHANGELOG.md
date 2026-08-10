@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.8] — 2026-08-10
+
+The first trial run through the harness rather than a subject built by hand — and the harness measured what five earlier trials had measured by hand: every store unchanged, nothing left running, a manifest written. Its report and the measurement agreed line for line.
+
+### Fixed
+
+- **A stopping run had no step that writes the manifest, and was required to have written one.** Step 10 was the only writing step in the body, and a stop at the port question never reaches it — while `references/discovery.md` says a manifest carrying the whole discovery and no `ranges` is exactly what a stopping run leaves behind, and that stopping without writing discards a resolver pass, every fingerprint and every classification. The two halves of that contradiction were added in different releases and neither noticed the other. Step 10 says it now, at one word less than it cost before.
+- **The generated-family offer was scoped to a rung no containerised store reaches.** Rung 2 is a client borrowed from inside the store's own container, so a compose stack whose image ships its own client always has it — and a rung it reaches is a rung it does not descend past. Read as *reaches rung 4*, the offer was unreachable for exactly the repositories it was written for. It is scoped by the outcome instead: a pair ending at `mechanism: "none"` because no target the repository owns exists to create a namespace with.
+- **The `portGroup` key rule decided nothing for a single-unit repository.** A grouping is one the repository chose *in order to group* — a profile, a workspace member list, a directory holding some of the units and not others. A directory every unit sits under is not one: with a single runnable unit `services/` satisfies it trivially and so does the repository root, so both branches were true at once.
+- **The root `stateReview` read as unconditional and then conditional in consecutive sentences.** *Either way* means `declared` or `inferred`, never empty map or populated one.
+
 ## [2.1.7] — 2026-08-09
 
 The last two an agent run left open. Neither blocking, and both the same shape: an object a run creates and then cannot point at.
@@ -190,6 +201,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.8]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.8
 [2.1.7]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.7
 [2.1.6]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.6
 [2.1.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.5

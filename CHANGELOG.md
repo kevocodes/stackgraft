@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.9] — 2026-08-10
+
+The last three an agent trial left open. None blocking, and all three the same class: a document or an actuator saying something that cannot be true of the shape in front of it.
+
+### Fixed
+
+- **An absent host registry was reported as a store that could not be read.** One flag carried both, so a first run of a container-only repository — where the sidecar has never existed and never will, because nothing registers a host launch — printed *"an ownership store could not be read, so the held-port set is short of what is really held"*. A read failure **is** short of what is really held, and a later pick can be handed a port something already holds; an absence is short of nothing. They say different things now. The verification row covering this had made the same mistake — its fixture's registry is absent and its label said unreadable — and both halves are pinned now, in both directions.
+- **`verifyRequest` had nowhere to put the host it must aim at, and should not have one.** Its closed set is `{{port}}` alone, which is correct rather than a gap: the interface an overlay answers on is the one **this run bound it to** a moment earlier, a fact of the run and never of the cache, so a stored line carrying a literal host is stale the first time a run binds elsewhere. Record the path, the method and the headers; the run supplies where to send them. `baseStack.bindsTo` is about reaching the base stack and decides nothing here.
+- **`buildContext` was written as though every unit has one.** A unit running a prebuilt image with bind mounts has no build stanza at all, which is ordinary rather than exceptional, and *recorded verbatim, it is not decoration* reads as an instruction to produce something. *Verbatim* governs a context that exists and never the absence of one; what identifies such a unit's code is `paths`, which the mounts already give.
+
 ## [2.1.8] — 2026-08-10
 
 The first trial run through the harness rather than a subject built by hand — and the harness measured what five earlier trials had measured by hand: every store unchanged, nothing left running, a manifest written. Its report and the measurement agreed line for line.
@@ -201,6 +211,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.9]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.9
 [2.1.8]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.8
 [2.1.7]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.7
 [2.1.6]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.6

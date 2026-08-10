@@ -50,7 +50,7 @@ Skip for single-service repos, cheap `up`, or full isolation.
 7. Before launching, read `references/shared-state.md`; record every verdict it demands.
 8. `sh scripts/pick-port.sh <lo> <hi> <worktree> [excluded-port ...]` — `portGroup` range, one excluded port per argument. Bind strictly.
 9. Launch each mapped service per `references/reaping.md`.
-10. Verify with a real request, record `verifiedOverlays`, then rewrite the manifest through `scripts/with-lock.sh`.
+10. Verify, record `verifiedOverlays`, write the manifest through `scripts/with-lock.sh`; any stop writes first.
 
 ## Output Contract
 

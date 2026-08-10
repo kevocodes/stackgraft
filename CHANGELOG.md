@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.10] — 2026-08-10
+
+The seventh trial found the most load-bearing gap of the series, and it was in the body — the one file every run reads first.
+
+### Fixed
+
+- **The stop every first run hits was missing from `SKILL.md`.** Its gate table read *Port outside the range → stop and ask*, which presumes a range **exists**, and step 8 reads `<lo> <hi>` as always available. The missing-range stop was stated only in `references/discovery.md`, under a `portGroup` bullet. An agent executing the body's steps reached step 8 with no instruction to stop, and the two failure modes it would fall into are the two that section names by name: guess a range, or fall back to any free port. Two words in the gate table close it.
+- **The reaper refused its own empty-instance probe.** Same class as the copy-instance line `2.1.4` fixed, and not covered by it: the probe carries this repository's hash so a run that died still leaves something findable, and deliberately carries no complete label set — so the container pass read an absent labels version as an unrecognised one and reported this skill's own probe as an ownership anomaly.
+- **The shipped example's `overlayCommand` used a form `2.1.5` documented as unlaunchable.** `run --rm` holds the terminal, and step 10 then has to make a request against something the run is still blocking on. Three files carried that line and only the rule was reconciled; both example commands are detached now.
+- **The measured four-store table read as a finding about whichever repository you are in.** Four stores, one called `postgres`, no rung-1 candidate for the store that matters — common enough to be mistaken for local, and read that way it says to refuse a pair that a repository shipping its own read has already answered. It says which repository it measured, and to re-derive against yours.
+- **`baseStack` could not be both the repository's own entry point and carry a selector that entry point does not state.** Where a wrapper script relies on the compose file's `name:`, the selector wins and the command is derived, with the script named in `notes`.
+- **`fingerprintTool` had no canonical literal.** The schema offers one as an example; a different spelling of the same tool marks **every** source drifted and buys a full rediscovery with no warning that a spelling is what it paid for. The value is stated.
+- **No step owned provisioning the seeded copy**, so a run stopping between the verdict and the launch could leave gigabytes of the developer's data behind for a launch that never happened. It belongs to the launch.
+- **The guidance on a bind-mounted tree now prefers the narrow glob and names what it excludes.** A mount of a whole directory is not evidence that a unit owns all of it: a `./db` mounted for one service's migrations also holds three stores' initdb seeds, and the wide glob puts them inside that service's `paths` — so editing another store's seed drifts its `serviceFingerprint` and selects it for overlay.
+
 ## [2.1.9] — 2026-08-10
 
 The last three an agent trial left open. None blocking, and all three the same class: a document or an actuator saying something that cannot be true of the shape in front of it.
@@ -211,6 +226,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.1.10]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.10
 [2.1.9]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.9
 [2.1.8]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.8
 [2.1.7]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.7

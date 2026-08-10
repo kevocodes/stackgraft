@@ -206,6 +206,29 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/agent-trial-smoke.sh
 
+  theft:
+    name: theft, the other hazard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Seven floors exercise contamination -- the overlay writing state the base
+      # reads. X came back `no` in all of them, so step 2 of the verdict table,
+      # competesOn and the whole identity proof were never executed. A consumer
+      # group is where the damage is observable: same group and the stream is
+      # split, distinct group and both see everything.
+      - name: Pull the store images the run boots
+        run: |
+          docker pull postgres:16-alpine
+          docker pull redis:7-alpine
+          docker pull mysql:8.4
+          docker pull mongo:7
+
+      - name: Drive a competing pair end to end
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-theft.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

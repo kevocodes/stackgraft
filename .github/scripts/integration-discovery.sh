@@ -411,6 +411,40 @@ else
     fail 'a manifest with reserved and no ranges does not validate, so a stopping run has nothing valid to leave behind'
 fi
 
+# --- a shared build context, which is what a monorepo actually looks like ----
+# Measured on a real repository: 25 services declared one shared directory as
+# their build context, so reading that context as `paths` mapped a 23-file change
+# to 27 units where six owned the changed trees. What tells them apart is the
+# file that builds each one.
+
+SH="$WORK/shared"
+mkdir -p "$SH/backend/alpha_service" "$SH/backend/beta_service"
+printf 'FROM scratch\n' > "$SH/backend/alpha_service/Dockerfile"
+printf 'FROM scratch\n' > "$SH/backend/beta_service/Dockerfile"
+printf 'FROM scratch\n' > "$SH/backend/Dockerfile.kernel"
+printf 'x\n' > "$SH/backend/shared_util.py"
+printf 'name: sg-shared-ctx\nservices:\n  alpha:\n    build: { context: ./backend, dockerfile: alpha_service/Dockerfile }\n  beta:\n    build: { context: ./backend, dockerfile: beta_service/Dockerfile }\n  kernel:\n    build: { context: ./backend, dockerfile: Dockerfile.kernel }\n' > "$SH/compose.yaml"
+
+SHARED_OUT=$(python3 "$REPO/.github/scripts/lib-sharedctx.py" "$SH")
+one_unit=${SHARED_OUT%%|*}
+_rest=${SHARED_OUT#*|}
+shared_hit=${_rest%%|*}
+shared_ctx=${_rest#*|}
+
+[ "$shared_ctx" = backend ] \
+    && ok 'three units declare one shared build context, which is the monorepo shape' \
+    || fail "the shared-context shape was not built: '$shared_ctx'"
+# It selects that unit AND any unit built from the shared root -- which is
+# right, because such a unit is built from this file too. What it must never
+# select is a SIBLING that shares only the context: that is the over-selection,
+# and on the repository this was measured against it was twenty-one of them.
+[ "$one_unit" = "alpha,kernel" ] \
+    && ok "a change in one unit's subdirectory selects that unit and whoever is built from the shared root, and no sibling: $one_unit" \
+    || fail "a change under one unit selected '$one_unit' -- a sibling sharing only the context is the over-selection this rule exists to stop"
+[ "$shared_hit" = kernel ] \
+    && ok "a change at the shared root selects only the unit whose dockerfile lives there, which genuinely consumes all of it: $shared_hit" \
+    || fail "a change at the shared root selected '$shared_hit'"
+
 # --- section 5: a drifted source is noticed ---------------------------------
 
 printf '\n# a real topology change\n' >> "$MAIN/compose.yaml"

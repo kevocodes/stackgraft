@@ -268,6 +268,23 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-noquery.sh
 
+  unadvised:
+    name: an engine the skill never names
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The four engines the other floors drive are four engines someone chose,
+      # and a procedure tuned to them passes every one of those jobs. This job
+      # drives a store whose engine appears in no document in the skill -- it
+      # checks that first and aborts if any of them has learned the word -- so
+      # what it exercises is the procedure rather than accumulated advice.
+      - name: Pull an engine no document in the skill names
+        run: docker pull couchdb:3
+      - name: Drive the whole copy road against it
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-unadvised.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest
@@ -307,6 +324,41 @@ jobs:
           printf 'pick-port.sh\nfingerprint.sh' | sh fingerprint.sh -
 
           echo "helpers run on alpine with git, dash and busybox awk only"
+
+  macos-sh:
+    name: scripts parse under the sh macOS actually has
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # /bin/sh on macOS is bash 3.2, and its parser cannot read a `case`
+      # pattern inside $( ) -- it counts the pattern's own `)` as the
+      # substitution's close. dash and bash 5 accept that shape, so every other
+      # job in this file passes a script no macOS user can run. This job is the
+      # shell itself rather than a lint for the shapes we happen to know about.
+      - name: Report the shell this job actually gets
+        run: |
+          /bin/sh -c 'echo "sh is bash ${BASH_VERSION:-not bash}"'
+
+      - name: Every shipped script, and every check that drives them
+        run: |
+          set -eu
+          for f in skills/stackgraft/scripts/*.sh .github/scripts/*.sh; do
+              /bin/sh -n "$f" || { echo "does not parse under macOS /bin/sh: $f"; exit 1; }
+          done
+          echo "all shipped scripts and all floors parse under bash ${BASH_VERSION:-?}"
+
+      - name: And the helpers run, not just parse
+        run: |
+          set -eu
+          cd skills/stackgraft/scripts
+          wt=$(mktemp -d)
+          port=$(/bin/sh pick-port.sh 18000 18999 "$wt")
+          case $port in 1[89][0-9][0-9][0-9]) ;; *) echo "bad port: $port"; exit 1 ;; esac
+          excl=$(/bin/sh pick-port.sh 18000 18999 "$wt" "$port")
+          [ "$excl" != "$port" ] || { echo "exclusion ignored"; exit 1; }
+          printf 'pick-port.sh\nfingerprint.sh' | /bin/sh fingerprint.sh -
+          echo "helpers run under macOS /bin/sh: candidate $port, exclusions honoured"
 
   git-bash:
     name: helpers run under Git Bash on Windows

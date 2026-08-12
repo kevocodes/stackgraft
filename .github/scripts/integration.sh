@@ -53,6 +53,7 @@ cleanup() {
         docker rm -fv "sg-fixture-copy-$_s" "sg-fixture-probe-$_s" "sg-fixture-bare-$_s" >/dev/null 2>&1 || true
         docker volume rm -f "sg-fixture-copyvol-$_s" >/dev/null 2>&1 || true
     done
+    docker rm -fv sg-fixture-mute >/dev/null 2>&1 || true
     docker compose -p "$PROJECT" -f "$FIXTURE/compose.yaml" down -v >/dev/null 2>&1 || true
     rm -f /tmp/sg-env-* /tmp/sg-prov-* 2>/dev/null
     sh "$REPO_SCRIPTS/provider-docker.sh" destroy $FIX_HASH "$FIXTURE" postgres >/dev/null 2>&1
@@ -319,6 +320,29 @@ ping_probe=$(docker exec sg-fixture-probe-sessions redis-cli ping 2>/dev/null)
 [ -n "$ping_base" ] && [ "$ping_base" = "$ping_probe" ] \
     && ok "the exec-form healthcheck IS a rung-1 candidate and still answers '$ping_base' on an instance holding nothing, so it is refused as a query and the store falls to rung 2" \
     || fail "the healthcheck vector discriminated ('$ping_base' against '$ping_probe'), so the rule refusing it rests on nothing"
+
+# --- every read this fixture supplies makes its own failure visible -----------
+# The three issues of a read are compared against each other, and `0` is a real
+# count, so a read that cannot fail makes "has not finished starting" and
+# "holding nothing" the same value and the copy is certified on a difference
+# nothing produced. These four are the shape the generated family is specified
+# against, so a change that made any of them swallow a status would be teaching
+# the wrong shape from the reference. Running but not serving is the case that
+# models it: the route reaches the instance and the store behind it does not
+# answer, which an instance that is merely created cannot show.
+
+for pair in $STORES; do
+    store=${pair%%:*}
+    img=$(awk -v s="$store" '$1 == s":" { f=1; next } f && $1 == "image:" { print $2; exit } /^  [a-z]/ && $1 != s":" { f=0 }' "$FIXTURE/compose.yaml")
+    docker rm -fv sg-fixture-mute >/dev/null 2>&1
+    docker run -d --name sg-fixture-mute --entrypoint sh "$img" -c 'sleep 120' >/dev/null 2>&1
+    if out=$(sh "$FIXTURE/scripts/db-read-$store" sg-fixture-mute 2>/dev/null); then
+        fail "db-read-$store answered '$out' for an instance whose store is not serving, so its failure is invisible"
+    else
+        ok "db-read-$store exits non-zero where the route reaches the instance and the store does not answer"
+    fi
+    docker rm -fv sg-fixture-mute >/dev/null 2>&1
+done
 
 cleanup
 INVENTORY_AFTER=$(docker volume ls --format '{{.Name}}' | sort)

@@ -165,7 +165,9 @@ The zero-disk road above is preferred wherever it is available, and on most repo
 |---|---|---|
 | create | `db-create-<store>` | creates the namespace it is given, reaching the store the way the repository's own targets reach it |
 | drop | `db-drop-<store>` | removes that same namespace, by the name the family generated and by no other |
-| read | `db-read-<store>` | counts what the instance it is given carries, so one file answers for the base store, an empty instance and the copy alike |
+| read | `db-read-<store>` | counts what the instance it is given carries, so one file answers for the base store, an empty instance and the copy alike, and **exits non-zero when it cannot reach that instance at all** |
+
+**Why the read's failure has to be visible.** The three issues of the read are compared against each other, so a value that is *also* what the file prints when it could not read supplies no comparison: an instance that has not finished starting and an instance holding nothing both answer `0`, and the whole road exists to tell those apart. The ordinary way to write a count is a pipeline — a client, then something that counts its output — and the counter's own status is what the shell keeps, so the client's failure disappears and `|| true` at the end erases what remains. Run the client first and let its status stand on its own; count only once there is an answer to count. A generated member is written that way, and a member the repository already supplies is accepted on the same terms.
 
 **Where they go.** Three **new executable files**, placed in the repository's **existing script directory** — `bin/` or `scripts/`, whichever one discovery already found — and **never a new convention**, never a directory this skill invents because it liked the shape of it. A file under a directory rung 1 already reads is discoverable with no edit to anything a human owns.
 

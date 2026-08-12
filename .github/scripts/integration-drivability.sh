@@ -151,16 +151,46 @@ NL_HASH=$(printf '%s\n' "$DERIVED" | git hash-object --stdin | cut -c1-8)
     && ok 'a trailing newline really does key a different manifest, which is why the document forbids echo here' \
     || fail 'the no-trailing-newline rule makes no difference, so the reason given for it is not the reason'
 
+# --- the copy road cannot depend on an engine, and this is what makes it so ---
+# "Blind to the substrate" is a claim about the procedure. The four engines the
+# behavioural floors run prove it holds for four; this proves it CANNOT fail for
+# a fifth, by checking that the code has nowhere to put the knowledge.
+
+ENGINE_WORDS='postgres|postgresql|pgvector|timescale|mysql|mariadb|mongo|redis|valkey|minio|kafka|rabbitmq|elasticsearch|clickhouse|cassandra|couchdb|nats'
+hits=$(grep -ciE "$ENGINE_WORDS" "$SKILL/scripts/provider-docker.sh" || true)
+[ "${hits:-0}" = 0 ] \
+    && ok 'the shipped provider names no engine anywhere, so a store it has never heard of takes the same road as one it has' \
+    || fail "the provider names an engine $hits time(s), which is a special case waiting to be relied on"
+
+subs=$(grep -ci 'substrate' "$SKILL/scripts/provider-docker.sh" || true)
+[ "${subs:-0}" = 0 ] \
+    && ok 'and it never reads a substrate: the copy road is given a store key and the runtime facts, never a label for what the engine is' \
+    || fail "the provider reads a substrate $subs time(s), so an unlabelled store could be refused for want of a label"
+
+# The one place the finiteness is allowed to live: the advice. A substrate with
+# no row there selects no advice, which is a gap in guidance and never a gate.
+for f in "$SKILL/references/shared-state.md" "$SKILL/references/discovery.md"; do
+    grep -q 'undetermined' "$f" || fail "$(basename "$f") does not admit an undetermined value anywhere"
+done
+ok 'and the documents admit an undetermined substrate, which is what keeps a store nobody wrote advice for inside the map'
+
 # --- the placeholder set an agent substitutes into is closed ---------------
 # shared-state.md states a closed set of six. An agent copying the shipped
 # example must not meet a seventh: an unknown placeholder invalidates the
 # template, so one in the example is an instruction to produce a refusal.
 
 CLOSED='isolationIdent isolationLabel store worktree repoRoot port'
-strays=$(grep -o '{{[a-zA-Z]*}}' "$SKILL/assets/manifest.example.json" | tr -d '{}' | sort -u \
-         | while read -r p; do
-             case " $CLOSED " in *" $p "*) ;; *) printf '%s ' "$p" ;; esac
-           done)
+# The `case` stays OUTSIDE the command substitution deliberately: bash 3.2 --
+# which is what /bin/sh is on macOS -- cannot parse a case pattern inside $( ),
+# because its parser counts the pattern's own `)` as the substitution's close.
+# dash and bash 5 accept it, so CI alone would never have said so.
+strays=''
+for p in $(grep -o '{{[a-zA-Z]*}}' "$SKILL/assets/manifest.example.json" | tr -d '{}' | sort -u); do
+    case " $CLOSED " in
+        *" $p "*) ;;
+        *) strays="$strays$p " ;;
+    esac
+done
 [ -z "$strays" ] \
     && ok 'every placeholder in the shipped example is inside the closed set of six the gate states' \
     || fail "the example hands an agent a placeholder outside the closed set: $strays"

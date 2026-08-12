@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] — 2026-08-12
+
+**A store whose image wraps its own start-up could not be copied.** `--entrypoint` takes one string, an image that boots through an init declares several — `["tini", "--", "/docker-entrypoint.sh"]` is three — and the provider refused that shape rather than reproducing it. The refusal was honest about why, and it was a property of the runtime's CLI rather than of the store, so it excluded a large share of published store images from the copy road for no reason that had anything to do with isolation.
+
+### Fixed
+
+- **A read whose failure is invisible could get a command recorded as a query that discriminates nothing.** The three issues of the verification read — the base store, an empty instance, the copy — are compared against each other, and `0` is a real count, so a read that exits zero when it could not reach the store at all makes *"has not finished starting"* and *"holding nothing"* the same value. Where the failing issue is the empty instance, the difference against the base is one nothing produced, and a copy that lost its state answers what the base answers and is certified. Both documents now say it: the read must exit non-zero when it cannot reach the instance, three issues are comparable only where all three answered, and any that did not answer makes the candidate **undetermined rather than discriminating** — retried, and refused for want of a query where it still does not answer. The ordinary way to write a count is a client piped into something that counts, and the shell keeps only the counter's status, which is how the failure disappears; run the client first and count once there is an answer. A floor drives both halves against a store that is running and not serving, with the forbidden shape beside it answering `0` for that same instance.
+- **The seeded copy now reproduces a multi-element entrypoint instead of refusing it.** The first element is what `--entrypoint` takes; the rest go at the front of the command, which is where the runtime would have put them. The container runs the same argv the base container runs, element for element. Nothing else about the copy changed — same image, same environment, same loopback-only publication, same verification before it is used.
+
+### Added
+
+- **A floor that drives an engine no document in the skill names.** The four engines the other floors boot are four engines someone chose, and a procedure tuned to them passes every one of those jobs. This one checks first that no reference, asset or script contains the engine's name, aborts if any of them has learned it, and then drives the whole copy road: bytes copied, the repository's own read discriminating a base holding data from an empty instance, the copy answering what the base answers, the copy destroyed. The entrypoint defect above is what it found on its first run, and the read-failure hole is what writing its read command turned up — the shape is what anyone reaches for.
+- **A macOS job.** `/bin/sh` on macOS is bash 3.2, whose parser cannot read a `case` pattern inside `$( )` — it counts the pattern's own `)` as the substitution's close. `dash` and bash 5 accept that shape, so fifteen green jobs could sit on top of a script no macOS user can run. The job is the shell itself rather than a lint for the shapes we happen to know about. The shipped scripts were already clean; a check that drives them was not.
+
 ## [2.2.0] — 2026-08-10
 
 The release this project became adoptable at, and the number moves for one reason: the first run now **says what it will cost you before you install**, which is a thing the skill tells a reader rather than a thing it does differently.
@@ -242,6 +256,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.1
 [2.2.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.0
 [2.1.10]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.10
 [2.1.9]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.9

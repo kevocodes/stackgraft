@@ -355,14 +355,17 @@ provision() {
     # parse and an argument holding a newline is unrepresentable rather than
     # silently split.
     base_cmd=$(docker inspect --format '{{range .Config.Cmd}}{{println .}}{{end}}' "$base" 2>/dev/null)
-    # The entrypoint too, and only where the runtime's own CLI can express it.
-    # --entrypoint takes ONE string, so a base container running a multi-element
-    # entrypoint override is a shape this runtime cannot reproduce: that is a
-    # refusal with the shape named, never a copy quietly started under a
-    # different entrypoint from the one holding the base stack's data.
+    # The entrypoint too. --entrypoint takes ONE string, and a multi-element
+    # entrypoint is ordinary rather than exotic -- an image wrapping its own
+    # start-up in an init, `["tini", "--", "/docker-entrypoint.sh"]`, is three --
+    # so refusing those refused a large share of published store images for a
+    # property of the CLI rather than of the store. It is reproducible exactly:
+    # the FIRST element is what --entrypoint takes, and the rest belong at the
+    # FRONT of the command, which is where the runtime would have put them. The
+    # container then runs the same argv the base container runs, element for
+    # element, which is the only thing that mattered.
     base_ep=$(docker inspect --format '{{range .Config.Entrypoint}}{{println .}}{{end}}' "$base" 2>/dev/null)
-    ep_n=$(printf '%s\n' "$base_ep" | awk 'NF { n++ } END { print n + 0 }')
-    [ "$ep_n" -le 1 ] || refuse "the base container runs a $ep_n-element entrypoint override, which this runtime's CLI cannot reproduce in one argument"
+    base_ep_rest=$(printf '%s\n' "$base_ep" | awk 'NF { n++; if (n > 1) print }')
     base_ep=$(printf '%s\n' "$base_ep" | awk 'NF { print; exit }')
 
     # --- the size, and the two filesystems ---------------------------------
@@ -477,6 +480,13 @@ provision() {
 $base_env
 SG_ENV
     set -- "$@" "$image"
+    # Every element of the entrypoint after the first, then the command: the
+    # argv the base container runs, rebuilt in the order the runtime built it.
+    while IFS= read -r e; do
+        [ -n "$e" ] && set -- "$@" "$e"
+    done <<SG_EPREST
+$base_ep_rest
+SG_EPREST
     while IFS= read -r c; do
         [ -n "$c" ] && set -- "$@" "$c"
     done <<SG_CMD

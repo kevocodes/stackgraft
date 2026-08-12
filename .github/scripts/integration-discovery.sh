@@ -130,12 +130,14 @@ service_fingerprint() {
 }
 
 python3 - "$RESOLVED" "$MAIN" > "$WORK/units.tsv" <<'PY'
-import json, sys, re
+import json, sys
 model = json.load(open(sys.argv[1])); root = sys.argv[2]
-ENGINES = re.compile(r'postgres|postgresql|timescale|redis|valkey|mongo|mysql|mariadb|kafka|rabbitmq|elasticsearch|opensearch|minio|nats|clickhouse|cassandra|memcached')
 for name, svc in (model.get('services') or {}).items():
-    named = [v for v in (svc.get('volumes') or []) if v.get('type') == 'volume']
-    if ENGINES.search(svc.get('image') or '') and named:
+    # A store is found by the state it holds, never by a name: a writable named
+    # volume outlives the container, and that is the whole signal.
+    named = [v for v in (svc.get('volumes') or [])
+             if v.get('type') == 'volume' and not v.get('read_only')]
+    if named:
         continue
     binds = sorted({str(v['source'])[len(root)+1:] for v in (svc.get('volumes') or []) if v.get('type') == 'bind'})
     print('{}\t{}'.format(name, ','.join(binds)))
@@ -199,10 +201,29 @@ fps = dict(
     for line in open(fps_path) if '\t' in line
 )
 
-ENGINES = re.compile(
-    r'postgres|postgresql|timescale|redis|valkey|mongo|mysql|mariadb|kafka|'
-    r'rabbitmq|elasticsearch|opensearch|minio|nats|clickhouse|cassandra|memcached'
-)
+# The substrate is the engine, and an image's name is not reliably its engine:
+# pgvector/pgvector, timescale/timescaledb and supabase/postgres are all
+# PostgreSQL and one of those three says so. What the image IS shows in the
+# protocol it speaks, so this reads the port rather than the brand.
+PROTOCOL = {
+    5432: 'postgres', 3306: 'mysql', 27017: 'mongo', 6379: 'redis',
+    9000: 's3', 9092: 'kafka', 5672: 'rabbitmq', 9200: 'elasticsearch',
+}
+
+def substrate_of(svc):
+    for spec in (svc.get('expose') or []):
+        try:
+            hit = PROTOCOL.get(int(str(spec).split('/')[0]))
+        except ValueError:
+            hit = None
+        if hit:
+            return hit
+    for p in (svc.get('ports') or []):
+        hit = PROTOCOL.get(int(p.get('target') or 0))
+        if hit:
+            return hit
+    return 'undetermined'
+
 
 def rel(p):
     p = str(p)
@@ -222,7 +243,8 @@ reserved, binds = [], set()
 
 for name, svc in (model.get('services') or {}).items():
     image = svc.get('image') or ''
-    named_volumes = [v for v in (svc.get('volumes') or []) if v.get('type') == 'volume']
+    named_volumes = [v for v in (svc.get('volumes') or [])
+                     if v.get('type') == 'volume' and not v.get('read_only')]
     bind_paths = sorted({rel(v['source']) for v in (svc.get('volumes') or []) if v.get('type') == 'bind'})
 
     for spec in published(svc):
@@ -231,10 +253,10 @@ for name, svc in (model.get('services') or {}).items():
 
     # A store is an engine image that holds state of its own. A service that
     # only bind-mounts source is a runnable unit however store-shaped its image.
-    if ENGINES.search(image) and named_volumes:
+    if named_volumes:
         hc = (svc.get('healthcheck') or {}).get('test') or []
         stores[name] = {
-            'substrate': ENGINES.search(image).group(0),
+            'substrate': substrate_of(svc),
             'locality': {
                 'value': 'local',
                 'reason': 'the resolver declares it here with a named volume on this host',
@@ -353,13 +375,13 @@ claim() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(eva
 # `sessions` and the substrate is `redis`, so a pass reading the key would get
 # it wrong and a pass reading the image gets it right.
 [ "$(claim 'd["backingStores"]["postgres"]["substrate"]')" = postgres ] \
-    && ok 'the first substrate is read off the image' \
+    && ok 'the first substrate comes from the protocol the image speaks' \
     || fail "substrate is wrong: $(claim 'd["backingStores"]["postgres"]["substrate"]')"
 
 substrates=$(claim 'sorted((k, v["substrate"]) for k, v in d["backingStores"].items())')
 [ "$substrates" = "[('catalog-docs', 'mongo'), ('orders-db', 'mysql'), ('postgres', 'postgres'), ('sessions', 'redis')]" ] \
-    && ok "every substrate is read off the image and three of the four service names say nothing about it: $substrates" \
-    || fail "a substrate was taken from the key rather than the image: $substrates"
+    && ok "every substrate comes from the protocol, and three of the four service names say nothing about the engine: $substrates" \
+    || fail "a substrate was taken from a name rather than from what the image speaks: $substrates"
 
 case "$(claim 'd["backingStores"]["sessions"]["notes"][0]')" in
     *'exec-form vector'*)
@@ -410,6 +432,35 @@ then
 else
     fail 'a manifest with reserved and no ranges does not validate, so a stopping run has nothing valid to leave behind'
 fi
+
+# --- a store is found by the state it holds, never by a name ------------------
+# Measured twice on one real repository: a name-matching pass missed the store 28
+# of 41 services depend on, because its image is `pgvector/pgvector:pg16` and no
+# word in that string is an engine such a pass knows. This models that shape --
+# and costs nothing at runtime, because identification reads the resolver rather
+# than booting anything.
+
+ID="$WORK/storeid"
+mkdir -p "$ID"
+printf 'name: sg-storeid\nservices:\n  vectors:\n    image: pgvector/pgvector:pg16\n    volumes: [ "vectors_data:/var/lib/postgresql/data" ]\n  queue:\n    image: ghcr.io/example/broker:3\n    volumes: [ "queue_data:/var/lib/broker" ]\n  web:\n    image: nginx:alpine\n    volumes: [ "./site:/usr/share/nginx/html:ro" ]\nvolumes:\n  vectors_data:\n  queue_data:\n' > "$ID/compose.yaml"
+mkdir -p "$ID/site"
+
+STORE_OUT=$(python3 "$REPO/.github/scripts/lib-storeid.py" "$ID/compose.yaml")
+by_state=${STORE_OUT%%|*}
+by_name=${STORE_OUT#*|}
+
+[ "$by_state" = "queue,vectors" ] \
+    && ok "reading the STATE finds both stores, neither of whose images names its engine: $by_state" \
+    || fail "the structural reading found '$by_state' where both stores hold a named volume"
+
+[ "$by_name" = "" ] \
+    && ok 'and the name-matching reading finds NOTHING here, which is the failure measured on a real repository' \
+    || fail "the name-matching reading found '$by_name', so this shape no longer models the case it exists for"
+
+case "$by_state" in
+    *web*) fail 'a unit whose only mount is read-only source was counted as a store' ;;
+    *) ok 'a unit whose only mount is read-only source is not a store: durable state is what it writes and keeps, not what it reads' ;;
+esac
 
 # --- a shared build context, which is what a monorepo actually looks like ----
 # Measured on a real repository: 25 services declared one shared directory as

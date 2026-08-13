@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] — 2026-08-13
+
+**An overlay was published on every interface while the service it shadows binds loopback.** The ninth agent trial drove the whole road for the first time — the generated family written after a go/no-go, all three members observed, the record raised from `inferred` to `declared` on evidence, the namespace created and dropped inside one run — and found nine things on the way. This is the one that matters most, and it is the same shape as the seeded copy published on `0.0.0.0` in `2.1.3`, one object over.
+
+### Fixed
+
+- **Nothing told an overlay where to publish.** `127.0.0.1` appears in the launch derivation only as `bindsTo`, which describes how an overlay *reaches* the base stack, and the loopback-publishing rule existed only for seeded copies in another file. So an overlay of a loopback-bound service came up on every interface — a developer's branch on their network while the thing it stands in for is not. **An overlay is never more exposed than the service it stands in for**, and where `bindsTo` is undetermined it publishes on loopback.
+- **`2.2.3`'s own tag rule was unexpressible in the field that has to carry it.** That release required a unit baking its source to be rebuilt under a tag the base project does not own; `overlayCommand`'s placeholder set was closed to two host paths and a port, none of which is a name a tag may carry. An agent following the rule wrote a per-**repository** literal — safe against the base stack, and a collision between two worktrees overlaying the same unit. `{{isolationLabel}}` joins the set: it is already derived per branch, already has the grammar, and is the same value rather than a second spelling of it.
+- **`declared` could be read as certifying the query, and it does not.** The schema raises a generated family on three exit statuses and says nothing about the read discriminating — correctly, since a family whose pairs never reach the copy road should spend no empty instance on an answer nothing consumes. But the strong rule (*a generated `SELECT 1` fails the discriminator and must*) lived in one file and the structural one in the schema, so only the weak one was enforced. Both now say outright that these are separate claims with separate expiries, and that such a family earns `declared` and still refuses at verification.
+- **The approval fingerprint had no stated composition.** *"Hashed all three together"* — but `fingerprint.sh` emits one line per path and combines nothing, and concatenating digests, hashing bodies end to end, or piping its output onward are all defensible and yield different values. An unstated composition is an approval two correct runs disagree about, and a human who approved once being asked again. The recipe is now stated.
+- **An observation of the read could record that it ran, never what it answered.** A read's answer is a count and its exit status records only that a count was produced. `observed` takes an `output` now; an agent that observed a read answering `4` had been writing the `4` into notes, which nothing expires.
+- **A competing pair with no knob had no honest record.** A scheduler whose cadence lives in table rows has no `group.id` to substitute and none may be invented, so the only expressible `competesOn` was empty — which read as *checked and none*. The gate flagged the opposite mismatch and was silent here. An empty `competesOn` beside `competes: true` now reads as what it is: competes, and no identity exists to substitute.
+- **Three smaller ones**: whether a create observed in *this* run may release the teardown (it may, and the stricter reading made `declared` unreachable forever); which checkout holds the generated family when the main one's script directory is empty and therefore absent from every worktree; and that accepting the family offer can move a pair from *refused for want of a query* to *refused for want of an env route*, which a human deciding whether to accept it is owed in advance.
+
+### Added
+
+- **One floor was making the conflation this skill forbids.** It compared a base store against an empty instance that had not finished starting and reported *the candidate discriminates nothing* — a verdict about the candidate where the truth was a verdict about the instance. It has three outcomes now rather than two, and a wait budget an empty `mysql` building its data directory on a loaded host can actually meet. `2.2.2` wrote that rule for the documents; the suite was still breaking it.
+- **A detector for the class three of the last twelve defects came from**: a document and the schema describing one field differently. It extracts the closed placeholder set from each and compares them as sets, and fails when either side moves alone.
+- Rows pinning the loopback rule, the `declared`/`discriminates` separation, and the read observation's `output`.
+
 ## [2.2.3] — 2026-08-13
 
 **The overlay could serve the base stack's code and answer `200`.** An agent that had never seen this skill drove it end to end against a repository built for the purpose, and this is what it found first. Eight more findings came with it. `references/traps.md` already carried the sentence *"you will test the old code and believe it passed"* — for a different cause.
@@ -290,6 +310,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.4
 [2.2.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.3
 [2.2.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.2
 [2.2.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.1

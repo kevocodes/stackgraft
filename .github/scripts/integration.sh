@@ -92,9 +92,13 @@ fi
 # own liveness command would put engine knowledge back into the procedure, and
 # an instance that answers the query is ready by the only definition that
 # matters here.
+# 40s was not enough for an EMPTY instance of a store that initialises from
+# nothing: mysql builds its data directory on first boot, and on a loaded host
+# that outruns the budget while the base store -- which has a seeded volume and
+# is already up -- answers immediately. The budget is per instance, not per run.
 wait_readable() {
     _n=0
-    while [ "$_n" -lt 40 ]; do
+    while [ "$_n" -lt 150 ]; do
         sh "$1" "$2" >/dev/null 2>&1 && return 0
         _n=$((_n + 1))
         sleep 1
@@ -198,10 +202,18 @@ for entry in $STORES; do
     out_probe=$(sh "$READ" "$PROBE_NAME" 2>/dev/null || printf 'unreadable')
     printf '        base=%s  copy=%s  empty=%s\n' "$out_base" "$out_copy" "$out_probe"
 
-    if [ "$out_base" != unreadable ] && [ "$out_probe" != unreadable ] && [ "$out_base" != "$out_probe" ]; then
+    # Three outcomes, not two. A read that did not answer produced no value to
+    # compare, and reporting that as "discriminates nothing" is the conflation
+    # references/isolation-providers.md forbids -- it reads as a verdict about
+    # the candidate when it is a verdict about the instance. The distinction is
+    # what tells a slow empty instance apart from a query that cannot tell a
+    # seeded store from an empty one.
+    if [ "$out_base" = unreadable ] || [ "$out_probe" = unreadable ]; then
+        fail "$STORE: no comparison was made -- base '$out_base', empty '$out_probe'; an issue that did not answer is undetermined, never a difference"
+    elif [ "$out_base" != "$out_probe" ]; then
         ok "$STORE: the candidate discriminates -- the base store answers '$out_base' where an empty instance answers '$out_probe'"
     else
-        fail "$STORE: the candidate discriminates nothing: base '$out_base' against empty '$out_probe'"
+        fail "$STORE: the candidate discriminates nothing: both the base store and an empty instance answer '$out_base'"
     fi
 
     # Two outcomes are correct here and only one of them is a match. All four

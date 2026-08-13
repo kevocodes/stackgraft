@@ -201,6 +201,55 @@ for p in $CLOSED; do
 done
 ok 'each member of the closed set appears in the file that declares the set, so none is named without a form'
 
+# --- a field the prose names must be one the schema accepts, AT THAT PATH ------
+# verify.sh already checks that every manifest field a document names exists in
+# the schema somewhere. Both defects this repository shipped passed that check and
+# still cost a manifest: the field existed, one level away from where the sentence
+# put it. So the dimension these rows add is the PATH, and they are regression
+# pins for two measured failures rather than a general detector for the class.
+
+py() { python3 -c "$1" "$SKILL"; }
+
+# 1. references/shared-state.md describes the service-level record and the root
+#    record as one scale of `method` and `confidence`. That sentence is only true
+#    if BOTH nodes accept both fields with the same enum.
+same=$(py '
+import json, sys
+s = json.load(open(sys.argv[1] + "/assets/manifest.schema.json"))
+root = s["properties"]["stateReview"]["properties"]
+svc  = s["properties"]["services"]["additionalProperties"]["properties"]["stateReview"]["properties"]
+ok = ("confidence" in svc and "method" in svc
+      and svc["confidence"].get("enum") == root["confidence"].get("enum")
+      and svc["method"].get("enum") == root["method"].get("enum"))
+print("yes" if ok else "no")')
+[ "$same" = yes ] \
+    && ok 'the service-level and root stateReview accept the same method and confidence enums, which is what shared-state.md says of them' \
+    || fail 'shared-state.md calls them one scale and the schema disagrees, so recording what the gate asks for emits a manifest it rejects'
+
+grep -q 'the same `method` and `confidence` enums the service-level record' "$SKILL/references/shared-state.md" \
+    && ok 'and that is the sentence the row above holds the schema to, so neither can drift alone' \
+    || fail 'shared-state.md no longer makes that claim; the row above is pinned to a sentence that is gone'
+
+# 2. `notes` exists on a store entry and NOT inside its `isolation`, and the
+#    sentence that tells a reader where to put it has to say which.
+notes_where=$(py '
+import json, sys
+s = json.load(open(sys.argv[1] + "/assets/manifest.schema.json"))
+e = s["properties"]["backingStores"]["additionalProperties"]
+print(("entry" if "notes" in e["properties"] else "-")
+      + ("," + ("isolation" if "notes" in e["properties"]["isolation"]["properties"] else "-")))')
+[ "$notes_where" = "entry,-" ] \
+    && ok 'notes lives on the store entry and isolation is closed to it, which is the shape the sentence must describe' \
+    || fail "the store entry/isolation notes shape moved to '$notes_where'; the sentence below now describes the wrong node"
+
+para=$(awk '/a mechanism is `none`/ { print; exit }' "$SKILL/references/discovery.md")
+case $para in
+    *'beside `isolation`, never inside it'*)
+        ok 'and discovery.md says beside isolation rather than inside it, where saying nothing put four stores in the closed node and lost the pass' ;;
+    *)
+        fail 'discovery.md tells a reader to record why a mechanism is none without saying which node holds notes -- the reading that costs the cache' ;;
+esac
+
 cleanup
 printf '\nresult\n'
 if [ "$failures" -eq 0 ]; then

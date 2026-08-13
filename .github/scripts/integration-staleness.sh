@@ -128,17 +128,27 @@ BASE_NET=$(docker inspect -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}
     || fail 'the base stack network could not be read back, so an overlay has no name to attach to'
 
 if [ -n "$BASE_NET" ]; then
+    # Compared against the base container's ADDRESS on that network, not against
+    # whether the name resolves at all. A service name like `web` is generic
+    # enough to resolve through the host's own DNS -- measured: it did on a CI
+    # runner and did not on the machine this was written on -- so "it resolved"
+    # is not evidence that it reached the base stack. The address is.
+    BASE_IP=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$BASE_NET\").IPAddress}}" "$PROJECT-$SVC-1" 2>/dev/null)
+    [ -n "$BASE_IP" ] \
+        && ok "the base container's address on that network is readable: $BASE_IP" \
+        || fail 'the base container has no address on its own network, so there is nothing to resolve to'
+
     reach=$(docker run --rm --network "$BASE_NET" --entrypoint sh "$OVERLAY_TAG" \
-        -c "getent hosts $SVC >/dev/null 2>&1 && echo resolves || echo no-dns" 2>/dev/null | tr -d '\r\n ')
-    [ "$reach" = resolves ] \
-        && ok 'and the worktree-tagged image, launched on that network, resolves the base stack by service name -- the wiring the one-command form could not keep' \
-        || fail "the two-command route did not reach the base stack: $SVC $reach"
+        -c "getent hosts $SVC 2>/dev/null | awk '{print \$1; exit}'" 2>/dev/null | tr -d '\r\n ')
+    [ "$reach" = "$BASE_IP" ] \
+        && ok "and the worktree-tagged image, launched on that network, resolves $SVC to the base container itself -- the wiring the one-command form could not keep" \
+        || fail "the two-command route resolved $SVC to '$reach' rather than the base container at $BASE_IP"
 
     isolated=$(docker run --rm --entrypoint sh "$OVERLAY_TAG" \
-        -c "getent hosts $SVC >/dev/null 2>&1 && echo resolves || echo no-dns" 2>/dev/null | tr -d '\r\n ')
-    [ "$isolated" = no-dns ] \
-        && ok 'while the same image off that network resolves nothing, so the row above is the network and not the image' \
-        || fail "the image resolves the base stack with no network attached ($isolated), so that row proves nothing"
+        -c "getent hosts $SVC 2>/dev/null | awk '{print \$1; exit}'" 2>/dev/null | tr -d '\r\n ')
+    [ "$isolated" != "$BASE_IP" ] \
+        && ok "while the same image off that network reaches something else or nothing ('$isolated'), so the row above is the network and not the image" \
+        || fail 'the image reached the base container with no network attached, so that row proves nothing'
 fi
 
 AFTER_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$PROJECT-$SVC" 2>/dev/null)

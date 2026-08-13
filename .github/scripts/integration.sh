@@ -96,10 +96,23 @@ fi
 # nothing: mysql builds its data directory on first boot, and on a loaded host
 # that outruns the budget while the base store -- which has a seeded volume and
 # is already up -- answers immediately. The budget is per instance, not per run.
+# Two consecutive successes, not one. A store that initialises from nothing
+# brings up a TEMPORARY server first and then restarts it -- mysql does exactly
+# that -- so a read can succeed against the temporary one and fail a moment
+# later against nothing. Measured on CI: the first success arrived, the read
+# taken immediately after it did not, and the run reported an instance that had
+# not settled as an issue that produced no value. Waiting for an answer that is
+# still there a second later is what "readable" has to mean here.
 wait_readable() {
     _n=0
+    _hits=0
     while [ "$_n" -lt 150 ]; do
-        sh "$1" "$2" >/dev/null 2>&1 && return 0
+        if sh "$1" "$2" >/dev/null 2>&1; then
+            _hits=$((_hits + 1))
+            [ "$_hits" -ge 2 ] && return 0
+        else
+            _hits=0
+        fi
         _n=$((_n + 1))
         sleep 1
     done

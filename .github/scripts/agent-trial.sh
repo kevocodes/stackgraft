@@ -264,7 +264,24 @@ teardown)
     docker volume ls --filter 'label=stackgraft.labels' --format '{{.Name}}' | while read -r v; do
         [ -n "$v" ] && docker volume rm -f "$v" >/dev/null 2>&1
     done
-    [ -d "$MAIN" ] && docker compose -p "$PROJECT" -f "$MAIN/compose.yaml" down -v >/dev/null 2>&1
+    [ -d "$MAIN" ] && docker compose -p "$PROJECT" -f "$MAIN/compose.yaml" down -v --rmi local >/dev/null 2>&1
+    # A trial may leave objects NO stackgraft label can find. An overlay
+    # launched through the orchestrator under its own project gets that
+    # project's volumes and network from the compose file's top-level blocks --
+    # even under --no-deps -- and they carry compose's labels, not this skill's.
+    # The label sweep above cannot see them and neither can reap.sh, so they are
+    # removed by the one thing that does name them: the project prefix.
+    for _p in "$PROJECT" "$PROJECT-ov"; do
+        docker volume ls --format '{{.Name}}' | while read -r _v; do
+            case $_v in "$_p"_*) docker volume rm -f "$_v" >/dev/null 2>&1 ;; esac
+        done
+        docker network ls --format '{{.Name}}' | while read -r _n; do
+            case $_n in "$_p"_*) docker network rm "$_n" >/dev/null 2>&1 ;; esac
+        done
+        docker images --format '{{.Repository}}:{{.Tag}}' | while read -r _i; do
+            case $_i in "$_p"-*) docker image rm -f "$_i" >/dev/null 2>&1 ;; esac
+        done
+    done
     rm -rf "$TRIAL"
     rm -f "$HOME/.cache/stackgraft/shopdemo-"*.json 2>/dev/null
     printf 'the trial is torn down\n'

@@ -250,6 +250,55 @@ case $para in
         fail 'discovery.md tells a reader to record why a mechanism is none without saying which node holds notes -- the reading that costs the cache' ;;
 esac
 
+# --- the documents have to render as what they were written as ---------------
+# Two general detectors rather than pins. A shipped document is read by a model
+# and by a person in a renderer, and both of these were found by an agent
+# reading one: a paragraph with an odd number of bold markers, and a numbered
+# list whose labels a renderer silently rewrites under cross-references that
+# cite them by number.
+
+# Inline code is stripped first: a `paths` glob such as `services/catalog/**`
+# is two asterisks that are not emphasis, and counting them flags a paragraph
+# that renders perfectly.
+bad=$(awk '{ line = $0; gsub(/`[^`]*`/, "", line)
+             n = gsub(/\*\*/, "", line)
+             if (n % 2 == 1) print FILENAME ":" FNR }' \
+      "$SKILL"/references/*.md "$SKILL/SKILL.md")
+[ -z "$bad" ] \
+    && ok 'every paragraph in every shipped document closes the bold it opens' \
+    || fail "a paragraph opens bold it never closes, so it renders as literal asterisks: $(printf '%s' "$bad" | head -3 | tr '\n' ' ')"
+
+# An ordered list whose visible labels are not 1..N is rewritten by any renderer.
+# That is harmless until something cites a step by number, which this skill does.
+mis=$(awk '
+    /^[0-9]+\. / { n = $0; sub(/\..*/, "", n) + 0
+                   if (run == 0) { expect = n + 0 }
+                   if (n + 0 != expect) { print FILENAME ":" FNR ":" n; }
+                   expect = n + 1; run = 1; next }
+    /^$/ { next }
+    { run = 0 }
+' "$SKILL"/references/*.md)
+[ -z "$mis" ] \
+    && ok "every ordered list's labels are the numbers a renderer would give them, so a citation by step number still resolves" \
+    || fail "an ordered list is misnumbered and something cites it by number: $(printf '%s' "$mis" | head -3 | tr '\n' ' ')"
+
+for cite in $(grep -o 'section 5 step [0-9]*' "$SKILL"/references/*.md | grep -o '[0-9]*$' | sort -u); do
+    awk -v want="$cite" '/^## 5\./ { insec=1; next } /^## 6/ { insec=0 }
+        insec && $0 ~ "^" want "\\. " { found=1 } END { exit !found }' "$SKILL/references/discovery.md" \
+        && ok "the citation 'section 5 step $cite' resolves to a step that exists" \
+        || fail "a document cites section 5 step $cite and no such step is there"
+done
+
+# --- and a field the prose names has to be spellable -------------------------
+sub_none=$(python3 -c "
+import json, sys
+s = json.load(open(sys.argv[1] + '/assets/manifest.schema.json'))
+ex = s['properties']['backingStores']['additionalProperties']['properties']['substrate'].get('examples') or []
+print('yes' if 'none' in ex else 'no')" "$SKILL")
+[ "$sub_none" = yes ] \
+    && ok 'the schema spells the substrate the prose calls none, so a store with no establishable engine has a literal to write' \
+    || fail 'discovery.md says the honest substrate is none and the schema never spells it, so an agent infers the literal'
+
 cleanup
 printf '\nresult\n'
 if [ "$failures" -eq 0 ]; then

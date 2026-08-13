@@ -1,0 +1,7 @@
+# At the CONTEXT ROOT, and it takes the whole tree, so this unit genuinely
+# consumes all of backend/ -- the exception that is not one.
+FROM postgres:16-alpine
+RUN apk add --no-cache netcat-openbsd
+WORKDIR /app
+COPY . /app
+CMD ["sh", "/app/serve.sh", "core-api", "8101"]

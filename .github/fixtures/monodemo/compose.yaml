@@ -1,0 +1,129 @@
+# The second trial subject, and it exists because writing shopdemo's manifest is
+# easier than writing a real one. What is reproduced here is SHAPE, not size:
+# every property below is one that cost a real run a defect.
+#
+#   - one build context shared by five units, with per-unit dockerfiles AND one
+#     at the CONTEXT ROOT, which is the ambiguity that selected 27 units where
+#     six owned the changed trees;
+#   - stores identifiable ONLY by durable state: one whose image name carries no
+#     engine word at all, and one holding what looks like output rather than
+#     state;
+#   - the main relational store's healthcheck is CMD-SHELL, so rung 1 is empty
+#     and the generated-family offer is what a first run actually meets;
+#   - one unit migrates on startup (W) and one runs a scheduler singleton (X),
+#     so the two verdicts that differ are both reachable;
+#   - no db-create/db-drop/db-read anywhere: the family is the agent's to offer.
+name: sg-fixture-monodemo
+
+services:
+  # --- the shared context, five units, two shapes of dockerfile --------------
+
+  # Dockerfile at the context ROOT: this unit genuinely consumes all of backend/.
+  core-api:
+    build: { context: ./backend, dockerfile: Dockerfile.core }
+    command: ["sh", "/app/serve.sh", "core-api", "8101"]
+    environment:
+      LEDGER_URL: postgres://mono:mono@ledger:5432/mono
+    depends_on: [ledger]
+    ports: ["127.0.0.1:18201:8101"]
+
+  # The same root dockerfile, so the same whole-tree consumption.
+  core-worker:
+    build: { context: ./backend, dockerfile: Dockerfile.core }
+    command: ["sh", "/app/serve.sh", "core-worker", "8102"]
+    environment:
+      LEDGER_URL: postgres://mono:mono@ledger:5432/mono
+    depends_on: [ledger]
+    ports: ["127.0.0.1:18202:8102"]
+
+  # Dockerfile INSIDE the context: this unit's own tree is backend/orders.
+  # It migrates on startup, which is W=yes for whatever LEDGER_URL points at.
+  orders:
+    build: { context: ./backend, dockerfile: orders/Dockerfile }
+    command: ["sh", "/app/serve.sh", "orders", "8103"]
+    environment:
+      LEDGER_URL: postgres://mono:mono@ledger:5432/mono
+    depends_on: [ledger]
+    ports: ["127.0.0.1:18203:8103"]
+
+  # Its own tree too, and it runs a scheduler loop over rows the ledger holds.
+  billing:
+    build: { context: ./backend, dockerfile: billing/Dockerfile }
+    command: ["sh", "/app/serve.sh", "billing", "8104"]
+    environment:
+      LEDGER_URL: postgres://mono:mono@ledger:5432/mono
+    depends_on: [ledger]
+    ports: ["127.0.0.1:18204:8104"]
+
+  search:
+    build: { context: ./backend, dockerfile: search/Dockerfile }
+    command: ["sh", "/app/serve.sh", "search", "8105"]
+    environment:
+      ARCHIVE_URL: http://mono:mono@archive:5984
+    depends_on: [archive]
+    ports: ["127.0.0.1:18205:8105"]
+
+  web:
+    build: { context: ./web, dockerfile: Dockerfile }
+    command: ["sh", "/app/serve.sh", "web", "8106"]
+    ports: ["127.0.0.1:18206:8106"]
+
+  # --- the stores, and nothing here says "store" ----------------------------
+
+  # CMD-SHELL, so its healthcheck is shell source and the argv rule excludes it
+  # as a rung-1 candidate. The service is not named for its engine either.
+  ledger:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mono
+      POSTGRES_PASSWORD: mono
+      POSTGRES_DB: mono
+    volumes:
+      - ledger-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["127.0.0.1:15433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mono -d mono"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # No word in this image is an engine a name-matching pass knows, so only the
+  # durable volume identifies it.
+  archive:
+    image: couchdb:3
+    environment:
+      COUCHDB_USER: mono
+      COUCHDB_PASSWORD: mono
+    volumes:
+      - archive-data:/opt/couchdb/data
+    ports: ["127.0.0.1:15984:5984"]
+
+  # An exec-form healthcheck that IS a rung-1 candidate and answers the same on
+  # an instance holding nothing, so it reaches the discriminator and is refused.
+  cache:
+    image: redis:7-alpine
+    command: ["sh", "-c", "redis-server --save 60 1 & until redis-cli ping >/dev/null 2>&1; do sleep 0.2; done; [ \"$$(redis-cli DBSIZE)\" -eq 0 ] && for k in a b c; do redis-cli SET \"k:$$k\" \"v-$$k\" >/dev/null; done; redis-cli SAVE >/dev/null; wait"]
+    volumes:
+      - cache-data:/data
+    ports: ["127.0.0.1:16380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # It writes dumps and nothing reads them back, so it LOOKS like output rather
+  # than state. It is in the map anyway, because the rule is fail-closed.
+  snapshots:
+    image: postgres:16-alpine
+    entrypoint: ["sh", "-c", "while true; do sleep 300; done"]
+    volumes:
+      - snapshot-data:/snapshots
+    depends_on: [ledger]
+
+volumes:
+  ledger-data:
+  archive-data:
+  cache-data:
+  snapshot-data:

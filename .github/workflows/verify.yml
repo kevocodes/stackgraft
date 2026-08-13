@@ -285,6 +285,24 @@ jobs:
           STACKGRAFT_REQUIRE_RUNTIME: '1'
         run: sh .github/scripts/integration-unadvised.sh
 
+  staleness:
+    name: does the overlay run the worktree code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every other floor launches a unit that reads its source at run time, so
+      # this question never arose. Most repositories bake it into an image, and
+      # the run form the documents derive an overlayCommand from reuses the tag
+      # already there -- built from the MAIN checkout. This drives both halves:
+      # that the bare form serves stale code, and that the rule replacing it
+      # serves the worktree's without moving the base project's own image.
+      - name: Pull the images the subject builds from
+        run: docker pull alpine:latest
+      - name: Drive it
+        env:
+          STACKGRAFT_REQUIRE_RUNTIME: '1'
+        run: sh .github/scripts/integration-staleness.sh
+
   drivability:
     name: are the documents drivable
     runs-on: ubuntu-latest

@@ -34,12 +34,18 @@ MAIN="$WORK/shopdemo"
 TREE="$WORK/shopdemo-worktrees/doomed"
 KEEP="$WORK/shopdemo-worktrees/kept"
 PROJECT=sg-reap-shopdemo
+OVPROJECT=sg-reap-shopdemo-ov
 PORT=18555
 KEEP_PORT=18556
 
 cleanup() {
     docker rm -fv sg-reap-orphan sg-reap-kept >/dev/null 2>&1 || true
     docker volume rm -f sg-reap-copyvol >/dev/null 2>&1 || true
+    docker compose -p "$OVPROJECT" -f "$MAIN/compose.yaml" down -v >/dev/null 2>&1 || true
+    docker volume ls --format '{{.Name}}' | while read -r _v; do
+        case $_v in "$OVPROJECT"_*) docker volume rm -f "$_v" >/dev/null 2>&1 ;; esac
+    done
+    docker network rm "${OVPROJECT}_default" >/dev/null 2>&1 || true
     [ -d "$MAIN" ] && docker compose -p "$PROJECT" -f "$MAIN/compose.yaml" down -v >/dev/null 2>&1
     rm -rf "$WORK"
     return 0
@@ -161,6 +167,42 @@ docker rm -fv sg-reap-stranger >/dev/null 2>&1
 [ "$rc" -ne 0 ] && [ "$survives" = 1 ] \
     && ok "an unlabelled container is refused by name and survives: no record, no match, no action (exit $rc)" \
     || fail "a container carrying none of this skill's labels was acted on: exit $rc, survives=$survives"
+
+# --- what an overlay leaves that carries none of this skill's labels ---------
+# Every row above finds an object by a stackgraft label. An overlay launched
+# under its own compose project creates the project's NAMED volumes for the
+# stores it declares a dependency on -- --no-deps skips STARTING a dependency,
+# never declaring it -- and those carry compose's labels only. Nothing scoped to
+# this skill can enumerate them, which is why the rule is that the run names them
+# by the project prefix it chose.
+
+docker compose -p "$OVPROJECT" --project-directory "$MAIN" -f "$MAIN/compose.yaml" \
+    run --rm --no-deps --entrypoint sh catalog-api -c 'echo overlay' >/dev/null 2>&1
+ovvol=$(docker volume ls --format '{{.Name}}' | awk -v p="${OVPROJECT}_" 'index($0, p) == 1' | head -1)
+[ -n "$ovvol" ] \
+    && ok "an overlay run under its own project materialised a store's named volume without starting the store: $ovvol" \
+    || fail 'the overlay project created no named volume, so the rule below describes something this runtime does not do'
+
+if [ -n "$ovvol" ]; then
+    lbl=$(docker volume inspect -f '{{range $k,$v := .Labels}}{{$k}} {{end}}' "$ovvol" 2>/dev/null)
+    case $lbl in
+        *stackgraft*) fail "the overlay project's volume carries a stackgraft label after all: $lbl" ;;
+        *) ok 'and it carries compose labels only, so no query scoped to this skill can reach it' ;;
+    esac
+
+    seen=$(report 2>/dev/null | grep -c "$ovvol")
+    [ "$seen" = 0 ] \
+        && ok 'the actuator honestly does not report it, which is why the run must name it rather than the query find it' \
+        || fail 'the actuator reported an object no label of ours is on, so it is matching by something it should not'
+
+    # and the handle the document says to use actually removes it
+    docker volume ls --format '{{.Name}}' | while read -r _v; do
+        case $_v in "$OVPROJECT"_*) docker volume rm -f "$_v" >/dev/null 2>&1 ;; esac
+    done
+    docker volume inspect "$ovvol" >/dev/null 2>&1 \
+        && fail 'the project prefix did not remove it, so the documented handle does not work' \
+        || ok 'and removing by the project prefix -- the only name it has -- does reach it'
+fi
 
 cleanup
 INVENTORY_AFTER=$(docker volume ls --format '{{.Name}}' | sort)

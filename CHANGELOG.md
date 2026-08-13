@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] — 2026-08-13
+
+**An overlay left objects behind that no query in this skill could find.** Found while tearing down the ninth agent trial: the harness reported itself clean and had left two volumes, a network and nine images on the machine.
+
+### Fixed
+
+- **An overlay launched under its own compose project materialises that project's named volumes, and they carry none of this skill's labels.** `--no-deps` skips *starting* a dependency, never *declaring* it — measured: one `--no-deps` run of a unit naming a store in `depends_on` created `<project>_<volume>`, empty, carrying `com.docker.compose.project` and `com.docker.compose.volume` and nothing else. Every ownership query in `references/reaping.md` is scoped to a label this skill writes, so `report` cannot count it and a developer accumulates one per overlay project with nothing able to enumerate them. The file now states the case beside the anonymous-volume rule it already carried: these are found by **the project prefix, which is the only name they have**, the run names them in its teardown because it chose that prefix, and a run that cannot state its own prefix reports them as unremovable rather than sweeping by pattern — acting on an unlabelled object nobody recorded a project for is the same violation as stopping a process without proof.
+
+### Added
+
+- **Four rows that drive it rather than assert it**: that a `--no-deps` overlay run really does materialise a store's volume without starting the store, that the volume carries compose's labels and none of ours, that the actuator honestly does not report it — the fail-closed direction, and the reason the obligation sits on the run — and that removing by the project prefix reaches it.
+
 ## [2.2.4] — 2026-08-13
 
 **An overlay was published on every interface while the service it shadows binds loopback.** The ninth agent trial drove the whole road for the first time — the generated family written after a go/no-go, all three members observed, the record raised from `inferred` to `declared` on evidence, the namespace created and dropped inside one run — and found nine things on the way. This is the one that matters most, and it is the same shape as the seeded copy published on `0.0.0.0` in `2.1.3`, one object over.
@@ -310,6 +322,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.5
 [2.2.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.4
 [2.2.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.3
 [2.2.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.2

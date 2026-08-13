@@ -114,6 +114,33 @@ fresh=$(docker run --rm --name sg-staleness-overlay "$OVERLAY_TAG" sh /app/versi
     && ok 'and a launch of that tag serves the WORKTREE code, which is what the overlay was for' \
     || fail "the tagged build served '$fresh' rather than the worktree's code"
 
+# --- and the other half the two-command route is supposed to give ------------
+# The tag alone was never the point. The rule it replaced asked for a tag the
+# base project does not own AND the preferred network route, which runs under
+# the base project -- and one Compose selector sets both, so that pair could not
+# be satisfied. Building and running as two commands is only the resolution if
+# the launched container really can reach the base stack by name, so that is
+# measured here rather than argued.
+
+BASE_NET=$(docker inspect -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}}{{end}}' "$PROJECT-$SVC-1" 2>/dev/null)
+[ -n "$BASE_NET" ] \
+    && ok "the base stack's own network is readable from a running base container: $BASE_NET" \
+    || fail 'the base stack network could not be read back, so an overlay has no name to attach to'
+
+if [ -n "$BASE_NET" ]; then
+    reach=$(docker run --rm --network "$BASE_NET" --entrypoint sh "$OVERLAY_TAG" \
+        -c "getent hosts $SVC >/dev/null 2>&1 && echo resolves || echo no-dns" 2>/dev/null | tr -d '\r\n ')
+    [ "$reach" = resolves ] \
+        && ok 'and the worktree-tagged image, launched on that network, resolves the base stack by service name -- the wiring the one-command form could not keep' \
+        || fail "the two-command route did not reach the base stack: $SVC $reach"
+
+    isolated=$(docker run --rm --entrypoint sh "$OVERLAY_TAG" \
+        -c "getent hosts $SVC >/dev/null 2>&1 && echo resolves || echo no-dns" 2>/dev/null | tr -d '\r\n ')
+    [ "$isolated" = no-dns ] \
+        && ok 'while the same image off that network resolves nothing, so the row above is the network and not the image' \
+        || fail "the image resolves the base stack with no network attached ($isolated), so that row proves nothing"
+fi
+
 AFTER_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$PROJECT-$SVC" 2>/dev/null)
 [ "$AFTER_IMAGE_ID" = "$BASE_IMAGE_ID" ] \
     && ok "and the base project's own image is untouched by it, so the developer's next whole-stack up is unchanged" \

@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] — 2026-08-13
+
+**The launch rule this project shipped in `2.2.3` could not be satisfied.** It asked for a tag the base project does not own *and* the network route section 4 prefers, which runs under the base project — and on Compose one selector sets both: the project name is the image tag's prefix **and** the network. Not awkward. Unsatisfiable.
+
+The tenth agent trial ran into it and chose correctly: it took the tag, lost the network, and reported that every store name failed to resolve from inside its overlays rather than papering over a wiring nobody can make.
+
+### Fixed
+
+- **A unit that bakes its source no longer launches through the orchestrator's run form at all.** Build and run as two commands instead of one: build the image from the worktree tagged `{{isolationLabel}}` — derived per branch, so the base project does not own it and a second worktree does not collide with it — then launch that tag with the runtime's own run command, attached **by name** to the network the base stack already runs on, read back from a running base container exactly as the image, environment and command already are for a store copy. That keeps every property the two rules were each protecting: the worktree's code, a tag the base project never sees, the base stack's own network so unchanged peers resolve, loopback publication, and the label anchor. What is given up is the orchestrator's convenience, and it was buying a contradiction. Where the unit **mounts** its source instead, none of this applies and the preferred route stands unchanged.
+
+### Added
+
+- **Three rows that measure the half the old rule lost.** The floor already proved the tag half — that the documented route serves the worktree's code and leaves the base project's image alone. It now also reads the base stack's network back from a running container, launches the worktree-tagged image on it, and resolves a base service **by name** — with the negative control that the same image off that network resolves nothing, so the row is about the network and not the image.
+
 ## [2.2.5] — 2026-08-13
 
 **An overlay left objects behind that no query in this skill could find.** Found while tearing down the ninth agent trial: the harness reported itself clean and had left two volumes, a network and nine images on the machine.
@@ -324,6 +338,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.6]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.6
 [2.2.5]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.5
 [2.2.4]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.4
 [2.2.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.3

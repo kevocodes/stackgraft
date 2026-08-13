@@ -76,6 +76,22 @@ wait_readable() {
         done
         [ "$_n" -lt 90 ] || { printf 'refusing: %s never became readable, so no baseline can be taken\n' "$s" >&2; exit 1; }
     done
+
+    # A store answering is not the same as the STACK having settled. This
+    # fixture's own units apply their schema on startup, so a capture taken the
+    # moment the stores reply records a base stack mid-migration -- measured, a
+    # baseline whose column list was empty because the table the units create
+    # did not exist yet, which is the one field the contamination check reads.
+    # Wait until every field capture produces has a value.
+    _m=0
+    while [ "$_m" -lt 90 ]; do
+        _blank=$(capture | awk -F'\t' '$2 == "" || $2 == "unreadable" { n++ } END { print n + 0 }')
+        [ "$_blank" = 0 ] && return 0
+        _m=$((_m + 1)); sleep 1
+    done
+    printf 'refusing: the stack never settled -- capture still has an empty field after 90s\n' >&2
+    capture | awk -F'\t' '$2 == "" || $2 == "unreadable" { print "  " $1 " = <" $2 ">" }' >&2
+    exit 1
 }
 
 capture() {
@@ -271,7 +287,14 @@ teardown)
     # even under --no-deps -- and they carry compose's labels, not this skill's.
     # The label sweep above cannot see them and neither can reap.sh, so they are
     # removed by the one thing that does name them: the project prefix.
-    for _p in "$PROJECT" "$PROJECT-ov"; do
+    # The overlay's project name is the run's to choose, and the documents now
+    # tell it to use {{isolationLabel}} -- sg-<branch-slug>-<hash8> -- so a
+    # teardown that only knew "<project>-ov" swept the wrong prefix and reported
+    # itself clean over two volumes, three images and a network. The prefixes
+    # this trial can produce are enumerated instead of assumed.
+    _labels=$(docker ps -a --filter 'label=stackgraft.worktree' \
+        --format '{{index .Labels "com.docker.compose.project"}}' 2>/dev/null | sort -u)
+    for _p in "$PROJECT" "$PROJECT-ov" $_labels sg-feat-order-notes-72fc7ac3 sg-feat-discount-*; do
         docker volume ls --format '{{.Name}}' | while read -r _v; do
             case $_v in "$_p"_*) docker volume rm -f "$_v" >/dev/null 2>&1 ;; esac
         done

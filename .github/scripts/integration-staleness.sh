@@ -114,6 +114,43 @@ fresh=$(docker run --rm --name sg-staleness-overlay "$OVERLAY_TAG" sh /app/versi
     && ok 'and a launch of that tag serves the WORKTREE code, which is what the overlay was for' \
     || fail "the tagged build served '$fresh' rather than the worktree's code"
 
+# --- and the other half the two-command route is supposed to give ------------
+# The tag alone was never the point. The rule it replaced asked for a tag the
+# base project does not own AND the preferred network route, which runs under
+# the base project -- and one Compose selector sets both, so that pair could not
+# be satisfied. Building and running as two commands is only the resolution if
+# the launched container really can reach the base stack by name, so that is
+# measured here rather than argued.
+
+BASE_NET=$(docker inspect -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}}{{end}}' "$PROJECT-$SVC-1" 2>/dev/null)
+[ -n "$BASE_NET" ] \
+    && ok "the base stack's own network is readable from a running base container: $BASE_NET" \
+    || fail 'the base stack network could not be read back, so an overlay has no name to attach to'
+
+if [ -n "$BASE_NET" ]; then
+    # Compared against the base container's ADDRESS on that network, not against
+    # whether the name resolves at all. A service name like `web` is generic
+    # enough to resolve through the host's own DNS -- measured: it did on a CI
+    # runner and did not on the machine this was written on -- so "it resolved"
+    # is not evidence that it reached the base stack. The address is.
+    BASE_IP=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$BASE_NET\").IPAddress}}" "$PROJECT-$SVC-1" 2>/dev/null)
+    [ -n "$BASE_IP" ] \
+        && ok "the base container's address on that network is readable: $BASE_IP" \
+        || fail 'the base container has no address on its own network, so there is nothing to resolve to'
+
+    reach=$(docker run --rm --network "$BASE_NET" --entrypoint sh "$OVERLAY_TAG" \
+        -c "getent hosts $SVC 2>/dev/null | awk '{print \$1; exit}'" 2>/dev/null | tr -d '\r\n ')
+    [ "$reach" = "$BASE_IP" ] \
+        && ok "and the worktree-tagged image, launched on that network, resolves $SVC to the base container itself -- the wiring the one-command form could not keep" \
+        || fail "the two-command route resolved $SVC to '$reach' rather than the base container at $BASE_IP"
+
+    isolated=$(docker run --rm --entrypoint sh "$OVERLAY_TAG" \
+        -c "getent hosts $SVC 2>/dev/null | awk '{print \$1; exit}'" 2>/dev/null | tr -d '\r\n ')
+    [ "$isolated" != "$BASE_IP" ] \
+        && ok "while the same image off that network reaches something else or nothing ('$isolated'), so the row above is the network and not the image" \
+        || fail 'the image reached the base container with no network attached, so that row proves nothing'
+fi
+
 AFTER_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$PROJECT-$SVC" 2>/dev/null)
 [ "$AFTER_IMAGE_ID" = "$BASE_IMAGE_ID" ] \
     && ok "and the base project's own image is untouched by it, so the developer's next whole-stack up is unchanged" \

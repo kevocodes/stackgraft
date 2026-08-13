@@ -37,6 +37,12 @@ cleanup() {
     [ -d "$MAIN" ] && docker compose -p "$PROJECT" -f "$MAIN/compose.yaml" down -v >/dev/null 2>&1
     docker image rm -f "$OVERLAY_TAG" >/dev/null 2>&1 || true
     docker image rm -f "$PROJECT-$SVC" >/dev/null 2>&1 || true
+    # The negative control rebuilds the base project's tag on purpose, which
+    # ORPHANS the image that tag pointed at -- it survives untagged, and an
+    # inventory read by repository:tag sees it as <none>:<none>. Removed by the
+    # id this run recorded rather than by pruning dangling images, which would
+    # take objects belonging to whoever else uses this daemon.
+    [ -n "${BASE_IMAGE_ID:-}" ] && docker image rm -f "$BASE_IMAGE_ID" >/dev/null 2>&1
     rm -rf "$WORK"
     return 0
 }

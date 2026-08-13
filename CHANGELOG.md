@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] — 2026-08-13
+
+**Two fields the documents told an agent to record, that the schema rejected.** Both were found by driving the skill end to end against a 45-service repository and writing the manifest the run's own evidence supported: the field existed, one level away from where the sentence put it, and a manifest the schema rejects is a cache discarded and a full rediscovery bought — for recording exactly what the gate asks for.
+
+### Fixed
+
+- **A service entry had nowhere to record its `confidence`.** `references/shared-state.md` describes the service-level `stateReview` and the root one as one scale of `method` and `confidence`, and names an *inferred service entry* as evidence that does not count. The root record requires the field; the service-level record was closed to it. It is now accepted there — optional rather than required, so nothing that was valid becomes invalid, absence stays governed by that file's existing rule that an absent `confidence` is not `declared`, and the degraded signal stays required per pair on the determinacy record, which is the granularity the gate actually reads. The shipped example now carries it on every service, so the example is what proves the field is writable.
+- **`notes` was described inside `isolation`, where the schema is closed to it.** The sentence sits in the `isolation` bullet and says to record *why a mechanism is `none`* — and `mechanism` is one of `isolation`'s own fields, so the note reads as belonging where the mechanism does. It belongs on the store entry, beside `isolation`, and `discovery.md` now says so and names the cost, exactly as the `baseStack` paragraph below it already did. Measured on a real run: an agent recording why four stores had no mechanism put all four inside the closed node and lost the whole pass.
+
+### Added
+
+- **The suite can now run on a machine that is using the skill.** One section's inventory guard named every object any stackgraft run on the host had ever made, rather than its own, so a contributor with a live overlay could not run the suite at all — measured: a real overlay and its store copy failed the row while the section had leaked nothing. A foreign object appears in both snapshots and cancels out of the comparison, so scoping the guard to the section's own hash loses no coverage; planting an object in that namespace still fails it.
+- **Four checks for the dimension both defects passed through.** The suite already held every manifest field a document names to existing in the schema; both of these existed, at another path. The new rows check the **path**: that the service-level and root `stateReview` really do accept the same `method` and `confidence` enums that `shared-state.md` claims of them, that the sentence making that claim is still there to be held to, that `notes` is on the store entry and `isolation` is closed to it, and that `discovery.md` says which of the two. Each was run against its own defect restored and fails there.
+
 ## [2.2.1] — 2026-08-12
 
 **A store whose image wraps its own start-up could not be copied.** `--entrypoint` takes one string, an image that boots through an init declares several — `["tini", "--", "/docker-entrypoint.sh"]` is three — and the provider refused that shape rather than reproducing it. The refusal was honest about why, and it was a property of the runtime's CLI rather than of the store, so it excluded a large share of published store images from the copy road for no reason that had anything to do with isolation.
@@ -256,6 +270,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.2
 [2.2.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.1
 [2.2.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.0
 [2.1.10]: https://github.com/kevocodes/stackgraft/releases/tag/v2.1.10

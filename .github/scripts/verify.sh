@@ -3828,18 +3828,25 @@ if [ "$docker_ready" -eq 1 ] && docker image inspect alpine/git >/dev/null 2>&1 
     # cycle-closes row failed for exactly that on a host with live stacks. The
     # prefix still covers everything this section can create, because every name
     # the provider derives begins with it, so a partial is still visible.
+    # Scoped to THIS section's own hash rather than to the bare sg- prefix. The
+    # wide form named every object any stackgraft run on this host had ever made,
+    # so a contributor with a live overlay of their own could not run this suite
+    # at all -- measured: a real overlay and its store copy failed this row while
+    # the section itself had leaked nothing. A foreign object is in both
+    # snapshots and cancels out of the comparison anyway, so the narrow prefix
+    # loses no coverage: every name this section can create still begins with it.
     runtime_inventory() {
-        docker volume ls --quiet --filter name=sg- 2>/dev/null | sort | tr '\n' ' '
+        docker volume ls --quiet --filter "name=sg-$PH-" 2>/dev/null | sort | tr '\n' ' '
         printf '|'
-        docker container ls --all --quiet --filter name=sg- 2>/dev/null | sort | tr '\n' ' '
+        docker container ls --all --quiet --filter "name=sg-$PH-" 2>/dev/null | sort | tr '\n' ' '
     }
 
     # ...and the scope is only honest while it starts empty. A host that already
     # held an sg- object would make every inventory row read a state this section
     # did not create.
     [ "$(runtime_inventory)" = '|' ] \
-        && ok "the runtime holds no sg- object before this section runs, so its inventory rows read only what it made" \
-        || fail "the runtime already holds an sg- object, so this section's inventory rows cannot be trusted: $(runtime_inventory)"
+        && ok "the runtime holds none of this section's own objects before it runs, so its inventory rows read only what it made" \
+        || fail "the runtime already holds one of this section's own objects, so its inventory rows cannot be trusted: $(runtime_inventory)"
 
     docker volume create "$psrc" >/dev/null 2>&1
     docker run --rm --entrypoint sh -v "$psrc":/data "$pimg" \

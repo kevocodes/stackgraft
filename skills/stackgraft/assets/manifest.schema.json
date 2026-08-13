@@ -618,6 +618,12 @@
                 "enum": ["code-scan", "user-asserted", "resolver-declared"],
                 "description": "code-scan read the service's source; resolver-declared came from the stack's own resolver; user-asserted is the human's word and is the weakest, so an all-empty classification asserted this way deserves suspicion rather than trust."
               },
+              "confidence": {
+                "type": "string",
+                "enum": ["declared", "inferred", "user"],
+                "description": "How this pass was obtained, on the same scale as the root stateReview, a store's isolation and a per-pair determinacy record. Present because references/shared-state.md names an INFERRED SERVICE ENTRY as evidence that does not count, and a field the prose reads has to be one the schema accepts: while it was absent, an agent recording the very thing the gate asks for emitted a manifest this schema rejected, which discarded the cache and bought a full rediscovery. Optional rather than required, so nothing that was valid becomes invalid — absence is governed by that file's existing rule that an absent confidence is not declared, and the degraded signal stays REQUIRED per pair on the determinacy record, which is the granularity the gate actually reads.",
+                "$comment": "The root stateReview requires this field. This one accepts it, which is what the prose describing them as one scale needs in order to be true."
+              },
               "notes": { "type": "string" }
             }
           },

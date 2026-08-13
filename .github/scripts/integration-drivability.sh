@@ -299,6 +299,67 @@ print('yes' if 'none' in ex else 'no')" "$SKILL")
     && ok 'the schema spells the substrate the prose calls none, so a store with no establishable engine has a literal to write' \
     || fail 'discovery.md says the honest substrate is none and the schema never spells it, so an agent infers the literal'
 
+# --- the schema and the prose must describe the same field the same way ------
+# Three defects have now come from a document naming a field the schema forbids,
+# or a field the schema closes that the prose spends. This is the general form:
+# for the launch templates, the closed placeholder set the schema declares and
+# the set the prose states are extracted and compared as sets.
+
+schema_ph=$(python3 -c "
+import json, re, sys
+s = json.load(open(sys.argv[1] + '/assets/manifest.schema.json'))
+d = s['properties']['services']['additionalProperties']['properties']['overlayCommand']['description']
+head = d.split('.')[0] + '.' + d.split('.')[1]
+print(' '.join(sorted(set(re.findall(r'\{\{[a-zA-Z]+\}\}', head)))))" "$SKILL")
+prose_ph=$(python3 -c "
+import re, sys
+t = open(sys.argv[1] + '/references/discovery.md').read()
+i = t.index('the line that launches this one unit')
+print(' '.join(sorted(set(re.findall(r'\{\{[a-zA-Z]+\}\}', t[i:i+260])))))" "$SKILL")
+[ -n "$schema_ph" ] && [ "$schema_ph" = "$prose_ph" ] \
+    && ok "the launch template's closed placeholder set is the same in the schema and in the prose: $schema_ph" \
+    || fail "the schema closes the launch template to '$schema_ph' and discovery.md states '$prose_ph'"
+
+case $schema_ph in
+    *"{{isolationLabel}}"*)
+        ok 'and it includes the label, which is the only member that can express the per-branch tag the same file demands' ;;
+    *)
+        fail 'the launch template cannot express a per-branch tag, so the rule requiring one has no field to live in' ;;
+esac
+
+# --- an overlay is never published wider than what it shadows ----------------
+grep -q 'An overlay is never more exposed than the service it stands in for' "$SKILL/references/discovery.md" \
+    && ok 'the launch derivation states that an overlay publishes where the base stack binds and never wider' \
+    || fail 'nothing in the launch derivation bounds where an overlay publishes, so it inherits the widest interface'
+
+# --- declared and discriminates are different claims -------------------------
+# The schema raises a generated family to declared on three exit statuses and
+# says nothing about the read discriminating. That is deliberate -- a family
+# whose pairs never reach the copy road spends no empty instance -- but only if
+# the prose says so, or a reader takes declared as certifying the query.
+req=$(python3 -c "
+import json, sys
+s = json.load(open(sys.argv[1] + '/assets/manifest.schema.json'))
+iso = s['properties']['backingStores']['additionalProperties']['properties']['isolation']
+print('yes' if 'discriminates' in json.dumps(iso) else 'no')" "$SKILL")
+if [ "$req" = no ]; then
+    grep -q 'It never says the read discriminates' "$SKILL/references/shared-state.md" \
+        && ok 'the schema raises a family on three exit statuses and the prose says outright that this is not a claim about the read' \
+        || fail 'the schema can reach declared without the read ever discriminating and no document says so, so a SELECT 1 family reads as certified'
+else
+    ok 'the schema requires the discriminator before a generated family is declared'
+fi
+
+# --- and a read observation has somewhere to put what it answered ------------
+out_ok=$(python3 -c "
+import json, sys
+s = json.load(open(sys.argv[1] + '/assets/manifest.schema.json'))
+n = s['properties']['backingStores']['additionalProperties']['properties']['isolation']['properties']['generated']['properties']['observed']['additionalProperties']['properties']
+print('yes' if 'output' in n else 'no')" "$SKILL")
+[ "$out_ok" = yes ] \
+    && ok 'an observation of the read can record what it answered, which is the whole point of running a read' \
+    || fail 'observed records that the read ran and never what it saw, so the answer goes somewhere nothing expires'
+
 cleanup
 printf '\nresult\n'
 if [ "$failures" -eq 0 ]; then

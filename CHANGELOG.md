@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] — 2026-08-13
+
+**The overlay could serve the base stack's code and answer `200`.** An agent that had never seen this skill drove it end to end against a repository built for the purpose, and this is what it found first. Eight more findings came with it. `references/traps.md` already carried the sentence *"you will test the old code and believe it passed"* — for a different cause.
+
+### Fixed
+
+- **A unit that bakes its source into an image was launched from the image already there.** The `overlayCommand` derived from the orchestrator's own single-unit run form reuses the existing tag, and that tag was built from the **main checkout** — so on any repository with a `build:` stanza and no source mount, which is most of them, the overlay ran the code without the change and verified successfully. `discovery.md` now asks which shape the unit is: a mounted tree needs the mount pointed at the worktree, a baked tree needs the image rebuilt from it.
+- **And rebuilding it under the base project's own selector retagged the base stack's image.** The running containers keep theirs, so nothing looks wrong until the developer's next whole-stack `up` comes up on the worktree's build — the overlay writing an artefact the base stack reads, in a dimension the shared-state gate does not cover because that gate is about stores. It collides specifically with the network route this file *prefers*, which runs under the base project. **Build under a tag the base project does not own**, and the two stop colliding.
+- **A unit's fingerprint could not see the shared file its build copies in.** `serviceFingerprint` is computed over the unit's `paths`, and a shared build context may not be any unit's `paths` — correctly, since recording it there maps every change under it to every unit. But a unit whose Dockerfile copies a file out of that tree runs that file. Measured: five units shared one `serve.sh`, and an edit to it would have left every one of their determinacy records reading as valid over code that had changed. The recipe now covers the `paths` of every non-runnable entry whose `consumers` name the unit — the same relation, read from the other end.
+- **The scheduler escalation had no scope while the migrations trigger beside it insisted on one.** Unscoped, a `while true` reading one table returns a unit's cache, its object store and its backup volume to the subject for a competition none of them can host. It is scoped now, and where the loop is established and its target is not, that is `unknown` and every store of the unit refuses — exactly as an unscoped `migrates` does.
+- **`portGroup`'s grouping rule was true of a build context.** *"A directory that holds some of the units and not others"* describes `backend/` exactly, and a shared context is chosen so units can share a base image, which says nothing about who shares a port budget. Both readings were defensible and they differ by one stop-and-ask question against six. A build context is now named as not a grouping.
+- **`nameForm` read as demanding a write to the base store.** Learning what a server *rejects* means attempting to create a namespace in it, and the only instance available at discovery is the developer's own. The documented grammar is the ordinary source — the shipped example already used it — and a rejection is only evidence when provoked against an instance the run owns. An agent unwilling to write had omitted the field on every store and closed the generated-family road for the whole repository.
+- **Three documents rendered as something other than what they said.** A paragraph in `reaping.md` jammed five rules into one line, repeated a sentence verbatim and left bold unclosed; a second paragraph there closed emphasis nothing opened; `discovery.md`'s section 5 numbered two consecutive steps `4`, which a renderer rewrites — under two cross-references that cite it *by step number*.
+- **`substrate` had no spelling for an engine that could not be established.** The prose says the honest value is `none`; the schema's examples never listed it, so the literal was inferred.
+
+### Added
+
+- **A floor for the first two, driven rather than asserted.** It builds a base image from a main checkout, changes a baked file in a worktree, and shows the documented run form serving the **main** checkout's code from a worktree launch. Then it shows the rule that replaced it serving the worktree's, leaving the base project's image untouched — and, as the negative control, that a rebuild under the base project's own selector really does move it while the running container quietly keeps the old one.
+- **Two general detectors for how the documents render**, not pins: every paragraph in every shipped document closes the bold it opens (inline code stripped first, since a `paths` glob is two asterisks that are not emphasis), and every ordered list carries the numbers a renderer would give it, with each `section 5 step N` citation resolved against a step that exists. The bold detector found a third damaged paragraph nobody had reported.
+
 ## [2.2.2] — 2026-08-13
 
 **Two fields the documents told an agent to record, that the schema rejected.** Both were found by driving the skill end to end against a 45-service repository and writing the manifest the run's own evidence supported: the field existed, one level away from where the sentence put it, and a manifest the schema rejects is a cache discarded and a full rediscovery bought — for recording exactly what the gate asks for.
@@ -270,6 +290,7 @@ First public release.
 - **A Claude Code plugin** wrapping the same folder, for one-command install.
 - **A verification suite** run in CI on every push, including a job that exercises the helpers on Alpine with nothing but `git`, `dash` and busybox `awk`.
 
+[2.2.3]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.3
 [2.2.2]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.2
 [2.2.1]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.1
 [2.2.0]: https://github.com/kevocodes/stackgraft/releases/tag/v2.2.0

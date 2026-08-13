@@ -134,8 +134,8 @@
           },
           "substrate": {
             "type": "string",
-            "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler"],
-            "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies."
+            "examples": ["postgres", "mysql", "sqlite", "mongodb", "redis", "kafka", "rabbitmq", "nats", "s3", "elasticsearch", "scheduler", "none"],
+            "description": "What kind of state this holds. Open on purpose; it selects which isolation advice in references/shared-state.md applies. \"none\" is the spelling for an engine that could not be established, and it is a legal value rather than a gap: references/discovery.md says a store is never held out of the map for want of a label, so the pair falls to the general road and a copy it must verify like any other. It was absent from this list while the prose already named it, which left an agent inferring the literal."
           },
           "verification": {
             "type": "object",
